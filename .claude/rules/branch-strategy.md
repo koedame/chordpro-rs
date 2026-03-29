@@ -5,3 +5,9 @@
 - One branch per issue, one issue per branch — strict 1:1 mapping.
 - All branches are created from latest `main`.
 - After merge, delete the remote branch (already configured via repo settings).
+
+## Bot Branch Exceptions
+
+- Dependabot branches (`dependabot/...`) are managed by GitHub's Dependabot service.
+- These do NOT follow the `issue-{N}-{slug}` naming convention — this is expected.
+- Claude Code automatically reviews and merges these via `.github/workflows/claude-dependabot.yml`.
