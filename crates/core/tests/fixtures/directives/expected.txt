@@ -1,0 +1,36 @@
+Song {
+    metadata: Metadata {
+        title: None,
+        subtitles: [],
+        artists: [],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: None,
+        tempo: None,
+        capo: None,
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "title",
+                value: Some(
+                    "Amazing Grace",
+                ),
+            },
+        ),
+        Directive(
+            Directive {
+                name: "subtitle",
+                value: Some(
+                    "A Hymn",
+                ),
+            },
+        ),
+        Comment(
+            "Traditional",
+        ),
+    ],
+}

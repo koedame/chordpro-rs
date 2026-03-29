@@ -1,0 +1,70 @@
+Song {
+    metadata: Metadata {
+        title: None,
+        subtitles: [],
+        artists: [],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: None,
+        tempo: None,
+        capo: None,
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "title",
+                value: Some(
+                    "Simple Song",
+                ),
+            },
+        ),
+        Empty,
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "Am",
+                            },
+                        ),
+                        text: "Hello ",
+                    },
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "G",
+                            },
+                        ),
+                        text: "world",
+                    },
+                ],
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "C",
+                            },
+                        ),
+                        text: "Goodbye ",
+                    },
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "D",
+                            },
+                        ),
+                        text: "moon",
+                    },
+                ],
+            },
+        ),
+    ],
+}

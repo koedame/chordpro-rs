@@ -1,0 +1,35 @@
+Song {
+    metadata: Metadata {
+        title: None,
+        subtitles: [],
+        artists: [],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: None,
+        tempo: None,
+        capo: None,
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "title",
+                value: Some(
+                    "Hello World",
+                ),
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "Hello, world!",
+                    },
+                ],
+            },
+        ),
+    ],
+}
