@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
-      group: claude-${{ github.event.issue.number || github.event.pull_request.number }}-${{ github.run_id }}
+      group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
       cancel-in-progress: false
     permissions:
       contents: write
