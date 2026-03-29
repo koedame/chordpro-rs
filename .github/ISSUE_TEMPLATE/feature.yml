@@ -1,0 +1,41 @@
+name: Feature
+description: New feature or enhancement
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should be achieved?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: "Checklist (use - [ ] syntax)"
+    validations:
+      required: true
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      options:
+        - "Phase 1: Scaffolding"
+        - "Phase 2: Core Parser"
+        - "Phase 3: Text Renderer"
+        - "Phase 4: CLI"
+        - "Phase 5: Extended Directives"
+        - "Phase 6: Additional Renderers"
+    validations:
+      required: true
+  - type: dropdown
+    id: size
+    attributes:
+      label: Estimated Size
+      options:
+        - "Small (< 1 hour)"
+        - "Medium (1-4 hours)"
+        - "Large (4+ hours)"
+    validations:
+      required: true

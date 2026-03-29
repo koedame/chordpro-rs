@@ -70,6 +70,31 @@ No merge is possible unless CI is green on the latest commit, regardless of how 
 fix iterations occurred. All PRs are **squash-merged** (merge commits and rebase
 merging are disabled).
 
+## Parallel Development with tmux
+
+This project is designed for multiple Claude Code instances working simultaneously
+via tmux.
+
+**Key principle**: Each instance works in an isolated git worktree. No shared mutable
+state.
+
+| Resource | Isolation Method |
+|---|---|
+| Git branch | One branch per worktree, named `issue-{N}-{slug}` |
+| Build artifacts | Each worktree has its own `target/` directory |
+| Network ports | `3000 + issue_number` |
+| Working directory | `../chordpro-rs-wt/issue-{N}-{slug}/` |
+
+**Before starting work**: Always create a fresh worktree from latest `origin/main`.
+**After PR merge**: Remove the worktree and local branch.
+
+## Ticket-Driven Development
+
+- No code changes without a corresponding GitHub Issue.
+- Branch names must reference the issue number.
+- PR descriptions must include `Closes #N`.
+- Use `gh issue create` for new work, `gh issue list` to find existing work.
+
 ## Compatibility Strategy
 
 - The ChordPro file format specification (https://www.chordpro.org/chordpro/) is the
