@@ -86,7 +86,7 @@ jobs:
                 '',
                 'If you find fixable issues, push fix commits directly. For design issues requiring author input, leave review comments.',
                 '',
-                'If both code review and security review pass with no issues, merge the PR with `gh pr merge --squash`.',
+                'If both code review and security review pass with no issues, enable auto-merge with `gh pr merge --squash --auto`.',
               ].join('\n'),
             });
 
