@@ -259,20 +259,33 @@ impl LyricsSegment {
 
 /// A chord annotation such as `Am`, `G7`, `Cmaj7`, or `F#m`.
 ///
-/// The chord is stored as a raw string. Parsing chord components (root,
-/// quality, bass note, etc.) is handled separately; the AST only records
-/// the textual representation as it appeared in the source.
+/// The chord stores both the raw string as it appeared in the source and,
+/// when parsing succeeds, a structured [`ChordDetail`] with the individual
+/// components (root, accidental, quality, extension, bass note).
+///
+/// If the chord notation cannot be parsed structurally, `detail` is `None`
+/// and the raw `name` is still available for display or round-tripping.
+///
+/// [`ChordDetail`]: crate::chord::ChordDetail
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Chord {
     /// The raw chord string as written in the source (e.g., `"Am"`, `"G7"`).
     pub name: String,
+    /// The parsed chord components, if the chord notation was recognized.
+    pub detail: Option<crate::chord::ChordDetail>,
 }
 
 impl Chord {
     /// Creates a new chord from the given name string.
+    ///
+    /// The chord notation is automatically parsed into structured components.
+    /// If parsing fails (e.g., the chord string is not valid notation), the
+    /// `detail` field is `None` but the raw `name` is preserved.
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into() }
+        let name = name.into();
+        let detail = crate::chord::parse_chord(&name);
+        Self { name, detail }
     }
 }
 
@@ -372,6 +385,7 @@ impl Directive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chord::{Accidental, ChordQuality, Note};
 
     // -- Song ---------------------------------------------------------------
 
@@ -484,6 +498,38 @@ mod tests {
     fn chord_equality() {
         assert_eq!(Chord::new("Am"), Chord::new("Am"));
         assert_ne!(Chord::new("Am"), Chord::new("Bm"));
+    }
+
+    #[test]
+    fn chord_detail_parsed() {
+        let chord = Chord::new("C#m7");
+        let detail = chord.detail.as_ref().expect("should have detail");
+        assert_eq!(detail.root, Note::C);
+        assert_eq!(detail.root_accidental, Some(Accidental::Sharp));
+        assert_eq!(detail.quality, ChordQuality::Minor);
+        assert_eq!(detail.extension.as_deref(), Some("7"));
+    }
+
+    #[test]
+    fn chord_detail_slash_chord() {
+        let chord = Chord::new("G/B");
+        let detail = chord.detail.as_ref().expect("should have detail");
+        assert_eq!(detail.root, Note::G);
+        assert_eq!(detail.bass_note, Some((Note::B, None)));
+    }
+
+    #[test]
+    fn chord_detail_unparseable() {
+        let chord = Chord::new("");
+        assert!(chord.detail.is_none());
+        assert_eq!(chord.name, "");
+    }
+
+    #[test]
+    fn chord_detail_invalid_notation() {
+        let chord = Chord::new("xyz");
+        assert!(chord.detail.is_none());
+        assert_eq!(chord.name, "xyz");
     }
 
     // -- Directive ----------------------------------------------------------
