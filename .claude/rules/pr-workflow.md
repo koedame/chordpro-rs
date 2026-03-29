@@ -11,7 +11,8 @@
 7. **Merge** — only when CI is green on the latest commit and both reviews approve.
 
 Branch protection enforces that status checks pass on the HEAD commit before merging.
-No merge is possible unless CI is green on the latest commit.
+No merge is possible unless CI is green on the latest commit. All PRs are
+**squash-merged** (merge commits and rebase merging are disabled).
 
 ### PR Formatting
 

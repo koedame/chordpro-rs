@@ -38,10 +38,14 @@ This is a Cargo workspace with three crates:
   external crates.
 - The CLI crate may use external crates for argument parsing, I/O, etc.
 
+## Project Tracking
+
+- **GitHub Project**: https://github.com/orgs/koedame/projects/1/views/1
+- **Issues**: https://github.com/koedame/chordpro-rs/issues
+
 ## Phase Roadmap
 
-See [GitHub Issues](https://github.com/koedame/chordpro-rs/issues) for the detailed
-roadmap. High-level phases:
+High-level phases:
 
 1. **Phase 1** — Workspace setup, CI, project scaffolding
 2. **Phase 2** — Core parser (ChordPro format lexer + AST)
@@ -63,7 +67,8 @@ Pull requests follow this workflow before merging to `main`:
 
 Branch protection requires status checks to pass on the HEAD commit before merging.
 No merge is possible unless CI is green on the latest commit, regardless of how many
-fix iterations occurred.
+fix iterations occurred. All PRs are **squash-merged** (merge commits and rebase
+merging are disabled).
 
 ## Compatibility Strategy
 
