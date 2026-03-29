@@ -12,13 +12,19 @@ on:
 
 jobs:
   claude:
+    # Security: only allow unchidev to trigger @claude on this public repo.
+    # Automated review comments from claude-review.yml are posted via CLAUDE_PAT
+    # (owned by unchidev), so sender.login == 'unchidev' holds for those too.
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      github.event.sender.login == 'unchidev' &&
+      (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      )
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     concurrency:
       group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
       cancel-in-progress: false
@@ -36,6 +42,18 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Use PAT so that Claude's pushes trigger CI workflows
+          # (GITHUB_TOKEN pushes do not trigger other workflows)
+          github_token: ${{ secrets.CLAUDE_PAT }}
           track_progress: true
-          claude_args: |
-            --allowedTools Edit,Write,Read,Bash
+          claude_args: "--allowedTools Edit,Write,Read,Bash"
+          prompt: |
+            When working on a GitHub issue (not a PR review), after implementing the
+            solution and pushing your changes to the branch, you MUST create a pull
+            request automatically using `gh pr create`. Do not just show a "Create PR"
+            link — actually create the PR.
+
+            PR requirements:
+            - Title: concise, imperative mood
+            - Body: include `Closes #N` referencing the issue number
+            - Follow all rules in CLAUDE.md and .claude/rules/
