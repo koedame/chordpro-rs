@@ -188,6 +188,12 @@ fn closing_tag_at_start(s: &str) -> Option<(TagType, usize)> {
 // Internal parser
 // ---------------------------------------------------------------------------
 
+/// Maximum nesting depth for inline markup tags.
+///
+/// Tags nested beyond this limit are treated as plain text to prevent
+/// stack overflow on adversarial input.
+const MAX_NESTING_DEPTH: usize = 32;
+
 /// Internal parser state for inline markup.
 struct InlineMarkupParser<'a> {
     /// The input text being parsed.
@@ -251,6 +257,13 @@ impl<'a> InlineMarkupParser<'a> {
 
                 // Check for opening tag
                 if let Some((tag_type, name_len)) = tag_name_at_start(after_lt) {
+                    // Enforce depth limit to prevent stack overflow on adversarial input
+                    if expected_closers.len() >= MAX_NESTING_DEPTH {
+                        // Treat `<` as plain text — don't recurse deeper
+                        self.pos += 1;
+                        continue;
+                    }
+
                     // Flush accumulated plain text before this tag
                     if plain_start < self.pos {
                         spans.push(TextSpan::Plain(
@@ -261,34 +274,19 @@ impl<'a> InlineMarkupParser<'a> {
                     // Consume the opening tag: < + name_len
                     self.pos += 1 + name_len;
 
-                    // Parse children, expecting a closing tag for this type
+                    // Parse children, expecting a closing tag for this type.
+                    // Per ChordPro spec, unclosed tags apply to all remaining text,
+                    // so we always wrap whatever children were collected.
                     let mut closers = expected_closers.to_vec();
                     closers.push(tag_type);
-                    let pos_before = self.pos;
                     let children = self.parse_spans(&closers);
-
-                    // Check if the tag was actually closed by examining if we
-                    // consumed a matching closing tag (pos should have advanced
-                    // past what the children consumed)
-                    let was_closed = self.pos > pos_before
-                        || !children.is_empty()
-                        || self.pos >= self.input.len()
-                        || self.check_closing_tag_consumed(tag_type, pos_before);
-
-                    if was_closed {
-                        let span = match tag_type {
-                            TagType::Bold => TextSpan::Bold(children),
-                            TagType::Italic => TextSpan::Italic(children),
-                            TagType::Highlight => TextSpan::Highlight(children),
-                            TagType::Comment => TextSpan::Comment(children),
-                        };
-                        spans.push(span);
-                    } else {
-                        // Tag was not closed — treat the opening tag as plain text
-                        // Reconstruct the opening tag text
-                        let tag_text = &self.input[plain_start..self.pos];
-                        spans.push(TextSpan::Plain(tag_text.to_string()));
-                    }
+                    let span = match tag_type {
+                        TagType::Bold => TextSpan::Bold(children),
+                        TagType::Italic => TextSpan::Italic(children),
+                        TagType::Highlight => TextSpan::Highlight(children),
+                        TagType::Comment => TextSpan::Comment(children),
+                    };
+                    spans.push(span);
 
                     plain_start = self.pos;
                     continue;
@@ -311,15 +309,6 @@ impl<'a> InlineMarkupParser<'a> {
         }
 
         spans
-    }
-
-    /// Helper to check if a specific closing tag was the reason we returned
-    /// from parse_spans. This is used for the edge case where children is empty
-    /// but a closing tag was consumed.
-    fn check_closing_tag_consumed(&self, _tag_type: TagType, _pos_before: usize) -> bool {
-        // This is a heuristic — if we're back and the position changed,
-        // the closing tag was consumed
-        false
     }
 }
 
@@ -559,17 +548,26 @@ mod tests {
     // -- parse_inline_markup: graceful degradation --------------------------
 
     #[test]
-    fn unclosed_tag_treated_as_plain() {
+    fn unclosed_tag_wraps_remaining_text() {
+        // Per ChordPro spec, unclosed tags apply to all remaining text.
         let spans = parse_inline_markup("<b>unclosed");
-        // The opening tag is recognized but never closed, so children
-        // are captured and the tag wraps them (matches ChordPro spec:
-        // unclosed tags apply to remaining text)
         assert_eq!(
             spans,
             vec![TextSpan::Bold(vec![TextSpan::Plain(
                 "unclosed".to_string()
             )])]
         );
+    }
+
+    #[test]
+    fn depth_limit_prevents_stack_overflow() {
+        // Deeply nested tags beyond MAX_NESTING_DEPTH are treated as plain text.
+        let open_tags: String = "<b>".repeat(MAX_NESTING_DEPTH + 1);
+        let close_tags: String = "</b>".repeat(MAX_NESTING_DEPTH + 1);
+        let input = format!("{}text{}", open_tags, close_tags);
+        // Must not panic/overflow; just verify it returns something reasonable.
+        let spans = parse_inline_markup(&input);
+        assert!(!spans.is_empty());
     }
 
     #[test]
