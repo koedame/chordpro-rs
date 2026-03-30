@@ -60,17 +60,31 @@ impl ParseError {
             span,
         }
     }
+
+    /// Returns the 1-based line number where the error was detected.
+    #[must_use]
+    pub fn line(&self) -> usize {
+        self.span.start.line
+    }
+
+    /// Returns the 1-based column number where the error was detected.
+    #[must_use]
+    pub fn column(&self) -> usize {
+        self.span.start.column
+    }
 }
 
 impl core::fmt::Display for ParseError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "parse error at {}:{}: {}",
+            "parse error at line {}, column {}: {}",
             self.span.start.line, self.span.start.column, self.message
         )
     }
 }
+
+impl std::error::Error for ParseError {}
 
 // ---------------------------------------------------------------------------
 // Parser
@@ -1112,7 +1126,7 @@ mod tests {
     fn parse_error_display() {
         let err = parse("{title: no close").unwrap_err();
         let msg = format!("{err}");
-        assert!(msg.contains("parse error at"));
+        assert!(msg.contains("parse error at line"));
         assert!(msg.contains("unclosed directive"));
     }
 
@@ -1399,5 +1413,140 @@ mod tests {
         } else {
             panic!("expected directive");
         }
+    }
+
+    // -- Error diagnostics (issue #25) --------------------------------------
+
+    #[test]
+    fn parse_error_implements_std_error() {
+        let err = parse("[Am").unwrap_err();
+        // Verify that ParseError can be used as a std::error::Error trait object.
+        let _: &dyn std::error::Error = &err;
+    }
+
+    #[test]
+    fn parse_error_source_is_none() {
+        let err = parse("[Am").unwrap_err();
+        let err_ref: &dyn std::error::Error = &err;
+        assert!(err_ref.source().is_none());
+    }
+
+    #[test]
+    fn parse_error_line_column_accessors() {
+        let err = parse("[Am").unwrap_err();
+        assert_eq!(err.line(), 1);
+        assert_eq!(err.column(), 1);
+    }
+
+    #[test]
+    fn unclosed_chord_error_location() {
+        let err = parse("[Am").unwrap_err();
+        assert!(err.message.contains("unclosed chord"));
+        assert_eq!(err.span.start.line, 1);
+        assert_eq!(err.span.start.column, 1);
+    }
+
+    #[test]
+    fn unclosed_chord_on_second_line() {
+        let err = parse("Hello\n[Am").unwrap_err();
+        assert!(err.message.contains("unclosed chord"));
+        assert_eq!(err.span.start.line, 2);
+        assert_eq!(err.span.start.column, 1);
+    }
+
+    #[test]
+    fn unclosed_chord_mid_line() {
+        let err = parse("text [Am").unwrap_err();
+        assert!(err.message.contains("unclosed chord"));
+        assert_eq!(err.span.start.line, 1);
+        assert_eq!(err.span.start.column, 6);
+    }
+
+    #[test]
+    fn unclosed_directive_error_location() {
+        let err = parse("{title: oops").unwrap_err();
+        assert!(err.message.contains("unclosed directive"));
+        // Span points to EOF where the closing brace was expected.
+        assert_eq!(err.span.start.line, 1);
+        assert_eq!(err.span.start.column, 13);
+    }
+
+    #[test]
+    fn unclosed_directive_on_third_line() {
+        let err = parse("line one\nline two\n{title: oops").unwrap_err();
+        assert!(err.message.contains("unclosed directive"));
+        // Span points to EOF where the closing brace was expected.
+        assert_eq!(err.span.start.line, 3);
+        assert_eq!(err.span.start.column, 13);
+    }
+
+    #[test]
+    fn empty_directive_error_location() {
+        let err = parse("{}").unwrap_err();
+        assert!(err.message.contains("empty directive name"));
+        assert_eq!(err.span.start.line, 1);
+        assert_eq!(err.span.start.column, 1);
+    }
+
+    #[test]
+    fn empty_directive_with_colon_error_location() {
+        let err = parse("{: value}").unwrap_err();
+        assert!(err.message.contains("empty directive name"));
+        assert_eq!(err.span.start.line, 1);
+        assert_eq!(err.span.start.column, 1);
+    }
+
+    #[test]
+    fn error_display_format_with_line_column() {
+        let err = parse("first line\n{title: no close").unwrap_err();
+        let msg = format!("{err}");
+        // The error reports the position where the closing brace was expected.
+        assert!(
+            msg.starts_with("parse error at line 2, column 17:"),
+            "unexpected display format: {msg}"
+        );
+    }
+
+    #[test]
+    fn unclosed_chord_at_end_of_line_error_location() {
+        // [Am at end followed by newline — error points to the opening bracket
+        let err = parse("[Am\nmore text").unwrap_err();
+        assert!(err.message.contains("unclosed chord"));
+        assert_eq!(err.span.start.line, 1);
+        assert_eq!(err.span.start.column, 1);
+    }
+
+    #[test]
+    fn unclosed_directive_at_eof_error_location() {
+        let err = parse("{title").unwrap_err();
+        assert!(err.message.contains("unclosed directive"));
+        assert_eq!(err.span.start.line, 1);
+        assert_eq!(err.span.start.column, 1);
+    }
+
+    #[test]
+    fn whitespace_only_directive_name_error_location() {
+        let err = parse("{   : value}").unwrap_err();
+        assert!(err.message.contains("empty directive name"));
+        assert_eq!(err.span.start.line, 1);
+        assert_eq!(err.span.start.column, 1);
+    }
+
+    #[test]
+    fn error_after_valid_content() {
+        // Valid content followed by an error on a later line
+        let input = "{title: Test}\n[Am]Hello\n[G";
+        let err = parse(input).unwrap_err();
+        assert!(err.message.contains("unclosed chord"));
+        assert_eq!(err.span.start.line, 3);
+        assert_eq!(err.span.start.column, 1);
+    }
+
+    #[test]
+    fn multiple_errors_first_is_reported() {
+        // Parser stops at first error — verify it's the correct one.
+        let err = parse("{title\n{another").unwrap_err();
+        assert!(err.message.contains("unclosed directive"));
+        assert_eq!(err.span.start.line, 1);
     }
 }

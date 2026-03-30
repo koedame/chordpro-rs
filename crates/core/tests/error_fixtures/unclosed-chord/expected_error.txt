@@ -1,0 +1,1 @@
+parse error at line 2, column 11: unclosed chord: expected `]`
