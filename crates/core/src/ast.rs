@@ -15,6 +15,13 @@
 //! model: each [`LyricsSegment`] pairs an optional chord with the lyric text
 //! that follows it. This preserves the chord-text relationship without
 //! requiring offset arithmetic during rendering.
+//!
+//! # Directive Classification
+//!
+//! Directives carry a [`DirectiveKind`] that classifies them into metadata,
+//! formatting, environment (section), or unknown categories. The parser
+//! resolves short aliases (e.g., `t` → `title`) and performs case-insensitive
+//! matching per the ChordPro specification.
 
 // ---------------------------------------------------------------------------
 // Song (root node)
@@ -68,7 +75,7 @@ impl Default for Song {
 ///
 /// These fields correspond to standard ChordPro meta-directives such as
 /// `{title}`, `{subtitle}`, `{artist}`, `{composer}`, `{album}`, `{year}`,
-/// `{key}`, `{tempo}`, and `{capo}`.
+/// `{key}`, `{tempo}`, `{time}`, and `{capo}`.
 ///
 /// Fields that can logically appear multiple times (e.g., `subtitle`, `artist`,
 /// `composer`) are stored as `Vec<String>`. Fields that are expected to appear
@@ -96,6 +103,8 @@ pub struct Metadata {
     pub key: Option<String>,
     /// Tempo indication, from `{tempo}`.
     pub tempo: Option<String>,
+    /// Time signature, from `{time}`.
+    pub time: Option<String>,
     /// Capo position, from `{capo}`.
     pub capo: Option<String>,
     /// Custom metadata directives not covered by the standard fields.
@@ -129,11 +138,37 @@ pub enum Line {
     /// A directive such as `{title: My Song}` or `{start_of_chorus}`.
     Directive(Directive),
 
-    /// A comment line starting with `#` (file-level comment, not rendered).
-    Comment(String),
+    /// A comment line from a comment directive (`{comment}`, `{comment_italic}`,
+    /// `{comment_box}`) or a file-level `#` comment. The [`CommentStyle`]
+    /// distinguishes the rendering intent.
+    Comment(CommentStyle, String),
 
     /// An empty line, typically used to separate paragraphs or sections.
     Empty,
+}
+
+// ---------------------------------------------------------------------------
+// CommentStyle
+// ---------------------------------------------------------------------------
+
+/// The visual style of a comment, determined by the directive that produced it.
+///
+/// ChordPro supports three comment directives, each with a different rendering
+/// intent:
+///
+/// - `{comment}` / `{c}` — normal comment (typically highlighted or boxed)
+/// - `{comment_italic}` / `{ci}` — italic comment
+/// - `{comment_box}` / `{cb}` — boxed comment
+///
+/// File-level `#` comments use [`CommentStyle::Normal`] as a default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CommentStyle {
+    /// A normal comment, from `{comment}` / `{c}` or file-level `#`.
+    Normal,
+    /// An italic comment, from `{comment_italic}` / `{ci}`.
+    Italic,
+    /// A boxed comment, from `{comment_box}` / `{cb}`.
+    Boxed,
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +331,207 @@ impl core::fmt::Display for Chord {
 }
 
 // ---------------------------------------------------------------------------
+// DirectiveKind
+// ---------------------------------------------------------------------------
+
+/// Classification of a ChordPro directive.
+///
+/// The parser examines each directive's name (case-insensitively, resolving
+/// short aliases) and assigns a `DirectiveKind` to indicate its semantic
+/// category. Renderers and downstream consumers can match on this enum
+/// rather than performing string comparisons.
+///
+/// # Categories
+///
+/// - **Metadata** — directives that set song metadata (`title`, `subtitle`,
+///   `artist`, `album`, `year`, `key`, `tempo`, `time`, `capo`, etc.).
+/// - **Formatting** — comment directives (`comment`, `comment_italic`,
+///   `comment_box`).
+/// - **Environment** — section start/end directives (`start_of_chorus`,
+///   `end_of_chorus`, `start_of_verse`, etc.).
+/// - **Unknown** — any directive not recognized as a standard directive.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum DirectiveKind {
+    // -- Metadata directives ------------------------------------------------
+    /// `{title}` / `{t}` — the song title.
+    Title,
+    /// `{subtitle}` / `{st}` — a subtitle.
+    Subtitle,
+    /// `{artist}` — the artist name.
+    Artist,
+    /// `{composer}` — the composer name.
+    Composer,
+    /// `{lyricist}` — the lyricist name.
+    Lyricist,
+    /// `{album}` — the album name.
+    Album,
+    /// `{year}` — the year or date.
+    Year,
+    /// `{key}` — the musical key.
+    Key,
+    /// `{tempo}` — the tempo.
+    Tempo,
+    /// `{time}` — the time signature.
+    Time,
+    /// `{capo}` — the capo position.
+    Capo,
+
+    // -- Formatting directives (comment) ------------------------------------
+    /// `{comment}` / `{c}` — a normal comment.
+    Comment,
+    /// `{comment_italic}` / `{ci}` — an italic comment.
+    CommentItalic,
+    /// `{comment_box}` / `{cb}` — a boxed comment.
+    CommentBox,
+
+    // -- Environment (section) directives -----------------------------------
+    /// `{start_of_chorus}` / `{soc}` — begins a chorus section.
+    StartOfChorus,
+    /// `{end_of_chorus}` / `{eoc}` — ends a chorus section.
+    EndOfChorus,
+    /// `{start_of_verse}` / `{sov}` — begins a verse section.
+    StartOfVerse,
+    /// `{end_of_verse}` / `{eov}` — ends a verse section.
+    EndOfVerse,
+    /// `{start_of_bridge}` / `{sob}` — begins a bridge section.
+    StartOfBridge,
+    /// `{end_of_bridge}` / `{eob}` — ends a bridge section.
+    EndOfBridge,
+    /// `{start_of_tab}` / `{sot}` — begins a tab section.
+    StartOfTab,
+    /// `{end_of_tab}` / `{eot}` — ends a tab section.
+    EndOfTab,
+
+    // -- Unknown ------------------------------------------------------------
+    /// A directive not recognized as a standard ChordPro directive.
+    /// The original directive name (lowercased) is preserved.
+    Unknown(String),
+}
+
+impl DirectiveKind {
+    /// Resolves a directive name to its [`DirectiveKind`].
+    ///
+    /// The lookup is case-insensitive and recognizes standard short aliases
+    /// (e.g., `t` for `title`, `soc` for `start_of_chorus`).
+    #[must_use]
+    pub fn from_name(name: &str) -> Self {
+        match name.to_ascii_lowercase().as_str() {
+            // Metadata
+            "title" | "t" => Self::Title,
+            "subtitle" | "st" => Self::Subtitle,
+            "artist" => Self::Artist,
+            "composer" => Self::Composer,
+            "lyricist" => Self::Lyricist,
+            "album" => Self::Album,
+            "year" => Self::Year,
+            "key" => Self::Key,
+            "tempo" => Self::Tempo,
+            "time" => Self::Time,
+            "capo" => Self::Capo,
+
+            // Formatting (comments)
+            "comment" | "c" => Self::Comment,
+            "comment_italic" | "ci" => Self::CommentItalic,
+            "comment_box" | "cb" => Self::CommentBox,
+
+            // Environment (sections)
+            "start_of_chorus" | "soc" => Self::StartOfChorus,
+            "end_of_chorus" | "eoc" => Self::EndOfChorus,
+            "start_of_verse" | "sov" => Self::StartOfVerse,
+            "end_of_verse" | "eov" => Self::EndOfVerse,
+            "start_of_bridge" | "sob" => Self::StartOfBridge,
+            "end_of_bridge" | "eob" => Self::EndOfBridge,
+            "start_of_tab" | "sot" => Self::StartOfTab,
+            "end_of_tab" | "eot" => Self::EndOfTab,
+
+            // Unknown
+            other => Self::Unknown(other.to_string()),
+        }
+    }
+
+    /// Returns the canonical (long-form) directive name for known directives.
+    ///
+    /// For [`DirectiveKind::Unknown`], returns the stored name.
+    #[must_use]
+    pub fn canonical_name(&self) -> &str {
+        match self {
+            Self::Title => "title",
+            Self::Subtitle => "subtitle",
+            Self::Artist => "artist",
+            Self::Composer => "composer",
+            Self::Lyricist => "lyricist",
+            Self::Album => "album",
+            Self::Year => "year",
+            Self::Key => "key",
+            Self::Tempo => "tempo",
+            Self::Time => "time",
+            Self::Capo => "capo",
+            Self::Comment => "comment",
+            Self::CommentItalic => "comment_italic",
+            Self::CommentBox => "comment_box",
+            Self::StartOfChorus => "start_of_chorus",
+            Self::EndOfChorus => "end_of_chorus",
+            Self::StartOfVerse => "start_of_verse",
+            Self::EndOfVerse => "end_of_verse",
+            Self::StartOfBridge => "start_of_bridge",
+            Self::EndOfBridge => "end_of_bridge",
+            Self::StartOfTab => "start_of_tab",
+            Self::EndOfTab => "end_of_tab",
+            Self::Unknown(name) => name.as_str(),
+        }
+    }
+
+    /// Returns `true` if this is a metadata directive.
+    #[must_use]
+    pub fn is_metadata(&self) -> bool {
+        matches!(
+            self,
+            Self::Title
+                | Self::Subtitle
+                | Self::Artist
+                | Self::Composer
+                | Self::Lyricist
+                | Self::Album
+                | Self::Year
+                | Self::Key
+                | Self::Tempo
+                | Self::Time
+                | Self::Capo
+        )
+    }
+
+    /// Returns `true` if this is a comment/formatting directive.
+    #[must_use]
+    pub fn is_comment(&self) -> bool {
+        matches!(self, Self::Comment | Self::CommentItalic | Self::CommentBox)
+    }
+
+    /// Returns `true` if this is a section start directive.
+    #[must_use]
+    pub fn is_section_start(&self) -> bool {
+        matches!(
+            self,
+            Self::StartOfChorus | Self::StartOfVerse | Self::StartOfBridge | Self::StartOfTab
+        )
+    }
+
+    /// Returns `true` if this is a section end directive.
+    #[must_use]
+    pub fn is_section_end(&self) -> bool {
+        matches!(
+            self,
+            Self::EndOfChorus | Self::EndOfVerse | Self::EndOfBridge | Self::EndOfTab
+        )
+    }
+
+    /// Returns `true` if this is an environment (section start or end) directive.
+    #[must_use]
+    pub fn is_environment(&self) -> bool {
+        self.is_section_start() || self.is_section_end()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Directive
 // ---------------------------------------------------------------------------
 
@@ -305,48 +541,67 @@ impl core::fmt::Display for Chord {
 /// optional value separated by a colon. Some directives have standard short
 /// aliases (e.g., `t` for `title`, `st` for `subtitle`).
 ///
-/// The AST stores the directive name as-is (not normalized). Normalization
-/// of aliases (e.g., `t` -> `title`) is the parser's responsibility.
+/// The `name` field stores the **canonical** (long-form, lowercase) name after
+/// alias resolution. The `kind` field provides a typed classification for
+/// pattern matching.
 ///
 /// # Examples
 ///
 /// ```
-/// use chordpro_core::ast::Directive;
+/// use chordpro_core::ast::{Directive, DirectiveKind};
 ///
 /// // {title: My Song}
 /// let d = Directive::with_value("title", "My Song");
 /// assert_eq!(d.name, "title");
 /// assert_eq!(d.value.as_deref(), Some("My Song"));
+/// assert_eq!(d.kind, DirectiveKind::Title);
 ///
 /// // {start_of_chorus}
 /// let d = Directive::name_only("start_of_chorus");
 /// assert_eq!(d.name, "start_of_chorus");
 /// assert!(d.value.is_none());
+/// assert_eq!(d.kind, DirectiveKind::StartOfChorus);
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Directive {
-    /// The directive name (e.g., `"title"`, `"start_of_chorus"`, `"comment"`).
+    /// The canonical directive name (e.g., `"title"`, `"start_of_chorus"`).
     pub name: String,
     /// The optional value after the colon (e.g., `"My Song"` in `{title: My Song}`).
     pub value: Option<String>,
+    /// The classified kind of this directive.
+    pub kind: DirectiveKind,
 }
 
 impl Directive {
     /// Creates a directive with both a name and a value.
+    ///
+    /// The name is resolved to its canonical form and the [`DirectiveKind`]
+    /// is determined automatically.
     #[must_use]
     pub fn with_value(name: impl Into<String>, value: impl Into<String>) -> Self {
+        let name_str = name.into();
+        let kind = DirectiveKind::from_name(&name_str);
+        let canonical = kind.canonical_name().to_string();
         Self {
-            name: name.into(),
+            name: canonical,
             value: Some(value.into()),
+            kind,
         }
     }
 
     /// Creates a directive with only a name and no value.
+    ///
+    /// The name is resolved to its canonical form and the [`DirectiveKind`]
+    /// is determined automatically.
     #[must_use]
     pub fn name_only(name: impl Into<String>) -> Self {
+        let name_str = name.into();
+        let kind = DirectiveKind::from_name(&name_str);
+        let canonical = kind.canonical_name().to_string();
         Self {
-            name: name.into(),
+            name: canonical,
             value: None,
+            kind,
         }
     }
 
@@ -354,14 +609,14 @@ impl Directive {
     /// (e.g., `start_of_chorus`, `start_of_verse`, etc.).
     #[must_use]
     pub fn is_section_start(&self) -> bool {
-        self.name.starts_with("start_of_")
+        self.kind.is_section_start()
     }
 
     /// Returns `true` if this directive marks the end of a section
     /// (e.g., `end_of_chorus`, `end_of_verse`, etc.).
     #[must_use]
     pub fn is_section_end(&self) -> bool {
-        self.name.starts_with("end_of_")
+        self.kind.is_section_end()
     }
 
     /// If this is a section start or end directive, returns the section name
@@ -406,7 +661,8 @@ mod tests {
         let mut song = Song::new();
         song.metadata.title = Some("My Song".to_string());
         song.lines.push(Line::Empty);
-        song.lines.push(Line::Comment("A comment".to_string()));
+        song.lines
+            .push(Line::Comment(CommentStyle::Normal, "A comment".to_string()));
         assert_eq!(song.lines.len(), 2);
         assert_eq!(song.metadata.title.as_deref(), Some("My Song"));
     }
@@ -425,6 +681,7 @@ mod tests {
         assert_eq!(meta.year, None);
         assert_eq!(meta.key, None);
         assert_eq!(meta.tempo, None);
+        assert_eq!(meta.time, None);
         assert_eq!(meta.capo, None);
         assert!(meta.custom.is_empty());
     }
@@ -532,6 +789,159 @@ mod tests {
         assert_eq!(chord.name, "xyz");
     }
 
+    // -- DirectiveKind ------------------------------------------------------
+
+    #[test]
+    fn directive_kind_from_name_metadata() {
+        assert_eq!(DirectiveKind::from_name("title"), DirectiveKind::Title);
+        assert_eq!(DirectiveKind::from_name("t"), DirectiveKind::Title);
+        assert_eq!(DirectiveKind::from_name("TITLE"), DirectiveKind::Title);
+        assert_eq!(DirectiveKind::from_name("Title"), DirectiveKind::Title);
+        assert_eq!(
+            DirectiveKind::from_name("subtitle"),
+            DirectiveKind::Subtitle
+        );
+        assert_eq!(DirectiveKind::from_name("st"), DirectiveKind::Subtitle);
+        assert_eq!(DirectiveKind::from_name("artist"), DirectiveKind::Artist);
+        assert_eq!(
+            DirectiveKind::from_name("composer"),
+            DirectiveKind::Composer
+        );
+        assert_eq!(
+            DirectiveKind::from_name("lyricist"),
+            DirectiveKind::Lyricist
+        );
+        assert_eq!(DirectiveKind::from_name("album"), DirectiveKind::Album);
+        assert_eq!(DirectiveKind::from_name("year"), DirectiveKind::Year);
+        assert_eq!(DirectiveKind::from_name("key"), DirectiveKind::Key);
+        assert_eq!(DirectiveKind::from_name("tempo"), DirectiveKind::Tempo);
+        assert_eq!(DirectiveKind::from_name("time"), DirectiveKind::Time);
+        assert_eq!(DirectiveKind::from_name("capo"), DirectiveKind::Capo);
+    }
+
+    #[test]
+    fn directive_kind_from_name_comment() {
+        assert_eq!(DirectiveKind::from_name("comment"), DirectiveKind::Comment);
+        assert_eq!(DirectiveKind::from_name("c"), DirectiveKind::Comment);
+        assert_eq!(
+            DirectiveKind::from_name("comment_italic"),
+            DirectiveKind::CommentItalic
+        );
+        assert_eq!(DirectiveKind::from_name("ci"), DirectiveKind::CommentItalic);
+        assert_eq!(
+            DirectiveKind::from_name("comment_box"),
+            DirectiveKind::CommentBox
+        );
+        assert_eq!(DirectiveKind::from_name("cb"), DirectiveKind::CommentBox);
+    }
+
+    #[test]
+    fn directive_kind_from_name_environment() {
+        assert_eq!(
+            DirectiveKind::from_name("start_of_chorus"),
+            DirectiveKind::StartOfChorus
+        );
+        assert_eq!(
+            DirectiveKind::from_name("soc"),
+            DirectiveKind::StartOfChorus
+        );
+        assert_eq!(
+            DirectiveKind::from_name("end_of_chorus"),
+            DirectiveKind::EndOfChorus
+        );
+        assert_eq!(DirectiveKind::from_name("eoc"), DirectiveKind::EndOfChorus);
+        assert_eq!(
+            DirectiveKind::from_name("start_of_verse"),
+            DirectiveKind::StartOfVerse
+        );
+        assert_eq!(DirectiveKind::from_name("sov"), DirectiveKind::StartOfVerse);
+        assert_eq!(
+            DirectiveKind::from_name("end_of_verse"),
+            DirectiveKind::EndOfVerse
+        );
+        assert_eq!(DirectiveKind::from_name("eov"), DirectiveKind::EndOfVerse);
+        assert_eq!(
+            DirectiveKind::from_name("start_of_bridge"),
+            DirectiveKind::StartOfBridge
+        );
+        assert_eq!(
+            DirectiveKind::from_name("sob"),
+            DirectiveKind::StartOfBridge
+        );
+        assert_eq!(
+            DirectiveKind::from_name("end_of_bridge"),
+            DirectiveKind::EndOfBridge
+        );
+        assert_eq!(DirectiveKind::from_name("eob"), DirectiveKind::EndOfBridge);
+        assert_eq!(
+            DirectiveKind::from_name("start_of_tab"),
+            DirectiveKind::StartOfTab
+        );
+        assert_eq!(DirectiveKind::from_name("sot"), DirectiveKind::StartOfTab);
+        assert_eq!(
+            DirectiveKind::from_name("end_of_tab"),
+            DirectiveKind::EndOfTab
+        );
+        assert_eq!(DirectiveKind::from_name("eot"), DirectiveKind::EndOfTab);
+    }
+
+    #[test]
+    fn directive_kind_from_name_unknown() {
+        let kind = DirectiveKind::from_name("custom_thing");
+        assert_eq!(kind, DirectiveKind::Unknown("custom_thing".to_string()));
+    }
+
+    #[test]
+    fn directive_kind_case_insensitive() {
+        assert_eq!(DirectiveKind::from_name("TITLE"), DirectiveKind::Title);
+        assert_eq!(DirectiveKind::from_name("Title"), DirectiveKind::Title);
+        assert_eq!(
+            DirectiveKind::from_name("START_OF_CHORUS"),
+            DirectiveKind::StartOfChorus
+        );
+        assert_eq!(
+            DirectiveKind::from_name("Comment_Italic"),
+            DirectiveKind::CommentItalic
+        );
+    }
+
+    #[test]
+    fn directive_kind_canonical_name() {
+        assert_eq!(DirectiveKind::Title.canonical_name(), "title");
+        assert_eq!(
+            DirectiveKind::StartOfChorus.canonical_name(),
+            "start_of_chorus"
+        );
+        assert_eq!(DirectiveKind::Comment.canonical_name(), "comment");
+        assert_eq!(
+            DirectiveKind::Unknown("foo".to_string()).canonical_name(),
+            "foo"
+        );
+    }
+
+    #[test]
+    fn directive_kind_category_checks() {
+        assert!(DirectiveKind::Title.is_metadata());
+        assert!(!DirectiveKind::Title.is_comment());
+        assert!(!DirectiveKind::Title.is_environment());
+
+        assert!(DirectiveKind::Comment.is_comment());
+        assert!(!DirectiveKind::Comment.is_metadata());
+
+        assert!(DirectiveKind::StartOfChorus.is_section_start());
+        assert!(DirectiveKind::StartOfChorus.is_environment());
+        assert!(!DirectiveKind::StartOfChorus.is_section_end());
+
+        assert!(DirectiveKind::EndOfChorus.is_section_end());
+        assert!(DirectiveKind::EndOfChorus.is_environment());
+        assert!(!DirectiveKind::EndOfChorus.is_section_start());
+
+        let unknown = DirectiveKind::Unknown("x".to_string());
+        assert!(!unknown.is_metadata());
+        assert!(!unknown.is_comment());
+        assert!(!unknown.is_environment());
+    }
+
     // -- Directive ----------------------------------------------------------
 
     #[test]
@@ -539,6 +949,7 @@ mod tests {
         let d = Directive::with_value("title", "My Song");
         assert_eq!(d.name, "title");
         assert_eq!(d.value.as_deref(), Some("My Song"));
+        assert_eq!(d.kind, DirectiveKind::Title);
     }
 
     #[test]
@@ -546,6 +957,40 @@ mod tests {
         let d = Directive::name_only("start_of_chorus");
         assert_eq!(d.name, "start_of_chorus");
         assert!(d.value.is_none());
+        assert_eq!(d.kind, DirectiveKind::StartOfChorus);
+    }
+
+    #[test]
+    fn directive_short_alias_resolution() {
+        let d = Directive::with_value("t", "My Song");
+        assert_eq!(d.name, "title");
+        assert_eq!(d.kind, DirectiveKind::Title);
+
+        let d = Directive::name_only("soc");
+        assert_eq!(d.name, "start_of_chorus");
+        assert_eq!(d.kind, DirectiveKind::StartOfChorus);
+
+        let d = Directive::with_value("st", "Alternate Title");
+        assert_eq!(d.name, "subtitle");
+        assert_eq!(d.kind, DirectiveKind::Subtitle);
+    }
+
+    #[test]
+    fn directive_case_insensitive_resolution() {
+        let d = Directive::with_value("TITLE", "My Song");
+        assert_eq!(d.name, "title");
+        assert_eq!(d.kind, DirectiveKind::Title);
+
+        let d = Directive::name_only("SOC");
+        assert_eq!(d.name, "start_of_chorus");
+        assert_eq!(d.kind, DirectiveKind::StartOfChorus);
+    }
+
+    #[test]
+    fn directive_unknown_preserves_name() {
+        let d = Directive::with_value("my_custom", "value");
+        assert_eq!(d.name, "my_custom");
+        assert_eq!(d.kind, DirectiveKind::Unknown("my_custom".to_string()));
     }
 
     #[test]
@@ -575,19 +1020,43 @@ mod tests {
         assert_eq!(eob.section_name(), Some("bridge"));
     }
 
+    #[test]
+    fn directive_section_detection_via_short_alias() {
+        let soc = Directive::name_only("soc");
+        assert!(soc.is_section_start());
+        assert_eq!(soc.section_name(), Some("chorus"));
+
+        let eot = Directive::name_only("eot");
+        assert!(eot.is_section_end());
+        assert_eq!(eot.section_name(), Some("tab"));
+    }
+
+    // -- CommentStyle -------------------------------------------------------
+
+    #[test]
+    fn comment_style_variants() {
+        let normal = Line::Comment(CommentStyle::Normal, "text".to_string());
+        let italic = Line::Comment(CommentStyle::Italic, "text".to_string());
+        let boxed = Line::Comment(CommentStyle::Boxed, "text".to_string());
+
+        assert!(matches!(normal, Line::Comment(CommentStyle::Normal, _)));
+        assert!(matches!(italic, Line::Comment(CommentStyle::Italic, _)));
+        assert!(matches!(boxed, Line::Comment(CommentStyle::Boxed, _)));
+    }
+
     // -- Line enum ----------------------------------------------------------
 
     #[test]
     fn line_enum_variants() {
         let lyrics = Line::Lyrics(LyricsLine::new());
         let directive = Line::Directive(Directive::name_only("soc"));
-        let comment = Line::Comment("test".to_string());
+        let comment = Line::Comment(CommentStyle::Normal, "test".to_string());
         let empty = Line::Empty;
 
         // Ensure they are all distinct variants via pattern matching
         assert!(matches!(lyrics, Line::Lyrics(_)));
         assert!(matches!(directive, Line::Directive(_)));
-        assert!(matches!(comment, Line::Comment(_)));
+        assert!(matches!(comment, Line::Comment(..)));
         assert!(matches!(empty, Line::Empty));
     }
 

@@ -1,0 +1,17 @@
+{t: Short Title}
+{st: Short Subtitle}
+{c: A comment}
+{ci: Italic comment}
+{cb: Boxed comment}
+{soc}
+[Am]Hello [G]world
+{eoc}
+{sov}
+[C]Verse text
+{eov}
+{sob}
+[Dm]Bridge text
+{eob}
+{sot}
+e|---0---|
+{eot}

@@ -1,0 +1,23 @@
+{title: Amazing Grace}
+{subtitle: A Hymn}
+{artist: John Newton}
+{composer: Unknown}
+{lyricist: John Newton}
+{album: Hymns}
+{year: 1779}
+{key: G}
+{tempo: 80}
+{time: 3/4}
+{capo: 2}
+{comment: Verse 1}
+{comment_italic: Play softly}
+{comment_box: Key change ahead}
+
+{start_of_verse}
+[G]Amazing [G7]grace, how [C]sweet the [G]sound
+[G]That saved a [Em]wretch like [D]me
+{end_of_verse}
+
+{start_of_chorus}
+[G]I once was [G7]lost, but [C]now am [G]found
+{end_of_chorus}

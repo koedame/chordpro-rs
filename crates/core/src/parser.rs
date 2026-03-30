@@ -3,7 +3,15 @@
 //! The parser accepts the flat token sequence produced by [`crate::Lexer`] and
 //! builds a [`Song`] AST. Each source line is classified as a directive, a
 //! lyrics line (with optional inline chord annotations), an empty line, or a
-//! comment (the `{comment: ...}` directive).
+//! comment (from `{comment}`, `{comment_italic}`, or `{comment_box}`
+//! directives).
+//!
+//! # Directive Classification
+//!
+//! Directives are classified into typed variants via [`DirectiveKind`]. The
+//! parser resolves short aliases (e.g., `t` → `title`, `soc` →
+//! `start_of_chorus`) and normalizes names to their canonical lowercase form.
+//! Metadata directives automatically populate the [`Song::metadata`] fields.
 //!
 //! # Convenience Function
 //!
@@ -13,6 +21,7 @@
 //! use chordpro_core::parser::parse;
 //!
 //! let song = parse("{title: Hello}\n[Am]World").unwrap();
+//! assert_eq!(song.metadata.title.as_deref(), Some("Hello"));
 //! assert_eq!(song.lines.len(), 2);
 //! ```
 //!
@@ -22,7 +31,9 @@
 //! problems such as unclosed directives, unclosed chords, or empty directives.
 
 use crate::Lexer;
-use crate::ast::{Chord, Directive, Line, LyricsLine, LyricsSegment, Song};
+use crate::ast::{
+    Chord, CommentStyle, Directive, DirectiveKind, Line, LyricsLine, LyricsSegment, Song,
+};
 use crate::token::{Span, Token, TokenKind};
 
 // ---------------------------------------------------------------------------
@@ -86,6 +97,10 @@ impl Parser {
 
     /// Parses the token stream and returns a [`Song`] AST.
     ///
+    /// Metadata directives (`{title}`, `{artist}`, etc.) automatically
+    /// populate [`Song::metadata`]. Comment directives are converted to
+    /// [`Line::Comment`] with the appropriate [`CommentStyle`].
+    ///
     /// Returns a [`ParseError`] if the token stream contains structural
     /// problems (e.g., unclosed directives or chords).
     pub fn parse(mut self) -> Result<Song, ParseError> {
@@ -93,10 +108,64 @@ impl Parser {
 
         while !self.is_at_end() {
             let line = self.parse_line()?;
+
+            // If this is a metadata directive, populate the Song's metadata.
+            if let Line::Directive(ref directive) = line {
+                Self::populate_metadata(&mut song.metadata, directive);
+            }
+
             song.lines.push(line);
         }
 
         Ok(song)
+    }
+
+    // -- Metadata population ------------------------------------------------
+
+    /// Populates metadata fields from a directive, if it is a known metadata
+    /// directive with a value.
+    fn populate_metadata(metadata: &mut crate::ast::Metadata, directive: &Directive) {
+        let value = match directive.value.as_deref() {
+            Some(v) => v.to_string(),
+            None => return, // Metadata directives without values are no-ops.
+        };
+
+        match directive.kind {
+            DirectiveKind::Title => {
+                metadata.title = Some(value);
+            }
+            DirectiveKind::Subtitle => {
+                metadata.subtitles.push(value);
+            }
+            DirectiveKind::Artist => {
+                metadata.artists.push(value);
+            }
+            DirectiveKind::Composer => {
+                metadata.composers.push(value);
+            }
+            DirectiveKind::Lyricist => {
+                metadata.lyricists.push(value);
+            }
+            DirectiveKind::Album => {
+                metadata.album = Some(value);
+            }
+            DirectiveKind::Year => {
+                metadata.year = Some(value);
+            }
+            DirectiveKind::Key => {
+                metadata.key = Some(value);
+            }
+            DirectiveKind::Tempo => {
+                metadata.tempo = Some(value);
+            }
+            DirectiveKind::Time => {
+                metadata.time = Some(value);
+            }
+            DirectiveKind::Capo => {
+                metadata.capo = Some(value);
+            }
+            _ => {}
+        }
     }
 
     // -- Token navigation ---------------------------------------------------
@@ -150,7 +219,8 @@ impl Parser {
     /// Parses a directive line: `{name}` or `{name: value}`.
     ///
     /// After parsing the directive itself, consumes the trailing Newline (or
-    /// verifies Eof).
+    /// verifies Eof). Comment directives (`comment`, `comment_italic`,
+    /// `comment_box`) are converted to [`Line::Comment`].
     fn parse_directive_line(&mut self) -> Result<Line, ParseError> {
         let open_span = self.peek().span;
         self.advance(); // consume DirectiveOpen
@@ -182,15 +252,27 @@ impl Parser {
         let name = name.trim().to_string();
         let value = value.map(|v| v.trim().to_string());
 
-        // Check for the special `comment` / `c` directive -> Line::Comment.
-        if name == "comment" || name == "c" {
+        // Classify the directive.
+        let kind = DirectiveKind::from_name(&name);
+
+        // Comment directives → Line::Comment with appropriate style.
+        if kind.is_comment() {
+            let style = match kind {
+                DirectiveKind::Comment => CommentStyle::Normal,
+                DirectiveKind::CommentItalic => CommentStyle::Italic,
+                DirectiveKind::CommentBox => CommentStyle::Boxed,
+                _ => unreachable!(),
+            };
             let text = value.unwrap_or_default();
-            return Ok(Line::Comment(text));
+            return Ok(Line::Comment(style, text));
         }
 
-        let directive = match value {
-            Some(v) => Directive::with_value(name, v),
-            None => Directive::name_only(name),
+        // Build the directive with canonical name and kind.
+        let canonical = kind.canonical_name().to_string();
+        let directive = Directive {
+            name: canonical,
+            value,
+            kind,
         };
 
         Ok(Line::Directive(directive))
@@ -394,6 +476,7 @@ impl Parser {
 /// Parses a ChordPro source string into a [`Song`] AST.
 ///
 /// This is a convenience function that runs the lexer and parser in sequence.
+/// Metadata directives populate [`Song::metadata`] automatically.
 ///
 /// # Errors
 ///
@@ -405,6 +488,7 @@ impl Parser {
 /// use chordpro_core::parser::parse;
 ///
 /// let song = parse("{title: Hello World}\n[Am]La la la").unwrap();
+/// assert_eq!(song.metadata.title.as_deref(), Some("Hello World"));
 /// assert_eq!(song.lines.len(), 2);
 /// ```
 pub fn parse(input: &str) -> Result<Song, ParseError> {
@@ -419,7 +503,9 @@ pub fn parse(input: &str) -> Result<Song, ParseError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Chord, Directive, Line, LyricsLine, LyricsSegment};
+    use crate::ast::{
+        Chord, CommentStyle, Directive, DirectiveKind, Line, LyricsLine, LyricsSegment,
+    };
 
     // -- Helper -------------------------------------------------------------
 
@@ -617,7 +703,13 @@ mod tests {
         // The lexer emits multiple Colon tokens; the parser joins extra colons.
         let result = lines("{comment: time 10:30}");
         // This is the `comment` directive, so it becomes Line::Comment.
-        assert_eq!(result, vec![Line::Comment("time 10:30".to_string())]);
+        assert_eq!(
+            result,
+            vec![Line::Comment(
+                CommentStyle::Normal,
+                "time 10:30".to_string()
+            )]
+        );
     }
 
     #[test]
@@ -639,19 +731,329 @@ mod tests {
     #[test]
     fn comment_directive_full_name() {
         let result = lines("{comment: This is a comment}");
-        assert_eq!(result, vec![Line::Comment("This is a comment".to_string())],);
+        assert_eq!(
+            result,
+            vec![Line::Comment(
+                CommentStyle::Normal,
+                "This is a comment".to_string()
+            )],
+        );
     }
 
     #[test]
     fn comment_directive_short_name() {
         let result = lines("{c: Short comment}");
-        assert_eq!(result, vec![Line::Comment("Short comment".to_string())],);
+        assert_eq!(
+            result,
+            vec![Line::Comment(
+                CommentStyle::Normal,
+                "Short comment".to_string()
+            )],
+        );
     }
 
     #[test]
     fn comment_directive_no_value() {
         let result = lines("{comment}");
-        assert_eq!(result, vec![Line::Comment(String::new())]);
+        assert_eq!(
+            result,
+            vec![Line::Comment(CommentStyle::Normal, String::new())]
+        );
+    }
+
+    #[test]
+    fn comment_italic_directive() {
+        let result = lines("{comment_italic: Softly}");
+        assert_eq!(
+            result,
+            vec![Line::Comment(CommentStyle::Italic, "Softly".to_string())],
+        );
+    }
+
+    #[test]
+    fn comment_italic_short_name() {
+        let result = lines("{ci: Softly}");
+        assert_eq!(
+            result,
+            vec![Line::Comment(CommentStyle::Italic, "Softly".to_string())],
+        );
+    }
+
+    #[test]
+    fn comment_box_directive() {
+        let result = lines("{comment_box: Important}");
+        assert_eq!(
+            result,
+            vec![Line::Comment(CommentStyle::Boxed, "Important".to_string())],
+        );
+    }
+
+    #[test]
+    fn comment_box_short_name() {
+        let result = lines("{cb: Important}");
+        assert_eq!(
+            result,
+            vec![Line::Comment(CommentStyle::Boxed, "Important".to_string())],
+        );
+    }
+
+    // -- Directive classification -------------------------------------------
+
+    #[test]
+    fn directive_short_alias_title() {
+        let result = lines("{t: My Song}");
+        let expected = Directive::with_value("title", "My Song");
+        assert_eq!(result, vec![Line::Directive(expected)]);
+    }
+
+    #[test]
+    fn directive_short_alias_subtitle() {
+        let result = lines("{st: Alternate}");
+        let expected = Directive::with_value("subtitle", "Alternate");
+        assert_eq!(result, vec![Line::Directive(expected)]);
+    }
+
+    #[test]
+    fn directive_short_alias_soc() {
+        let result = lines("{soc}");
+        let expected = Directive::name_only("start_of_chorus");
+        assert_eq!(result, vec![Line::Directive(expected)]);
+    }
+
+    #[test]
+    fn directive_short_alias_eoc() {
+        let result = lines("{eoc}");
+        let expected = Directive::name_only("end_of_chorus");
+        assert_eq!(result, vec![Line::Directive(expected)]);
+    }
+
+    #[test]
+    fn directive_case_insensitive() {
+        let result = lines("{TITLE: Upper}");
+        let expected = Directive::with_value("title", "Upper");
+        assert_eq!(result, vec![Line::Directive(expected)]);
+    }
+
+    #[test]
+    fn directive_mixed_case() {
+        let result = lines("{Start_Of_Chorus}");
+        let expected = Directive::name_only("start_of_chorus");
+        assert_eq!(result, vec![Line::Directive(expected)]);
+    }
+
+    #[test]
+    fn directive_unknown_preserved() {
+        let result = lines("{my_custom: value}");
+        assert_eq!(
+            result,
+            vec![Line::Directive(Directive {
+                name: "my_custom".to_string(),
+                value: Some("value".to_string()),
+                kind: DirectiveKind::Unknown("my_custom".to_string()),
+            })],
+        );
+    }
+
+    #[test]
+    fn directive_kind_on_parsed_directive() {
+        let song = parse("{title: Test}").unwrap();
+        if let Line::Directive(ref d) = song.lines[0] {
+            assert_eq!(d.kind, DirectiveKind::Title);
+            assert_eq!(d.name, "title");
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    // -- Environment directives (all variants) ------------------------------
+
+    #[test]
+    fn environment_directives_long_form() {
+        let cases = vec![
+            (
+                "{start_of_chorus}",
+                "start_of_chorus",
+                DirectiveKind::StartOfChorus,
+            ),
+            (
+                "{end_of_chorus}",
+                "end_of_chorus",
+                DirectiveKind::EndOfChorus,
+            ),
+            (
+                "{start_of_verse}",
+                "start_of_verse",
+                DirectiveKind::StartOfVerse,
+            ),
+            ("{end_of_verse}", "end_of_verse", DirectiveKind::EndOfVerse),
+            (
+                "{start_of_bridge}",
+                "start_of_bridge",
+                DirectiveKind::StartOfBridge,
+            ),
+            (
+                "{end_of_bridge}",
+                "end_of_bridge",
+                DirectiveKind::EndOfBridge,
+            ),
+            ("{start_of_tab}", "start_of_tab", DirectiveKind::StartOfTab),
+            ("{end_of_tab}", "end_of_tab", DirectiveKind::EndOfTab),
+        ];
+
+        for (input, expected_name, expected_kind) in cases {
+            let result = lines(input);
+            if let Line::Directive(ref d) = result[0] {
+                assert_eq!(d.name, expected_name, "failed for input: {input}");
+                assert_eq!(d.kind, expected_kind, "failed for input: {input}");
+            } else {
+                panic!("expected directive for input: {input}");
+            }
+        }
+    }
+
+    #[test]
+    fn environment_directives_short_form() {
+        let cases = vec![
+            ("{soc}", "start_of_chorus", DirectiveKind::StartOfChorus),
+            ("{eoc}", "end_of_chorus", DirectiveKind::EndOfChorus),
+            ("{sov}", "start_of_verse", DirectiveKind::StartOfVerse),
+            ("{eov}", "end_of_verse", DirectiveKind::EndOfVerse),
+            ("{sob}", "start_of_bridge", DirectiveKind::StartOfBridge),
+            ("{eob}", "end_of_bridge", DirectiveKind::EndOfBridge),
+            ("{sot}", "start_of_tab", DirectiveKind::StartOfTab),
+            ("{eot}", "end_of_tab", DirectiveKind::EndOfTab),
+        ];
+
+        for (input, expected_name, expected_kind) in cases {
+            let result = lines(input);
+            if let Line::Directive(ref d) = result[0] {
+                assert_eq!(d.name, expected_name, "failed for input: {input}");
+                assert_eq!(d.kind, expected_kind, "failed for input: {input}");
+            } else {
+                panic!("expected directive for input: {input}");
+            }
+        }
+    }
+
+    // -- Metadata population ------------------------------------------------
+
+    #[test]
+    fn metadata_title_populated() {
+        let song = parse("{title: Amazing Grace}").unwrap();
+        assert_eq!(song.metadata.title.as_deref(), Some("Amazing Grace"));
+    }
+
+    #[test]
+    fn metadata_title_via_short_alias() {
+        let song = parse("{t: Amazing Grace}").unwrap();
+        assert_eq!(song.metadata.title.as_deref(), Some("Amazing Grace"));
+    }
+
+    #[test]
+    fn metadata_subtitle_populated() {
+        let song = parse("{subtitle: How sweet}\n{st: The sound}").unwrap();
+        assert_eq!(song.metadata.subtitles, vec!["How sweet", "The sound"]);
+    }
+
+    #[test]
+    fn metadata_artist_populated() {
+        let song = parse("{artist: John Newton}").unwrap();
+        assert_eq!(song.metadata.artists, vec!["John Newton"]);
+    }
+
+    #[test]
+    fn metadata_multiple_artists() {
+        let song = parse("{artist: John}\n{artist: Jane}").unwrap();
+        assert_eq!(song.metadata.artists, vec!["John", "Jane"]);
+    }
+
+    #[test]
+    fn metadata_composer_populated() {
+        let song = parse("{composer: Bach}").unwrap();
+        assert_eq!(song.metadata.composers, vec!["Bach"]);
+    }
+
+    #[test]
+    fn metadata_lyricist_populated() {
+        let song = parse("{lyricist: Someone}").unwrap();
+        assert_eq!(song.metadata.lyricists, vec!["Someone"]);
+    }
+
+    #[test]
+    fn metadata_album_populated() {
+        let song = parse("{album: Greatest Hits}").unwrap();
+        assert_eq!(song.metadata.album.as_deref(), Some("Greatest Hits"));
+    }
+
+    #[test]
+    fn metadata_year_populated() {
+        let song = parse("{year: 1779}").unwrap();
+        assert_eq!(song.metadata.year.as_deref(), Some("1779"));
+    }
+
+    #[test]
+    fn metadata_key_populated() {
+        let song = parse("{key: G}").unwrap();
+        assert_eq!(song.metadata.key.as_deref(), Some("G"));
+    }
+
+    #[test]
+    fn metadata_tempo_populated() {
+        let song = parse("{tempo: 120}").unwrap();
+        assert_eq!(song.metadata.tempo.as_deref(), Some("120"));
+    }
+
+    #[test]
+    fn metadata_time_populated() {
+        let song = parse("{time: 3/4}").unwrap();
+        assert_eq!(song.metadata.time.as_deref(), Some("3/4"));
+    }
+
+    #[test]
+    fn metadata_capo_populated() {
+        let song = parse("{capo: 2}").unwrap();
+        assert_eq!(song.metadata.capo.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn metadata_case_insensitive() {
+        let song = parse("{TITLE: Upper Case}").unwrap();
+        assert_eq!(song.metadata.title.as_deref(), Some("Upper Case"));
+    }
+
+    #[test]
+    fn metadata_not_populated_without_value() {
+        let song = parse("{title}").unwrap();
+        assert_eq!(song.metadata.title, None);
+    }
+
+    #[test]
+    fn metadata_all_fields_populated() {
+        let input = "\
+{title: My Song}
+{subtitle: A Sub}
+{artist: An Artist}
+{composer: A Composer}
+{lyricist: A Lyricist}
+{album: An Album}
+{year: 2024}
+{key: Am}
+{tempo: 100}
+{time: 4/4}
+{capo: 3}";
+
+        let song = parse(input).unwrap();
+        assert_eq!(song.metadata.title.as_deref(), Some("My Song"));
+        assert_eq!(song.metadata.subtitles, vec!["A Sub"]);
+        assert_eq!(song.metadata.artists, vec!["An Artist"]);
+        assert_eq!(song.metadata.composers, vec!["A Composer"]);
+        assert_eq!(song.metadata.lyricists, vec!["A Lyricist"]);
+        assert_eq!(song.metadata.album.as_deref(), Some("An Album"));
+        assert_eq!(song.metadata.year.as_deref(), Some("2024"));
+        assert_eq!(song.metadata.key.as_deref(), Some("Am"));
+        assert_eq!(song.metadata.tempo.as_deref(), Some("100"));
+        assert_eq!(song.metadata.time.as_deref(), Some("4/4"));
+        assert_eq!(song.metadata.capo.as_deref(), Some("3"));
     }
 
     // -- Error cases --------------------------------------------------------
@@ -728,6 +1130,10 @@ mod tests {
         let song = parse(input).unwrap();
         assert_eq!(song.lines.len(), 5);
 
+        // Metadata populated
+        assert_eq!(song.metadata.title.as_deref(), Some("Amazing Grace"));
+        assert_eq!(song.metadata.artists, vec!["John Newton"]);
+
         // First line: title directive
         assert_eq!(
             song.lines[0],
@@ -798,7 +1204,10 @@ mod tests {
             song.lines[0],
             Line::Directive(Directive::with_value("title", "Test"))
         );
-        assert_eq!(song.lines[1], Line::Comment("Intro".to_string()));
+        assert_eq!(
+            song.lines[1],
+            Line::Comment(CommentStyle::Normal, "Intro".to_string())
+        );
         assert_eq!(song.lines[2], Line::Empty);
         assert!(matches!(song.lines[3], Line::Lyrics(_)));
     }
@@ -854,22 +1263,16 @@ mod tests {
     }
 
     #[test]
-    fn metadata_not_populated_by_parser() {
-        // The parser does not populate metadata — that is a separate concern.
-        let song = parse("{title: Test}").unwrap();
-        assert_eq!(song.metadata.title, None);
-    }
-
-    #[test]
     fn multiple_colons_in_directive_value() {
         // Extra colons after the first are treated as part of the value.
         let result = lines("{meta: key:value:extra}");
         assert_eq!(
             result,
-            vec![Line::Directive(Directive::with_value(
-                "meta",
-                "key:value:extra"
-            ))],
+            vec![Line::Directive(Directive {
+                name: "meta".to_string(),
+                value: Some("key:value:extra".to_string()),
+                kind: DirectiveKind::Unknown("meta".to_string()),
+            })],
         );
     }
 
@@ -887,7 +1290,13 @@ mod tests {
     fn directive_with_brackets_in_value() {
         // Brackets inside a directive value are included literally.
         let result = lines("{comment: play [Am] here}");
-        assert_eq!(result, vec![Line::Comment("play [Am] here".to_string())],);
+        assert_eq!(
+            result,
+            vec![Line::Comment(
+                CommentStyle::Normal,
+                "play [Am] here".to_string()
+            )],
+        );
     }
 
     #[test]
@@ -922,5 +1331,73 @@ mod tests {
         let tokens = Lexer::new("[C]Hello").tokenize();
         let song = Parser::new(tokens).parse().unwrap();
         assert_eq!(song.lines.len(), 1);
+    }
+
+    // -- Full song with all directive types ---------------------------------
+
+    #[test]
+    fn full_song_with_all_directive_types() {
+        let input = "\
+{t: Amazing Grace}
+{st: A Hymn}
+{artist: John Newton}
+{key: G}
+{tempo: 80}
+{time: 3/4}
+{capo: 2}
+{comment: Verse 1}
+{ci: Play softly}
+{cb: Key change ahead}
+{soc}
+[G]Amazing [G7]grace
+{eoc}";
+
+        let song = parse(input).unwrap();
+
+        // Metadata checks
+        assert_eq!(song.metadata.title.as_deref(), Some("Amazing Grace"));
+        assert_eq!(song.metadata.subtitles, vec!["A Hymn"]);
+        assert_eq!(song.metadata.artists, vec!["John Newton"]);
+        assert_eq!(song.metadata.key.as_deref(), Some("G"));
+        assert_eq!(song.metadata.tempo.as_deref(), Some("80"));
+        assert_eq!(song.metadata.time.as_deref(), Some("3/4"));
+        assert_eq!(song.metadata.capo.as_deref(), Some("2"));
+
+        // Line type checks
+        assert_eq!(song.lines.len(), 13);
+        assert!(matches!(song.lines[0], Line::Directive(_))); // title
+        assert!(matches!(song.lines[1], Line::Directive(_))); // subtitle
+        assert!(matches!(song.lines[2], Line::Directive(_))); // artist
+        assert!(matches!(song.lines[3], Line::Directive(_))); // key
+        assert!(matches!(song.lines[4], Line::Directive(_))); // tempo
+        assert!(matches!(song.lines[5], Line::Directive(_))); // time
+        assert!(matches!(song.lines[6], Line::Directive(_))); // capo
+        assert_eq!(
+            song.lines[7],
+            Line::Comment(CommentStyle::Normal, "Verse 1".to_string())
+        );
+        assert_eq!(
+            song.lines[8],
+            Line::Comment(CommentStyle::Italic, "Play softly".to_string())
+        );
+        assert_eq!(
+            song.lines[9],
+            Line::Comment(CommentStyle::Boxed, "Key change ahead".to_string())
+        );
+        // soc
+        if let Line::Directive(ref d) = song.lines[10] {
+            assert_eq!(d.kind, DirectiveKind::StartOfChorus);
+            assert_eq!(d.name, "start_of_chorus");
+        } else {
+            panic!("expected directive");
+        }
+        assert!(matches!(song.lines[11], Line::Lyrics(_))); // lyrics
+        // eoc
+        if let Line::Directive(ref d) = song.lines[12] {
+            assert_eq!(d.kind, DirectiveKind::EndOfChorus);
+            assert_eq!(d.name, "end_of_chorus");
+        } else {
+            panic!("expected directive");
+        }
     }
 }
