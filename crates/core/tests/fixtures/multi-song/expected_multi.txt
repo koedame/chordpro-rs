@@ -1,0 +1,302 @@
+[
+    Song {
+        metadata: Metadata {
+            title: Some(
+                "Amazing Grace",
+            ),
+            subtitles: [],
+            artists: [
+                "John Newton",
+            ],
+            composers: [],
+            lyricists: [],
+            album: None,
+            year: None,
+            key: Some(
+                "G",
+            ),
+            tempo: None,
+            time: None,
+            capo: None,
+            sort_title: None,
+            sort_artist: None,
+            arrangers: [],
+            copyright: None,
+            duration: None,
+            tags: [],
+            custom: [],
+        },
+        lines: [
+            Directive(
+                Directive {
+                    name: "title",
+                    value: Some(
+                        "Amazing Grace",
+                    ),
+                    kind: Title,
+                },
+            ),
+            Directive(
+                Directive {
+                    name: "artist",
+                    value: Some(
+                        "John Newton",
+                    ),
+                    kind: Artist,
+                },
+            ),
+            Directive(
+                Directive {
+                    name: "key",
+                    value: Some(
+                        "G",
+                    ),
+                    kind: Key,
+                },
+            ),
+            Directive(
+                Directive {
+                    name: "start_of_verse",
+                    value: None,
+                    kind: StartOfVerse,
+                },
+            ),
+            Lyrics(
+                LyricsLine {
+                    segments: [
+                        LyricsSegment {
+                            chord: Some(
+                                Chord {
+                                    name: "G",
+                                    detail: Some(
+                                        ChordDetail {
+                                            root: G,
+                                            root_accidental: None,
+                                            quality: Major,
+                                            extension: None,
+                                            bass_note: None,
+                                        },
+                                    ),
+                                },
+                            ),
+                            text: "Amazing ",
+                            spans: [],
+                        },
+                        LyricsSegment {
+                            chord: Some(
+                                Chord {
+                                    name: "G7",
+                                    detail: Some(
+                                        ChordDetail {
+                                            root: G,
+                                            root_accidental: None,
+                                            quality: Major,
+                                            extension: Some(
+                                                "7",
+                                            ),
+                                            bass_note: None,
+                                        },
+                                    ),
+                                },
+                            ),
+                            text: "grace, how ",
+                            spans: [],
+                        },
+                        LyricsSegment {
+                            chord: Some(
+                                Chord {
+                                    name: "C",
+                                    detail: Some(
+                                        ChordDetail {
+                                            root: C,
+                                            root_accidental: None,
+                                            quality: Major,
+                                            extension: None,
+                                            bass_note: None,
+                                        },
+                                    ),
+                                },
+                            ),
+                            text: "sweet the ",
+                            spans: [],
+                        },
+                        LyricsSegment {
+                            chord: Some(
+                                Chord {
+                                    name: "G",
+                                    detail: Some(
+                                        ChordDetail {
+                                            root: G,
+                                            root_accidental: None,
+                                            quality: Major,
+                                            extension: None,
+                                            bass_note: None,
+                                        },
+                                    ),
+                                },
+                            ),
+                            text: "sound",
+                            spans: [],
+                        },
+                    ],
+                },
+            ),
+            Directive(
+                Directive {
+                    name: "end_of_verse",
+                    value: None,
+                    kind: EndOfVerse,
+                },
+            ),
+        ],
+    },
+    Song {
+        metadata: Metadata {
+            title: Some(
+                "Danny Boy",
+            ),
+            subtitles: [],
+            artists: [
+                "Traditional",
+            ],
+            composers: [],
+            lyricists: [],
+            album: None,
+            year: None,
+            key: Some(
+                "C",
+            ),
+            tempo: None,
+            time: None,
+            capo: None,
+            sort_title: None,
+            sort_artist: None,
+            arrangers: [],
+            copyright: None,
+            duration: None,
+            tags: [],
+            custom: [],
+        },
+        lines: [
+            Directive(
+                Directive {
+                    name: "title",
+                    value: Some(
+                        "Danny Boy",
+                    ),
+                    kind: Title,
+                },
+            ),
+            Directive(
+                Directive {
+                    name: "artist",
+                    value: Some(
+                        "Traditional",
+                    ),
+                    kind: Artist,
+                },
+            ),
+            Directive(
+                Directive {
+                    name: "key",
+                    value: Some(
+                        "C",
+                    ),
+                    kind: Key,
+                },
+            ),
+            Directive(
+                Directive {
+                    name: "start_of_verse",
+                    value: None,
+                    kind: StartOfVerse,
+                },
+            ),
+            Lyrics(
+                LyricsLine {
+                    segments: [
+                        LyricsSegment {
+                            chord: Some(
+                                Chord {
+                                    name: "C",
+                                    detail: Some(
+                                        ChordDetail {
+                                            root: C,
+                                            root_accidental: None,
+                                            quality: Major,
+                                            extension: None,
+                                            bass_note: None,
+                                        },
+                                    ),
+                                },
+                            ),
+                            text: "Oh Danny ",
+                            spans: [],
+                        },
+                        LyricsSegment {
+                            chord: Some(
+                                Chord {
+                                    name: "F",
+                                    detail: Some(
+                                        ChordDetail {
+                                            root: F,
+                                            root_accidental: None,
+                                            quality: Major,
+                                            extension: None,
+                                            bass_note: None,
+                                        },
+                                    ),
+                                },
+                            ),
+                            text: "Boy, the ",
+                            spans: [],
+                        },
+                        LyricsSegment {
+                            chord: Some(
+                                Chord {
+                                    name: "C",
+                                    detail: Some(
+                                        ChordDetail {
+                                            root: C,
+                                            root_accidental: None,
+                                            quality: Major,
+                                            extension: None,
+                                            bass_note: None,
+                                        },
+                                    ),
+                                },
+                            ),
+                            text: "pipes are ",
+                            spans: [],
+                        },
+                        LyricsSegment {
+                            chord: Some(
+                                Chord {
+                                    name: "Am",
+                                    detail: Some(
+                                        ChordDetail {
+                                            root: A,
+                                            root_accidental: None,
+                                            quality: Minor,
+                                            extension: None,
+                                            bass_note: None,
+                                        },
+                                    ),
+                                },
+                            ),
+                            text: "calling",
+                            spans: [],
+                        },
+                    ],
+                },
+            ),
+            Directive(
+                Directive {
+                    name: "end_of_verse",
+                    value: None,
+                    kind: EndOfVerse,
+                },
+            ),
+        ],
+    },
+]

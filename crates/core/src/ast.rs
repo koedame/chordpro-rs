@@ -596,6 +596,10 @@ pub enum DirectiveKind {
     /// `{toccolour}` / `{toccolor}` — sets the color for table of contents.
     TocColour,
 
+    // -- Song boundary directives --------------------------------------------
+    /// `{new_song}` / `{ns}` — marks the start of a new song in a multi-song file.
+    NewSong,
+
     // -- Chord definition directives ----------------------------------------
     /// `{define}` — defines a custom chord fingering.
     Define,
@@ -679,6 +683,9 @@ impl DirectiveKind {
 
             // Transpose
             "transpose" => Self::Transpose,
+
+            // Song boundary
+            "new_song" | "ns" => Self::NewSong,
 
             // Formatting (comments)
             "comment" | "c" => Self::Comment,
@@ -802,6 +809,7 @@ impl DirectiveKind {
             Self::Duration => "duration",
             Self::Tag => "tag",
             Self::Transpose => "transpose",
+            Self::NewSong => "new_song",
             Self::Comment => "comment",
             Self::CommentItalic => "comment_italic",
             Self::CommentBox => "comment_box",
