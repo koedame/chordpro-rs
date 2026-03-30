@@ -1,0 +1,132 @@
+Song {
+    metadata: Metadata {
+        title: Some(
+            "Test Song",
+        ),
+        subtitles: [],
+        artists: [
+            "Jane Doe",
+        ],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: None,
+        tempo: None,
+        time: None,
+        capo: None,
+        sort_title: Some(
+            "Song, Test",
+        ),
+        sort_artist: Some(
+            "Doe, Jane",
+        ),
+        arrangers: [
+            "John Smith",
+            "Bob Jones",
+        ],
+        copyright: Some(
+            "2024 Jane Doe",
+        ),
+        duration: Some(
+            "3:45",
+        ),
+        tags: [
+            "folk",
+            "acoustic",
+        ],
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "title",
+                value: Some(
+                    "Test Song",
+                ),
+                kind: Title,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "sorttitle",
+                value: Some(
+                    "Song, Test",
+                ),
+                kind: SortTitle,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "artist",
+                value: Some(
+                    "Jane Doe",
+                ),
+                kind: Artist,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "sortartist",
+                value: Some(
+                    "Doe, Jane",
+                ),
+                kind: SortArtist,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "arranger",
+                value: Some(
+                    "John Smith",
+                ),
+                kind: Arranger,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "arranger",
+                value: Some(
+                    "Bob Jones",
+                ),
+                kind: Arranger,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "copyright",
+                value: Some(
+                    "2024 Jane Doe",
+                ),
+                kind: Copyright,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "duration",
+                value: Some(
+                    "3:45",
+                ),
+                kind: Duration,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "tag",
+                value: Some(
+                    "folk",
+                ),
+                kind: Tag,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "tag",
+                value: Some(
+                    "acoustic",
+                ),
+                kind: Tag,
+            },
+        ),
+    ],
+}

@@ -271,6 +271,24 @@ impl Parser {
             DirectiveKind::Capo => {
                 metadata.capo = Some(value);
             }
+            DirectiveKind::SortTitle => {
+                metadata.sort_title = Some(value);
+            }
+            DirectiveKind::SortArtist => {
+                metadata.sort_artist = Some(value);
+            }
+            DirectiveKind::Arranger => {
+                metadata.arrangers.push(value);
+            }
+            DirectiveKind::Copyright => {
+                metadata.copyright = Some(value);
+            }
+            DirectiveKind::Duration => {
+                metadata.duration = Some(value);
+            }
+            DirectiveKind::Tag => {
+                metadata.tags.push(value);
+            }
             DirectiveKind::Unknown(ref name) => {
                 metadata.custom.push((name.clone(), value));
             }

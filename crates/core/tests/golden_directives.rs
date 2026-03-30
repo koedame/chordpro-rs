@@ -204,3 +204,106 @@ fn short_aliases_golden_test() {
         panic!("expected end_of_tab directive");
     }
 }
+
+#[test]
+fn extended_metadata_directives_golden_test() {
+    let input = fixture("metadata-extended/input.cho");
+    let song = parse(&input).expect("parse failed");
+
+    // -- Metadata -----------------------------------------------------------
+    assert_eq!(song.metadata.title.as_deref(), Some("Test Song"));
+    assert_eq!(song.metadata.sort_title.as_deref(), Some("Song, Test"));
+    assert_eq!(song.metadata.artists, vec!["Jane Doe"]);
+    assert_eq!(song.metadata.sort_artist.as_deref(), Some("Doe, Jane"));
+    assert_eq!(song.metadata.arrangers, vec!["John Smith", "Bob Jones"]);
+    assert_eq!(song.metadata.copyright.as_deref(), Some("2024 Jane Doe"));
+    assert_eq!(song.metadata.duration.as_deref(), Some("3:45"));
+    assert_eq!(song.metadata.tags, vec!["folk", "acoustic"]);
+
+    // -- Directive classification -------------------------------------------
+    // Line 0: title
+    if let Line::Directive(ref d) = song.lines[0] {
+        assert_eq!(d.kind, DirectiveKind::Title);
+        assert_eq!(d.name, "title");
+    } else {
+        panic!("expected title directive");
+    }
+
+    // Line 1: sorttitle
+    if let Line::Directive(ref d) = song.lines[1] {
+        assert_eq!(d.kind, DirectiveKind::SortTitle);
+        assert_eq!(d.name, "sorttitle");
+        assert_eq!(d.value.as_deref(), Some("Song, Test"));
+    } else {
+        panic!("expected sorttitle directive");
+    }
+
+    // Line 3: sortartist
+    if let Line::Directive(ref d) = song.lines[3] {
+        assert_eq!(d.kind, DirectiveKind::SortArtist);
+        assert_eq!(d.name, "sortartist");
+        assert_eq!(d.value.as_deref(), Some("Doe, Jane"));
+    } else {
+        panic!("expected sortartist directive");
+    }
+
+    // Line 4: arranger (first)
+    if let Line::Directive(ref d) = song.lines[4] {
+        assert_eq!(d.kind, DirectiveKind::Arranger);
+        assert_eq!(d.name, "arranger");
+        assert_eq!(d.value.as_deref(), Some("John Smith"));
+    } else {
+        panic!("expected arranger directive");
+    }
+
+    // Line 5: arranger (second)
+    if let Line::Directive(ref d) = song.lines[5] {
+        assert_eq!(d.kind, DirectiveKind::Arranger);
+        assert_eq!(d.value.as_deref(), Some("Bob Jones"));
+    } else {
+        panic!("expected second arranger directive");
+    }
+
+    // Line 6: copyright
+    if let Line::Directive(ref d) = song.lines[6] {
+        assert_eq!(d.kind, DirectiveKind::Copyright);
+        assert_eq!(d.name, "copyright");
+        assert_eq!(d.value.as_deref(), Some("2024 Jane Doe"));
+    } else {
+        panic!("expected copyright directive");
+    }
+
+    // Line 7: duration
+    if let Line::Directive(ref d) = song.lines[7] {
+        assert_eq!(d.kind, DirectiveKind::Duration);
+        assert_eq!(d.name, "duration");
+        assert_eq!(d.value.as_deref(), Some("3:45"));
+    } else {
+        panic!("expected duration directive");
+    }
+
+    // Line 8: tag (first)
+    if let Line::Directive(ref d) = song.lines[8] {
+        assert_eq!(d.kind, DirectiveKind::Tag);
+        assert_eq!(d.name, "tag");
+        assert_eq!(d.value.as_deref(), Some("folk"));
+    } else {
+        panic!("expected tag directive");
+    }
+
+    // Line 9: tag (second)
+    if let Line::Directive(ref d) = song.lines[9] {
+        assert_eq!(d.kind, DirectiveKind::Tag);
+        assert_eq!(d.value.as_deref(), Some("acoustic"));
+    } else {
+        panic!("expected second tag directive");
+    }
+
+    // All new metadata directives should be classified as metadata
+    assert!(DirectiveKind::SortTitle.is_metadata());
+    assert!(DirectiveKind::SortArtist.is_metadata());
+    assert!(DirectiveKind::Arranger.is_metadata());
+    assert!(DirectiveKind::Copyright.is_metadata());
+    assert!(DirectiveKind::Duration.is_metadata());
+    assert!(DirectiveKind::Tag.is_metadata());
+}
