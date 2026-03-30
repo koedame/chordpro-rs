@@ -1,0 +1,36 @@
+Song {
+    metadata: Metadata {
+        title: None,
+        subtitles: [],
+        artists: [],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: None,
+        tempo: None,
+        time: None,
+        capo: None,
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "define",
+                value: Some(
+                    "Asus4 base-fret 1 frets x 0 2 2 3 0",
+                ),
+                kind: Define,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "chord",
+                value: Some(
+                    "Asus4",
+                ),
+                kind: ChordDirective,
+            },
+        ),
+    ],
+}
