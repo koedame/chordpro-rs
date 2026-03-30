@@ -5,6 +5,7 @@ pub mod chord;
 pub mod lexer;
 pub mod parser;
 pub mod token;
+pub mod transpose;
 
 // Re-export key types for convenience.
 pub use chord::{Accidental, ChordDetail, ChordQuality, Note, parse_chord};

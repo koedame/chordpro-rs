@@ -23,6 +23,10 @@ struct Cli {
     /// Output format.
     #[arg(short, long, default_value = "text")]
     format: Format,
+
+    /// Transpose all chords by N semitones (positive = up, negative = down).
+    #[arg(short, long, default_value = "0")]
+    transpose: i8,
 }
 
 /// Supported output formats.
@@ -48,7 +52,7 @@ fn main() -> ExitCode {
             }
         };
 
-        match render(&cli.format, &input) {
+        match render(&cli.format, &input, cli.transpose) {
             Ok(text) => {
                 // Separate multiple files with a blank line.
                 if !combined_output.is_empty() {
@@ -79,17 +83,25 @@ fn main() -> ExitCode {
     }
 }
 
-/// Render input using the selected format.
-fn render(format: &Format, input: &str) -> Result<String, String> {
+/// Parse, optionally transpose, and render input using the selected format.
+fn render(format: &Format, input: &str, transpose: i8) -> Result<String, String> {
+    let song = chordpro_core::parse(input).map_err(|e| {
+        format!(
+            "parse error at line {} column {}: {}",
+            e.line(),
+            e.column(),
+            e.message
+        )
+    })?;
+
+    let song = if transpose != 0 {
+        chordpro_core::transpose::transpose(&song, transpose)
+    } else {
+        song
+    };
+
     match format {
-        Format::Text => chordpro_render_text::try_render(input).map_err(|e| {
-            format!(
-                "parse error at line {} column {}: {}",
-                e.line(),
-                e.column(),
-                e.message
-            )
-        }),
+        Format::Text => Ok(chordpro_render_text::render_song(&song)),
     }
 }
 

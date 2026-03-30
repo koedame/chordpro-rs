@@ -11,6 +11,7 @@ name = "chordpro"
 path = "src/main.rs"
 
 [dependencies]
+chordpro-core = { path = "../core" }
 chordpro-render-text = { path = "../render-text" }
 clap = { version = "4", features = ["derive"] }
 

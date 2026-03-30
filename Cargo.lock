@@ -116,6 +116,7 @@ name = "chordpro"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",
+ "chordpro-core",
  "chordpro-render-text",
  "clap",
  "predicates",
