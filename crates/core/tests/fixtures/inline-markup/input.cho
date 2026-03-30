@@ -6,3 +6,7 @@
 <b><i>bold and italic</i></b>
 [C]Mixed <bold>long bold</bold> and <italic>long italic</italic>
 Plain text no markup
+<span foreground="red">red text</span>
+<span font_family="Serif" size="14" foreground="blue" weight="bold">styled</span>
+<b><span foreground="green">bold green</span></b>
+<span foreground="red"><i>italic red</i></span>
