@@ -607,7 +607,6 @@ impl DirectiveKind {
             "start_of_grid" | "sog" => Self::StartOfGrid,
             "end_of_grid" | "eog" => Self::EndOfGrid,
 
-
             // Font, size, and color
             "textfont" | "tf" => Self::TextFont,
             "textsize" | "ts" => Self::TextSize,
