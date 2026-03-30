@@ -28,7 +28,9 @@ This is a Cargo workspace with three crates:
 |---|---|---|---|
 | `chordpro-core` | `crates/core` | lib | *none* (zero external deps) |
 | `chordpro-render-text` | `crates/render-text` | lib | `chordpro-core` |
-| `chordpro` (CLI) | `crates/cli` | bin | `chordpro-core`, `chordpro-render-text` |
+| `chordpro-render-html` | `crates/render-html` | lib | `chordpro-core` |
+| `chordpro-render-pdf` | `crates/render-pdf` | lib | `chordpro-core` |
+| `chordpro` (CLI) | `crates/cli` | bin | `chordpro-core`, `chordpro-render-text`, `chordpro-render-html`, `chordpro-render-pdf` |
 
 ### Dependency Policy
 
