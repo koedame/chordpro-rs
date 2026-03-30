@@ -128,6 +128,13 @@ name = "chordpro-core"
 version = "0.1.0"
 
 [[package]]
+name = "chordpro-render-pdf"
+version = "0.1.0"
+dependencies = [
+ "chordpro-core",
+]
+
+[[package]]
 name = "chordpro-render-text"
 version = "0.1.0"
 dependencies = [
