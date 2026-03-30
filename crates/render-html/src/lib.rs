@@ -4,6 +4,7 @@
 //! embedded CSS for chord-over-lyrics layout.
 
 use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
+use chordpro_core::transpose::transpose_chord;
 
 /// Render a [`Song`] AST to an HTML5 document string.
 ///
@@ -11,7 +12,17 @@ use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
 /// that positions chords above their corresponding lyrics.
 #[must_use]
 pub fn render_song(song: &Song) -> String {
+    render_song_with_transpose(song, 0)
+}
+
+/// Render a [`Song`] AST to an HTML5 document with an additional CLI transposition offset.
+///
+/// The `cli_transpose` parameter is added to any in-file `{transpose}` directive
+/// values, allowing the CLI `--transpose` flag to combine with in-file directives.
+#[must_use]
+pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
     let mut html = String::new();
+    let mut transpose_offset: i8 = cli_transpose;
 
     let title = song.metadata.title.as_deref().unwrap_or("Untitled");
     html.push_str(&format!(
@@ -26,9 +37,16 @@ pub fn render_song(song: &Song) -> String {
 
     for line in &song.lines {
         match line {
-            Line::Lyrics(lyrics_line) => render_lyrics(lyrics_line, &mut html),
+            Line::Lyrics(lyrics_line) => render_lyrics(lyrics_line, transpose_offset, &mut html),
             Line::Directive(directive) => {
-                if !directive.kind.is_metadata() {
+                if directive.kind == DirectiveKind::Transpose {
+                    let file_offset: i8 = directive
+                        .value
+                        .as_deref()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    transpose_offset = file_offset.saturating_add(cli_transpose);
+                } else if !directive.kind.is_metadata() {
                     render_directive(directive, &mut html);
                 }
             }
@@ -128,16 +146,22 @@ fn render_metadata(metadata: &chordpro_core::ast::Metadata, html: &mut String) {
 ///
 /// Each chord+text pair is wrapped in a `<span class="chord-block">` with
 /// the chord in `<span class="chord">` and the text in `<span class="lyrics">`.
-fn render_lyrics(lyrics_line: &LyricsLine, html: &mut String) {
+fn render_lyrics(lyrics_line: &LyricsLine, transpose_offset: i8, html: &mut String) {
     html.push_str("<div class=\"line\">");
 
     for segment in &lyrics_line.segments {
         html.push_str("<span class=\"chord-block\">");
 
         if let Some(chord) = &segment.chord {
+            let display_name = if transpose_offset != 0 {
+                let transposed = transpose_chord(chord, transpose_offset);
+                transposed.name
+            } else {
+                chord.name.clone()
+            };
             html.push_str(&format!(
                 "<span class=\"chord\">{}</span>",
-                escape(&chord.name)
+                escape(&display_name)
             ));
         } else if lyrics_line.has_chords() {
             // Empty chord placeholder to maintain vertical alignment.
@@ -339,5 +363,41 @@ mod tests {
     fn test_empty_line() {
         let html = render("Line one\n\nLine two");
         assert!(html.contains("empty-line"));
+    }
+}
+
+#[cfg(test)]
+mod transpose_tests {
+    use super::*;
+
+    #[test]
+    fn test_transpose_directive_up_2() {
+        let input = "{transpose: 2}\n[G]Hello [C]world";
+        let song = chordpro_core::parse(input).unwrap();
+        let html = render_song(&song);
+        // G+2=A, C+2=D
+        assert!(html.contains("<span class=\"chord\">A</span>"));
+        assert!(html.contains("<span class=\"chord\">D</span>"));
+        assert!(!html.contains("<span class=\"chord\">G</span>"));
+        assert!(!html.contains("<span class=\"chord\">C</span>"));
+    }
+
+    #[test]
+    fn test_transpose_directive_replaces_previous() {
+        let input = "{transpose: 2}\n[G]First\n{transpose: 0}\n[G]Second";
+        let song = chordpro_core::parse(input).unwrap();
+        let html = render_song(&song);
+        // First G transposed +2 = A, second G at 0 = G
+        assert!(html.contains("<span class=\"chord\">A</span>"));
+        assert!(html.contains("<span class=\"chord\">G</span>"));
+    }
+
+    #[test]
+    fn test_transpose_directive_with_cli_offset() {
+        let input = "{transpose: 2}\n[C]Hello";
+        let song = chordpro_core::parse(input).unwrap();
+        let html = render_song_with_transpose(&song, 3);
+        // 2 + 3 = 5, C+5=F
+        assert!(html.contains("<span class=\"chord\">F</span>"));
     }
 }

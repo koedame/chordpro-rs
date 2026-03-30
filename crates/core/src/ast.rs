@@ -400,6 +400,10 @@ pub enum DirectiveKind {
     /// `{tag}` — a tag for categorization.
     Tag,
 
+    // -- Transpose directive ------------------------------------------------
+    /// `{transpose}` — in-file transposition offset in semitones.
+    Transpose,
+
     // -- Formatting directives (comment) ------------------------------------
     /// `{comment}` / `{c}` — a normal comment.
     Comment,
@@ -465,6 +469,9 @@ impl DirectiveKind {
             "duration" => Self::Duration,
             "tag" => Self::Tag,
 
+            // Transpose
+            "transpose" => Self::Transpose,
+
             // Formatting (comments)
             "comment" | "c" => Self::Comment,
             "comment_italic" | "ci" => Self::CommentItalic,
@@ -512,6 +519,7 @@ impl DirectiveKind {
             Self::Copyright => "copyright",
             Self::Duration => "duration",
             Self::Tag => "tag",
+            Self::Transpose => "transpose",
             Self::Comment => "comment",
             Self::CommentItalic => "comment_italic",
             Self::CommentBox => "comment_box",

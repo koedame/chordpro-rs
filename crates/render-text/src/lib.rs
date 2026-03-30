@@ -4,6 +4,7 @@
 //! formatted plain text with chords aligned above their corresponding lyrics.
 
 use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
+use chordpro_core::transpose::transpose_chord;
 
 /// Render a [`Song`] AST to plain text.
 ///
@@ -18,17 +19,37 @@ use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
 /// - Empty lines are preserved.
 #[must_use]
 pub fn render_song(song: &Song) -> String {
+    render_song_with_transpose(song, 0)
+}
+
+/// Render a [`Song`] AST to plain text with an additional CLI transposition offset.
+///
+/// The `cli_transpose` parameter is added to any in-file `{transpose}` directive
+/// values, allowing the CLI `--transpose` flag to combine with in-file directives.
+#[must_use]
+pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
     let mut output = Vec::new();
+    let mut transpose_offset: i8 = cli_transpose;
 
     render_metadata(&song.metadata, &mut output);
 
     for line in &song.lines {
         match line {
-            Line::Lyrics(lyrics_line) => render_lyrics(lyrics_line, &mut output),
+            Line::Lyrics(lyrics_line) => {
+                render_lyrics(lyrics_line, transpose_offset, &mut output);
+            }
             Line::Directive(directive) => {
-                // Metadata directives are already rendered via song.metadata;
-                // skip them in the body to avoid duplicate output.
-                if !directive.kind.is_metadata() {
+                if directive.kind == DirectiveKind::Transpose {
+                    // {transpose: N} sets the in-file transposition amount.
+                    // A subsequent {transpose} replaces (not adds to) the
+                    // previous in-file value. CLI offset is always added.
+                    let file_offset: i8 = directive
+                        .value
+                        .as_deref()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    transpose_offset = file_offset.saturating_add(cli_transpose);
+                } else if !directive.kind.is_metadata() {
                     render_directive(directive, &mut output);
                 }
             }
@@ -112,7 +133,7 @@ fn render_metadata(metadata: &chordpro_core::ast::Metadata, output: &mut Vec<Str
 ///
 /// Alignment is based on character count (`chars().count()`), which correctly
 /// handles multi-byte UTF-8 sequences in lyrics text.
-fn render_lyrics(lyrics_line: &LyricsLine, output: &mut Vec<String>) {
+fn render_lyrics(lyrics_line: &LyricsLine, transpose_offset: i8, output: &mut Vec<String>) {
     if !lyrics_line.has_chords() {
         output.push(lyrics_line.text());
         return;
@@ -122,7 +143,17 @@ fn render_lyrics(lyrics_line: &LyricsLine, output: &mut Vec<String>) {
     let mut lyric_line = String::new();
 
     for segment in &lyrics_line.segments {
-        let chord_name = segment.chord.as_ref().map_or("", |c| c.name.as_str());
+        let transposed;
+        let chord_name = if transpose_offset != 0 {
+            if let Some(chord) = &segment.chord {
+                transposed = transpose_chord(chord, transpose_offset);
+                transposed.name.as_str()
+            } else {
+                ""
+            }
+        } else {
+            segment.chord.as_ref().map_or("", |c| c.name.as_str())
+        };
         let text = &segment.text;
 
         let chord_len = chord_name.chars().count();
@@ -419,5 +450,102 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.line(), 1);
+    }
+}
+
+#[cfg(test)]
+mod transpose_tests {
+    use super::*;
+
+    #[test]
+    fn test_transpose_directive_up_2() {
+        let input = "{transpose: 2}\n[G]Hello [C]world";
+        let song = chordpro_core::parse(input).unwrap();
+        let output = render_song(&song);
+        // G+2=A, C+2=D
+        assert_eq!(output, "A     D\nHello world\n");
+    }
+
+    #[test]
+    fn test_transpose_directive_down_3() {
+        let input = "{transpose: -3}\n[Am]Hello [Em]world";
+        let song = chordpro_core::parse(input).unwrap();
+        let output = render_song(&song);
+        // Am-3=F#m, Em-3=C#m
+        assert_eq!(output, "F#m   C#m\nHello world\n");
+    }
+
+    #[test]
+    fn test_transpose_directive_replaces_previous() {
+        let input = "{transpose: 2}\n[G]First\n{transpose: -1}\n[G]Second";
+        let song = chordpro_core::parse(input).unwrap();
+        let output = render_song(&song);
+        // First line: G+2=A, Second line: G-1=F#
+        assert!(output.contains("A\nFirst"));
+        assert!(output.contains("F#\nSecond"));
+    }
+
+    #[test]
+    fn test_transpose_directive_zero_resets() {
+        let input = "{transpose: 5}\n[C]Up\n{transpose: 0}\n[C]Normal";
+        let song = chordpro_core::parse(input).unwrap();
+        let output = render_song(&song);
+        // First line: C+5=F, Second line: C+0=C
+        assert!(output.contains("F\nUp"));
+        assert!(output.contains("C\nNormal"));
+    }
+
+    #[test]
+    fn test_transpose_directive_with_cli_offset() {
+        let input = "{transpose: 2}\n[C]Hello";
+        let song = chordpro_core::parse(input).unwrap();
+        let output = render_song_with_transpose(&song, 3);
+        // In-file 2 + CLI 3 = 5 total. C+5=F
+        assert!(output.contains("F\nHello"));
+    }
+
+    #[test]
+    fn test_cli_transpose_without_directive() {
+        let input = "[G]Hello [C]world";
+        let song = chordpro_core::parse(input).unwrap();
+        let output = render_song_with_transpose(&song, 2);
+        // CLI offset only: G+2=A, C+2=D
+        assert_eq!(output, "A     D\nHello world\n");
+    }
+
+    #[test]
+    fn test_transpose_directive_replaces_with_cli_additive() {
+        let input = "{transpose: 2}\n[C]First\n{transpose: -1}\n[C]Second";
+        let song = chordpro_core::parse(input).unwrap();
+        let output = render_song_with_transpose(&song, 1);
+        // First: 2+1=3, C+3=D#. Second: -1+1=0, C+0=C
+        assert!(output.contains("D#\nFirst"));
+        assert!(output.contains("C\nSecond"));
+    }
+
+    #[test]
+    fn test_transpose_no_chord_lyrics_unaffected() {
+        let input = "{transpose: 5}\nPlain lyrics no chords";
+        let song = chordpro_core::parse(input).unwrap();
+        let output = render_song(&song);
+        assert_eq!(output, "Plain lyrics no chords\n");
+    }
+
+    #[test]
+    fn test_transpose_invalid_value_treated_as_zero() {
+        let input = "{transpose: abc}\n[G]Hello";
+        let song = chordpro_core::parse(input).unwrap();
+        let output = render_song(&song);
+        // Invalid value -> treated as 0
+        assert!(output.contains("G\nHello"));
+    }
+
+    #[test]
+    fn test_transpose_no_value_treated_as_zero() {
+        let input = "{transpose}\n[G]Hello";
+        let song = chordpro_core::parse(input).unwrap();
+        let output = render_song(&song);
+        // No value -> treated as 0
+        assert!(output.contains("G\nHello"));
     }
 }

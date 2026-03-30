@@ -2047,4 +2047,57 @@ mod tests {
         assert_eq!(result.errors.len(), 1);
         assert!(result.errors[0].message.contains("exceeds maximum"));
     }
+
+    #[test]
+    fn transpose_directive_parsed() {
+        let song = parse("{transpose: 2}").expect("parse failed");
+        assert_eq!(song.lines.len(), 1);
+        if let Line::Directive(ref d) = song.lines[0] {
+            assert_eq!(d.kind, DirectiveKind::Transpose);
+            assert_eq!(d.name, "transpose");
+            assert_eq!(d.value.as_deref(), Some("2"));
+        } else {
+            panic!("expected transpose directive");
+        }
+    }
+
+    #[test]
+    fn transpose_directive_negative_value() {
+        let song = parse("{transpose: -3}").expect("parse failed");
+        if let Line::Directive(ref d) = song.lines[0] {
+            assert_eq!(d.kind, DirectiveKind::Transpose);
+            assert_eq!(d.value.as_deref(), Some("-3"));
+        } else {
+            panic!("expected transpose directive");
+        }
+    }
+
+    #[test]
+    fn transpose_directive_no_value() {
+        let song = parse("{transpose}").expect("parse failed");
+        if let Line::Directive(ref d) = song.lines[0] {
+            assert_eq!(d.kind, DirectiveKind::Transpose);
+            assert!(d.value.is_none());
+        } else {
+            panic!("expected transpose directive");
+        }
+    }
+
+    #[test]
+    fn transpose_directive_is_not_metadata() {
+        let kind = DirectiveKind::Transpose;
+        assert!(!kind.is_metadata());
+    }
+
+    #[test]
+    fn transpose_directive_case_insensitive() {
+        let song = parse("{Transpose: 5}").expect("parse failed");
+        if let Line::Directive(ref d) = song.lines[0] {
+            assert_eq!(d.kind, DirectiveKind::Transpose);
+            assert_eq!(d.name, "transpose");
+            assert_eq!(d.value.as_deref(), Some("5"));
+        } else {
+            panic!("expected transpose directive");
+        }
+    }
 }

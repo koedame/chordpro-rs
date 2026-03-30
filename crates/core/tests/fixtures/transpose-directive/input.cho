@@ -1,0 +1,7 @@
+{title: Transpose Test}
+{transpose: 2}
+[G]Hello [C]world
+{transpose: -3}
+[Am]Second [Em]line
+{transpose: 0}
+[D]Back to [A]normal

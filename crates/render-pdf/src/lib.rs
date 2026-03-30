@@ -5,6 +5,7 @@
 //! generated directly from raw PDF object structures.
 
 use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
+use chordpro_core::transpose::transpose_chord;
 
 // ---------------------------------------------------------------------------
 // Layout constants (units: PDF points, 1 pt = 1/72 inch)
@@ -45,7 +46,17 @@ const CHAR_WIDTH: f32 = 0.52;
 /// fonts. No external font files are required.
 #[must_use]
 pub fn render_song(song: &Song) -> Vec<u8> {
+    render_song_with_transpose(song, 0)
+}
+
+/// Render a [`Song`] AST to PDF bytes with an additional CLI transposition offset.
+///
+/// The `cli_transpose` parameter is added to any in-file `{transpose}` directive
+/// values, allowing the CLI `--transpose` flag to combine with in-file directives.
+#[must_use]
+pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
     let mut page = PageBuilder::new();
+    let mut transpose_offset: i8 = cli_transpose;
 
     // Title
     if let Some(title) = &song.metadata.title {
@@ -60,11 +71,18 @@ pub fn render_song(song: &Song) -> Vec<u8> {
 
     for line in &song.lines {
         match line {
-            Line::Lyrics(lyrics) => render_lyrics(lyrics, &mut page),
-            Line::Directive(d) if !d.kind.is_metadata() => render_directive(d, &mut page),
+            Line::Lyrics(lyrics) => render_lyrics(lyrics, transpose_offset, &mut page),
+            Line::Directive(d) => {
+                if d.kind == DirectiveKind::Transpose {
+                    let file_offset: i8 =
+                        d.value.as_deref().and_then(|v| v.parse().ok()).unwrap_or(0);
+                    transpose_offset = file_offset.saturating_add(cli_transpose);
+                } else if !d.kind.is_metadata() {
+                    render_directive(d, &mut page);
+                }
+            }
             Line::Comment(style, text) => render_comment(*style, text, &mut page),
             Line::Empty => page.newline(LINE_GAP * 2.0),
-            _ => {}
         }
     }
 
@@ -81,7 +99,7 @@ pub fn try_render(input: &str) -> Result<Vec<u8>, chordpro_core::ParseError> {
 // Content builders
 // ---------------------------------------------------------------------------
 
-fn render_lyrics(lyrics: &LyricsLine, page: &mut PageBuilder) {
+fn render_lyrics(lyrics: &LyricsLine, transpose_offset: i8, page: &mut PageBuilder) {
     if !lyrics.has_chords() {
         page.text(&lyrics.text(), Font::Helvetica, LYRICS_SIZE);
         page.newline(LYRICS_SIZE + LINE_GAP);
@@ -93,11 +111,21 @@ fn render_lyrics(lyrics: &LyricsLine, page: &mut PageBuilder) {
     let start_y = page.y;
     for seg in &lyrics.segments {
         if let Some(chord) = &seg.chord {
-            page.text_at(&chord.name, Font::HelveticaBold, CHORD_SIZE, x, start_y);
+            let display_name = if transpose_offset != 0 {
+                transpose_chord(chord, transpose_offset).name
+            } else {
+                chord.name.clone()
+            };
+            page.text_at(&display_name, Font::HelveticaBold, CHORD_SIZE, x, start_y);
         }
         let text_w = seg.text.chars().count() as f32 * LYRICS_SIZE * CHAR_WIDTH;
         let chord_w = seg.chord.as_ref().map_or(0.0, |c| {
-            c.name.chars().count() as f32 * CHORD_SIZE * CHAR_WIDTH + 2.0
+            let display_len = if transpose_offset != 0 {
+                transpose_chord(c, transpose_offset).name.chars().count()
+            } else {
+                c.name.chars().count()
+            };
+            display_len as f32 * CHORD_SIZE * CHAR_WIDTH + 2.0
         });
         x += text_w.max(chord_w);
     }
@@ -381,5 +409,32 @@ mod tests {
         assert_eq!(pdf_escape("hello"), "hello");
         assert_eq!(pdf_escape("a(b)c"), "a\\(b\\)c");
         assert_eq!(pdf_escape("back\\slash"), "back\\\\slash");
+    }
+}
+
+#[cfg(test)]
+mod transpose_tests {
+    use super::*;
+
+    #[test]
+    fn test_transpose_directive_produces_pdf() {
+        let input = "{transpose: 2}\n[G]Hello [C]world";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF"));
+        // Transposed chords should appear in the PDF content: G+2=A, C+2=D
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("(A)"));
+        assert!(content.contains("(D)"));
+    }
+
+    #[test]
+    fn test_transpose_with_cli_offset() {
+        let input = "{transpose: 2}\n[C]Hello";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song_with_transpose(&song, 3);
+        // 2+3=5, C+5=F
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("(F)"));
     }
 }

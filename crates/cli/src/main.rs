@@ -72,12 +72,6 @@ fn main() -> ExitCode {
             }
         };
 
-        let song = if cli.transpose != 0 {
-            chordpro_core::transpose::transpose(&song, cli.transpose)
-        } else {
-            song
-        };
-
         if is_binary {
             // PDF: each file produces a separate PDF. For multiple files,
             // only the last one is written (PDF doesn't support concatenation).
@@ -86,11 +80,15 @@ fn main() -> ExitCode {
                     "warning: PDF output supports one file at a time; previous output discarded"
                 );
             }
-            combined_bytes = chordpro_render_pdf::render_song(&song);
+            combined_bytes = chordpro_render_pdf::render_song_with_transpose(&song, cli.transpose);
         } else {
             let text = match cli.format {
-                Format::Text => chordpro_render_text::render_song(&song),
-                Format::Html => chordpro_render_html::render_song(&song),
+                Format::Text => {
+                    chordpro_render_text::render_song_with_transpose(&song, cli.transpose)
+                }
+                Format::Html => {
+                    chordpro_render_html::render_song_with_transpose(&song, cli.transpose)
+                }
                 Format::Pdf => unreachable!(),
             };
             if !combined_text.is_empty() {
