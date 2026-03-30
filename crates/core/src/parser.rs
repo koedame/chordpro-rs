@@ -146,6 +146,9 @@ pub struct Parser {
     /// Whether we are currently inside a `{start_of_tab}`..`{end_of_tab}` block.
     /// Lines inside tab sections are treated as verbatim text (no chord parsing).
     in_tab: bool,
+    /// Whether we are currently inside a `{start_of_grid}`..`{end_of_grid}` block.
+    /// Lines inside grid sections are treated as verbatim text (no chord parsing).
+    in_grid: bool,
 }
 
 impl Parser {
@@ -156,6 +159,7 @@ impl Parser {
             tokens,
             pos: 0,
             in_tab: false,
+            in_grid: false,
         }
     }
 
@@ -357,24 +361,29 @@ impl Parser {
             }
             // A directive line: starts with `{`.
             TokenKind::DirectiveOpen => {
-                // Inside tab: only {end_of_tab}/{eot} is parsed as a directive;
+                // Inside tab/grid: only the matching end directive is parsed;
                 // everything else is verbatim text.
                 if self.in_tab && !self.is_end_of_tab_ahead() {
                     return self.parse_verbatim_line();
                 }
+                if self.in_grid && !self.is_end_of_grid_ahead() {
+                    return self.parse_verbatim_line();
+                }
                 let line = self.parse_directive_line()?;
-                // Track tab section state.
+                // Track tab/grid section state.
                 if let Line::Directive(ref d) = line {
                     match d.kind {
                         DirectiveKind::StartOfTab => self.in_tab = true,
                         DirectiveKind::EndOfTab => self.in_tab = false,
+                        DirectiveKind::StartOfGrid => self.in_grid = true,
+                        DirectiveKind::EndOfGrid => self.in_grid = false,
                         _ => {}
                     }
                 }
                 Ok(line)
             }
-            // Inside a tab section: treat as verbatim text (no chord parsing).
-            _ if self.in_tab => self.parse_verbatim_line(),
+            // Inside a tab or grid section: treat as verbatim text (no chord parsing).
+            _ if self.in_tab || self.in_grid => self.parse_verbatim_line(),
             // Anything else: a lyrics line.
             _ => self.parse_lyrics_line(),
         }
@@ -396,7 +405,23 @@ impl Parser {
         false
     }
 
-    /// Parses a verbatim text line (used inside tab sections).
+    /// Peeks ahead to check if the current `{` starts an `{end_of_grid}` or
+    /// `{eog}` directive. This allows the parser to exit grid mode.
+    ///
+    /// Only checks the next token after `DirectiveOpen` for the directive
+    /// name text; the full directive structure (including `DirectiveClose`)
+    /// is validated later by `parse_directive_line`.
+    fn is_end_of_grid_ahead(&self) -> bool {
+        if self.pos + 1 < self.tokens.len() {
+            if let TokenKind::Text(ref text) = self.tokens[self.pos + 1].kind {
+                let trimmed = text.trim().to_ascii_lowercase();
+                return trimmed == "end_of_grid" || trimmed == "eog";
+            }
+        }
+        false
+    }
+
+    /// Parses a verbatim text line (used inside tab and grid sections).
     ///
     /// All tokens until the next Newline/Eof are collected as plain text,
     /// with no chord bracket interpretation. The result is a lyrics line
@@ -2022,6 +2047,75 @@ mod tests {
             assert_eq!(l.segments[0].chord.as_ref().unwrap().name, "Am");
         } else {
             panic!("expected lyrics line with chord after tab section");
+        }
+    }
+
+    // --- Grid verbatim (#107) ---
+
+    #[test]
+    fn grid_content_is_verbatim() {
+        // Brackets inside grid should NOT be parsed as chords.
+        let song = parse("{start_of_grid}\n| [Am] . | [C] . |\n{end_of_grid}").unwrap();
+        // Line 0: start_of_grid directive
+        // Line 1: verbatim text line
+        // Line 2: end_of_grid directive
+        if let Line::Lyrics(ref l) = song.lines[1] {
+            assert_eq!(l.segments.len(), 1);
+            assert!(l.segments[0].chord.is_none());
+            assert_eq!(l.segments[0].text, "| [Am] . | [C] . |");
+        } else {
+            panic!("expected lyrics line for grid content");
+        }
+    }
+
+    #[test]
+    fn grid_content_preserves_braces() {
+        let song = parse("{sog}\n{some text}\n{eog}").unwrap();
+        if let Line::Lyrics(ref l) = song.lines[1] {
+            assert_eq!(l.segments[0].text, "{some text}");
+        } else {
+            panic!("expected lyrics line for grid content");
+        }
+    }
+
+    #[test]
+    fn chords_parsed_after_grid_ends() {
+        // After end_of_grid, chord parsing should resume.
+        let song = parse("{sog}\n| Am . |\n{eog}\n[Am]Hello").unwrap();
+        // Line 3 should be a lyrics line with a chord.
+        if let Line::Lyrics(ref l) = song.lines[3] {
+            assert!(l.segments[0].chord.is_some());
+            assert_eq!(l.segments[0].chord.as_ref().unwrap().name, "Am");
+        } else {
+            panic!("expected lyrics line with chord after grid section");
+        }
+    }
+
+    #[test]
+    fn grid_short_aliases_sog_eog() {
+        let song = parse("{sog}\n| Am |\n{eog}").unwrap();
+        if let Line::Directive(ref d) = song.lines[0] {
+            assert_eq!(d.kind, DirectiveKind::StartOfGrid);
+            assert_eq!(d.name, "start_of_grid");
+        } else {
+            panic!("expected start_of_grid directive");
+        }
+        if let Line::Directive(ref d) = song.lines[2] {
+            assert_eq!(d.kind, DirectiveKind::EndOfGrid);
+            assert_eq!(d.name, "end_of_grid");
+        } else {
+            panic!("expected end_of_grid directive");
+        }
+    }
+
+    #[test]
+    fn grid_with_label() {
+        let song = parse("{start_of_grid: Intro}\n| Am . | C . |\n{end_of_grid}").unwrap();
+        if let Line::Directive(ref d) = song.lines[0] {
+            assert_eq!(d.kind, DirectiveKind::StartOfGrid);
+            assert_eq!(d.value.as_deref(), Some("Intro"));
+        } else {
+            panic!("expected start_of_grid directive with label");
         }
     }
 

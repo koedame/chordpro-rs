@@ -142,6 +142,7 @@ fn render_directive(directive: &chordpro_core::ast::Directive, page: &mut PageBu
         DirectiveKind::StartOfVerse => Some("Verse".to_string()),
         DirectiveKind::StartOfBridge => Some("Bridge".to_string()),
         DirectiveKind::StartOfTab => Some("Tab".to_string()),
+        DirectiveKind::StartOfGrid => Some("Grid".to_string()),
         DirectiveKind::StartOfSection(section_name) => Some(capitalize(section_name)),
         _ => None,
     };
@@ -421,6 +422,16 @@ mod tests {
         assert_eq!(pdf_escape("back\\slash"), "back\\\\slash");
     }
 
+    #[test]
+    fn test_render_grid_section() {
+        let input = "{start_of_grid}\n| Am . | C . |\n{end_of_grid}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF"));
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("Grid"));
+    }
+
     // --- Custom sections (#108) ---
 
     #[test]
@@ -445,6 +456,15 @@ mod tests {
         let bytes = render_song(&song);
         let content = String::from_utf8_lossy(&bytes);
         assert!(content.contains("Solo"));
+    }
+
+    #[test]
+    fn test_render_grid_section_with_label() {
+        let input = "{start_of_grid: Intro}\n| Am |\n{end_of_grid}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("Grid: Intro"));
     }
 }
 

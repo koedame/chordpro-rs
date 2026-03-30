@@ -197,6 +197,9 @@ fn render_directive(directive: &chordpro_core::ast::Directive, html: &mut String
         DirectiveKind::StartOfTab => {
             render_section_open("tab", "Tab", &directive.value, html);
         }
+        DirectiveKind::StartOfGrid => {
+            render_section_open("grid", "Grid", &directive.value, html);
+        }
         DirectiveKind::StartOfSection(section_name) => {
             let class = format!("section-{}", section_name);
             let label = capitalize(section_name);
@@ -206,6 +209,7 @@ fn render_directive(directive: &chordpro_core::ast::Directive, html: &mut String
         | DirectiveKind::EndOfVerse
         | DirectiveKind::EndOfBridge
         | DirectiveKind::EndOfTab
+        | DirectiveKind::EndOfGrid
         | DirectiveKind::EndOfSection(_) => {
             html.push_str("</section>\n");
         }
@@ -380,6 +384,14 @@ mod tests {
         assert!(html.contains("empty-line"));
     }
 
+    #[test]
+    fn test_render_grid_section() {
+        let html = render("{start_of_grid}\n| Am . | C . |\n{end_of_grid}");
+        assert!(html.contains("<section class=\"grid\">"));
+        assert!(html.contains("Grid"));
+        assert!(html.contains("</section>"));
+    }
+
     // --- Custom sections (#108) ---
 
     #[test]
@@ -387,6 +399,20 @@ mod tests {
         let html = render("{start_of_intro}\n[Am]Da da\n{end_of_intro}");
         assert!(html.contains("<section class=\"section-intro\">"));
         assert!(html.contains("Intro"));
+        assert!(html.contains("</section>"));
+    }
+
+    #[test]
+    fn test_render_grid_section_with_label() {
+        let html = render("{start_of_grid: Intro}\n| Am |\n{end_of_grid}");
+        assert!(html.contains("<section class=\"grid\">"));
+        assert!(html.contains("Grid: Intro"));
+    }
+
+    #[test]
+    fn test_render_grid_short_alias() {
+        let html = render("{sog}\n| G . |\n{eog}");
+        assert!(html.contains("<section class=\"grid\">"));
         assert!(html.contains("</section>"));
     }
 

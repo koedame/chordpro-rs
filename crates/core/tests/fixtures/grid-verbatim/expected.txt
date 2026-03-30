@@ -1,0 +1,81 @@
+Song {
+    metadata: Metadata {
+        title: None,
+        subtitles: [],
+        artists: [],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: None,
+        tempo: None,
+        time: None,
+        capo: None,
+        sort_title: None,
+        sort_artist: None,
+        arrangers: [],
+        copyright: None,
+        duration: None,
+        tags: [],
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "start_of_grid",
+                value: None,
+                kind: StartOfGrid,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "| Am . | C . |",
+                    },
+                ],
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "| G  . | D . |",
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "end_of_grid",
+                value: None,
+                kind: EndOfGrid,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "Am",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: A,
+                                        root_accidental: None,
+                                        quality: Minor,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                            },
+                        ),
+                        text: "After grid",
+                    },
+                ],
+            },
+        ),
+    ],
+}

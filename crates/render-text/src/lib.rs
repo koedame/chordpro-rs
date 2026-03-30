@@ -213,6 +213,9 @@ fn render_directive(directive: &chordpro_core::ast::Directive, output: &mut Vec<
         DirectiveKind::StartOfTab => {
             render_section_header("Tab", &directive.value, output);
         }
+        DirectiveKind::StartOfGrid => {
+            render_section_header("Grid", &directive.value, output);
+        }
         DirectiveKind::StartOfSection(section_name) => {
             // Capitalize the first letter of the section name for display.
             let label = capitalize(section_name);
@@ -464,6 +467,27 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.line(), 1);
+    }
+
+    #[test]
+    fn test_render_grid_section() {
+        let input = "{start_of_grid}\n| Am . | C . |\n{end_of_grid}";
+        let output = render(input);
+        assert_eq!(output, "[Grid]\n| Am . | C . |\n");
+    }
+
+    #[test]
+    fn test_render_grid_section_with_label() {
+        let input = "{start_of_grid: Intro}\n| Am . | C . |\n{end_of_grid}";
+        let output = render(input);
+        assert_eq!(output, "[Grid: Intro]\n| Am . | C . |\n");
+    }
+
+    #[test]
+    fn test_render_grid_short_alias() {
+        let input = "{sog}\n| G . | D . |\n{eog}";
+        let output = render(input);
+        assert_eq!(output, "[Grid]\n| G . | D . |\n");
     }
 
     // --- Custom sections (#108) ---

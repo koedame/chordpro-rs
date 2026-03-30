@@ -203,6 +203,22 @@ fn short_aliases_golden_test() {
     } else {
         panic!("expected end_of_tab directive");
     }
+
+    // {sog} -> start_of_grid
+    if let Line::Directive(ref d) = song.lines[17] {
+        assert_eq!(d.kind, DirectiveKind::StartOfGrid);
+        assert_eq!(d.name, "start_of_grid");
+    } else {
+        panic!("expected start_of_grid directive");
+    }
+
+    // {eog} -> end_of_grid
+    if let Line::Directive(ref d) = song.lines[19] {
+        assert_eq!(d.kind, DirectiveKind::EndOfGrid);
+        assert_eq!(d.name, "end_of_grid");
+    } else {
+        panic!("expected end_of_grid directive");
+    }
 }
 
 #[test]

@@ -429,6 +429,10 @@ pub enum DirectiveKind {
     StartOfTab,
     /// `{end_of_tab}` / `{eot}` — ends a tab section.
     EndOfTab,
+    /// `{start_of_grid}` / `{sog}` — begins a grid section.
+    StartOfGrid,
+    /// `{end_of_grid}` / `{eog}` — ends a grid section.
+    EndOfGrid,
 
     // -- Chord definition directives ----------------------------------------
     /// `{define}` — defines a custom chord fingering.
@@ -502,6 +506,8 @@ impl DirectiveKind {
             "end_of_bridge" | "eob" => Self::EndOfBridge,
             "start_of_tab" | "sot" => Self::StartOfTab,
             "end_of_tab" | "eot" => Self::EndOfTab,
+            "start_of_grid" | "sog" => Self::StartOfGrid,
+            "end_of_grid" | "eog" => Self::EndOfGrid,
 
             // Chord definitions
             "define" => Self::Define,
@@ -562,6 +568,8 @@ impl DirectiveKind {
             Self::EndOfBridge => "end_of_bridge",
             Self::StartOfTab => "start_of_tab",
             Self::EndOfTab => "end_of_tab",
+            Self::StartOfGrid => "start_of_grid",
+            Self::EndOfGrid => "end_of_grid",
             Self::Define => "define",
             Self::ChordDirective => "chord",
             Self::Meta(_) => "meta",
@@ -626,6 +634,7 @@ impl DirectiveKind {
                 | Self::StartOfVerse
                 | Self::StartOfBridge
                 | Self::StartOfTab
+                | Self::StartOfGrid
                 | Self::StartOfSection(_)
         )
     }
@@ -639,6 +648,7 @@ impl DirectiveKind {
                 | Self::EndOfVerse
                 | Self::EndOfBridge
                 | Self::EndOfTab
+                | Self::EndOfGrid
                 | Self::EndOfSection(_)
         )
     }
@@ -1362,5 +1372,46 @@ mod tests {
         } else {
             panic!("Expected Line::Lyrics");
         }
+    }
+
+    #[test]
+    fn directive_kind_grid_from_name() {
+        assert_eq!(
+            DirectiveKind::from_name("start_of_grid"),
+            DirectiveKind::StartOfGrid
+        );
+        assert_eq!(
+            DirectiveKind::from_name("end_of_grid"),
+            DirectiveKind::EndOfGrid
+        );
+        assert_eq!(DirectiveKind::from_name("sog"), DirectiveKind::StartOfGrid);
+        assert_eq!(DirectiveKind::from_name("eog"), DirectiveKind::EndOfGrid);
+    }
+
+    #[test]
+    fn directive_kind_grid_canonical_name() {
+        assert_eq!(DirectiveKind::StartOfGrid.canonical_name(), "start_of_grid");
+        assert_eq!(DirectiveKind::EndOfGrid.canonical_name(), "end_of_grid");
+    }
+
+    #[test]
+    fn directive_kind_grid_is_section() {
+        assert!(DirectiveKind::StartOfGrid.is_section_start());
+        assert!(!DirectiveKind::StartOfGrid.is_section_end());
+        assert!(DirectiveKind::EndOfGrid.is_section_end());
+        assert!(!DirectiveKind::EndOfGrid.is_section_start());
+        assert!(DirectiveKind::StartOfGrid.is_environment());
+        assert!(DirectiveKind::EndOfGrid.is_environment());
+    }
+
+    #[test]
+    fn directive_grid_section_name() {
+        let sog = Directive::name_only("sog");
+        assert!(sog.is_section_start());
+        assert_eq!(sog.section_name(), Some("grid"));
+
+        let eog = Directive::name_only("eog");
+        assert!(eog.is_section_end());
+        assert_eq!(eog.section_name(), Some("grid"));
     }
 }
