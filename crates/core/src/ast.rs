@@ -436,6 +436,14 @@ pub enum DirectiveKind {
     /// `{chord}` — references a custom chord.
     ChordDirective,
 
+    // -- Custom section directives -------------------------------------------
+    /// `{start_of_X}` — begins a custom section (e.g., intro, outro, solo).
+    /// The contained `String` is the section type name (e.g., `"intro"`).
+    StartOfSection(String),
+    /// `{end_of_X}` — ends a custom section.
+    /// The contained `String` is the section type name (e.g., `"intro"`).
+    EndOfSection(String),
+
     // -- Unknown ------------------------------------------------------------
     /// A directive not recognized as a standard ChordPro directive.
     /// The original directive name (lowercased) is preserved.
@@ -491,8 +499,20 @@ impl DirectiveKind {
             "define" => Self::Define,
             "chord" => Self::ChordDirective,
 
-            // Unknown
-            other => Self::Unknown(other.to_string()),
+            // Custom sections (start_of_X / end_of_X)
+            other => {
+                if let Some(section) = other.strip_prefix("start_of_") {
+                    if !section.is_empty() {
+                        return Self::StartOfSection(section.to_string());
+                    }
+                }
+                if let Some(section) = other.strip_prefix("end_of_") {
+                    if !section.is_empty() {
+                        return Self::EndOfSection(section.to_string());
+                    }
+                }
+                Self::Unknown(other.to_string())
+            }
         }
     }
 
@@ -533,7 +553,23 @@ impl DirectiveKind {
             Self::EndOfTab => "end_of_tab",
             Self::Define => "define",
             Self::ChordDirective => "chord",
-            Self::Unknown(name) => name.as_str(),
+            Self::StartOfSection(name) | Self::EndOfSection(name) | Self::Unknown(name) => {
+                name.as_str()
+            }
+        }
+    }
+
+    /// Returns the full canonical directive name as an owned `String`.
+    ///
+    /// For most directives this is the same as [`canonical_name`](Self::canonical_name).
+    /// For custom section directives, the section name is prefixed with
+    /// `start_of_` or `end_of_` to form the complete directive name.
+    #[must_use]
+    pub fn full_canonical_name(&self) -> String {
+        match self {
+            Self::StartOfSection(name) => format!("start_of_{name}"),
+            Self::EndOfSection(name) => format!("end_of_{name}"),
+            _ => self.canonical_name().to_string(),
         }
     }
 
@@ -573,7 +609,11 @@ impl DirectiveKind {
     pub fn is_section_start(&self) -> bool {
         matches!(
             self,
-            Self::StartOfChorus | Self::StartOfVerse | Self::StartOfBridge | Self::StartOfTab
+            Self::StartOfChorus
+                | Self::StartOfVerse
+                | Self::StartOfBridge
+                | Self::StartOfTab
+                | Self::StartOfSection(_)
         )
     }
 
@@ -582,7 +622,11 @@ impl DirectiveKind {
     pub fn is_section_end(&self) -> bool {
         matches!(
             self,
-            Self::EndOfChorus | Self::EndOfVerse | Self::EndOfBridge | Self::EndOfTab
+            Self::EndOfChorus
+                | Self::EndOfVerse
+                | Self::EndOfBridge
+                | Self::EndOfTab
+                | Self::EndOfSection(_)
         )
     }
 
@@ -643,7 +687,7 @@ impl Directive {
     pub fn with_value(name: impl Into<String>, value: impl Into<String>) -> Self {
         let name_str = name.into();
         let kind = DirectiveKind::from_name(&name_str);
-        let canonical = kind.canonical_name().to_string();
+        let canonical = kind.full_canonical_name();
         Self {
             name: canonical,
             value: Some(value.into()),
@@ -659,7 +703,7 @@ impl Directive {
     pub fn name_only(name: impl Into<String>) -> Self {
         let name_str = name.into();
         let kind = DirectiveKind::from_name(&name_str);
-        let canonical = kind.canonical_name().to_string();
+        let canonical = kind.full_canonical_name();
         Self {
             name: canonical,
             value: None,
@@ -1128,6 +1172,108 @@ mod tests {
         let eot = Directive::name_only("eot");
         assert!(eot.is_section_end());
         assert_eq!(eot.section_name(), Some("tab"));
+    }
+
+    // -- Custom section directives ------------------------------------------
+
+    #[test]
+    fn directive_kind_start_of_custom_section() {
+        let kind = DirectiveKind::from_name("start_of_intro");
+        assert_eq!(kind, DirectiveKind::StartOfSection("intro".to_string()));
+        assert!(kind.is_section_start());
+        assert!(!kind.is_section_end());
+        assert!(kind.is_environment());
+    }
+
+    #[test]
+    fn directive_kind_end_of_custom_section() {
+        let kind = DirectiveKind::from_name("end_of_intro");
+        assert_eq!(kind, DirectiveKind::EndOfSection("intro".to_string()));
+        assert!(kind.is_section_end());
+        assert!(!kind.is_section_start());
+        assert!(kind.is_environment());
+    }
+
+    #[test]
+    fn directive_kind_custom_section_case_insensitive() {
+        let kind = DirectiveKind::from_name("Start_Of_Intro");
+        assert_eq!(kind, DirectiveKind::StartOfSection("intro".to_string()));
+    }
+
+    #[test]
+    fn directive_kind_custom_section_various_names() {
+        assert_eq!(
+            DirectiveKind::from_name("start_of_outro"),
+            DirectiveKind::StartOfSection("outro".to_string())
+        );
+        assert_eq!(
+            DirectiveKind::from_name("start_of_solo"),
+            DirectiveKind::StartOfSection("solo".to_string())
+        );
+        assert_eq!(
+            DirectiveKind::from_name("end_of_solo"),
+            DirectiveKind::EndOfSection("solo".to_string())
+        );
+        assert_eq!(
+            DirectiveKind::from_name("start_of_interlude"),
+            DirectiveKind::StartOfSection("interlude".to_string())
+        );
+    }
+
+    #[test]
+    fn directive_custom_section_full_canonical_name() {
+        let kind = DirectiveKind::StartOfSection("intro".to_string());
+        assert_eq!(kind.full_canonical_name(), "start_of_intro");
+
+        let kind = DirectiveKind::EndOfSection("outro".to_string());
+        assert_eq!(kind.full_canonical_name(), "end_of_outro");
+    }
+
+    #[test]
+    fn directive_custom_section_name_only() {
+        let d = Directive::name_only("start_of_intro");
+        assert_eq!(d.name, "start_of_intro");
+        assert!(d.value.is_none());
+        assert_eq!(d.kind, DirectiveKind::StartOfSection("intro".to_string()));
+        assert!(d.is_section_start());
+        assert_eq!(d.section_name(), Some("intro"));
+    }
+
+    #[test]
+    fn directive_custom_section_with_label() {
+        let d = Directive::with_value("start_of_intro", "Guitar Intro");
+        assert_eq!(d.name, "start_of_intro");
+        assert_eq!(d.value.as_deref(), Some("Guitar Intro"));
+        assert_eq!(d.kind, DirectiveKind::StartOfSection("intro".to_string()));
+    }
+
+    #[test]
+    fn directive_end_custom_section() {
+        let d = Directive::name_only("end_of_intro");
+        assert_eq!(d.name, "end_of_intro");
+        assert!(d.is_section_end());
+        assert_eq!(d.section_name(), Some("intro"));
+    }
+
+    #[test]
+    fn directive_known_sections_not_custom() {
+        // Built-in sections should NOT produce StartOfSection/EndOfSection
+        assert_eq!(
+            DirectiveKind::from_name("start_of_chorus"),
+            DirectiveKind::StartOfChorus
+        );
+        assert_eq!(
+            DirectiveKind::from_name("start_of_verse"),
+            DirectiveKind::StartOfVerse
+        );
+        assert_eq!(
+            DirectiveKind::from_name("start_of_bridge"),
+            DirectiveKind::StartOfBridge
+        );
+        assert_eq!(
+            DirectiveKind::from_name("start_of_tab"),
+            DirectiveKind::StartOfTab
+        );
     }
 
     // -- CommentStyle -------------------------------------------------------

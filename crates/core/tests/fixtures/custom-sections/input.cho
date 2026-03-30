@@ -1,0 +1,13 @@
+{title: Custom Sections Test}
+
+{start_of_intro: Guitar Intro}
+[Am]Da da [G]da
+{end_of_intro}
+
+{start_of_solo}
+[Em]Solo line
+{end_of_solo}
+
+{start_of_outro: Fade Out}
+Goodbye
+{end_of_outro}

@@ -137,20 +137,30 @@ fn render_lyrics(lyrics: &LyricsLine, transpose_offset: i8, page: &mut PageBuild
 }
 
 fn render_directive(directive: &chordpro_core::ast::Directive, page: &mut PageBuilder) {
-    let label = match &directive.kind {
-        DirectiveKind::StartOfChorus => Some("Chorus"),
-        DirectiveKind::StartOfVerse => Some("Verse"),
-        DirectiveKind::StartOfBridge => Some("Bridge"),
-        DirectiveKind::StartOfTab => Some("Tab"),
+    let label: Option<String> = match &directive.kind {
+        DirectiveKind::StartOfChorus => Some("Chorus".to_string()),
+        DirectiveKind::StartOfVerse => Some("Verse".to_string()),
+        DirectiveKind::StartOfBridge => Some("Bridge".to_string()),
+        DirectiveKind::StartOfTab => Some("Tab".to_string()),
+        DirectiveKind::StartOfSection(section_name) => Some(capitalize(section_name)),
         _ => None,
     };
     if let Some(label) = label {
         let text = match &directive.value {
             Some(v) if !v.is_empty() => format!("{label}: {v}"),
-            _ => label.to_string(),
+            _ => label,
         };
         page.text(&text, Font::HelveticaBoldOblique, SECTION_SIZE);
         page.newline(SECTION_SIZE + LINE_GAP);
+    }
+}
+
+/// Capitalize the first character of a string.
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
     }
 }
 
@@ -409,6 +419,32 @@ mod tests {
         assert_eq!(pdf_escape("hello"), "hello");
         assert_eq!(pdf_escape("a(b)c"), "a\\(b\\)c");
         assert_eq!(pdf_escape("back\\slash"), "back\\\\slash");
+    }
+
+    // --- Custom sections (#108) ---
+
+    #[test]
+    fn test_custom_section_in_pdf() {
+        let input = "\
+{title: Test}
+
+{start_of_intro: Guitar}
+[Am]Intro line
+{end_of_intro}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF"));
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("Intro: Guitar"));
+    }
+
+    #[test]
+    fn test_custom_section_solo_in_pdf() {
+        let input = "{start_of_solo}\n[Em]Solo\n{end_of_solo}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("Solo"));
     }
 }
 

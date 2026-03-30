@@ -213,8 +213,22 @@ fn render_directive(directive: &chordpro_core::ast::Directive, output: &mut Vec<
         DirectiveKind::StartOfTab => {
             render_section_header("Tab", &directive.value, output);
         }
+        DirectiveKind::StartOfSection(section_name) => {
+            // Capitalize the first letter of the section name for display.
+            let label = capitalize(section_name);
+            render_section_header(&label, &directive.value, output);
+        }
         // End-of-section, metadata, and unknown directives produce no output.
         _ => {}
+    }
+}
+
+/// Capitalize the first character of a string.
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
     }
 }
 
@@ -450,6 +464,38 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.line(), 1);
+    }
+
+    // --- Custom sections (#108) ---
+
+    #[test]
+    fn test_render_custom_section_intro() {
+        let input = "{start_of_intro}\n[Am]Da da da\n{end_of_intro}";
+        let output = render(input);
+        assert!(output.contains("[Intro]"));
+        assert!(output.contains("Am"));
+        assert!(output.contains("Da da da"));
+    }
+
+    #[test]
+    fn test_render_custom_section_with_label() {
+        let input = "{start_of_intro: Guitar}\nSome notes\n{end_of_intro}";
+        let output = render(input);
+        assert_eq!(output, "[Intro: Guitar]\nSome notes\n");
+    }
+
+    #[test]
+    fn test_render_custom_section_outro() {
+        let input = "{start_of_outro}\nFinal notes\n{end_of_outro}";
+        let output = render(input);
+        assert!(output.contains("[Outro]"));
+    }
+
+    #[test]
+    fn test_render_custom_section_solo() {
+        let input = "{start_of_solo}\n[Em]Solo line\n{end_of_solo}";
+        let output = render(input);
+        assert!(output.contains("[Solo]"));
     }
 }
 

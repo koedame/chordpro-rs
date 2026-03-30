@@ -482,7 +482,7 @@ impl Parser {
         }
 
         // Build the directive with canonical name and kind.
-        let canonical = kind.canonical_name().to_string();
+        let canonical = kind.full_canonical_name();
         let directive = Directive {
             name: canonical,
             value,
@@ -2098,6 +2098,83 @@ mod tests {
             assert_eq!(d.value.as_deref(), Some("5"));
         } else {
             panic!("expected transpose directive");
+        }
+    }
+
+    // -- Custom section directives (#108) -----------------------------------
+
+    #[test]
+    fn custom_section_start_parsed() {
+        let result = lines("{start_of_intro}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "start_of_intro");
+            assert_eq!(d.kind, DirectiveKind::StartOfSection("intro".to_string()));
+            assert!(d.is_section_start());
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn custom_section_end_parsed() {
+        let result = lines("{end_of_intro}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "end_of_intro");
+            assert_eq!(d.kind, DirectiveKind::EndOfSection("intro".to_string()));
+            assert!(d.is_section_end());
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn custom_section_with_label() {
+        let result = lines("{start_of_intro: Guitar Intro}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "start_of_intro");
+            assert_eq!(d.value.as_deref(), Some("Guitar Intro"));
+            assert_eq!(d.kind, DirectiveKind::StartOfSection("intro".to_string()));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn custom_section_lyrics_parsed_normally() {
+        let song = parse("{start_of_intro}\n[Am]Hello [G]world\n{end_of_intro}").unwrap();
+        // Lines: start_of_intro, lyrics, end_of_intro
+        assert_eq!(song.lines.len(), 3);
+        if let Line::Lyrics(ref l) = song.lines[1] {
+            assert!(l.has_chords());
+            assert_eq!(l.segments.len(), 2);
+            assert_eq!(l.segments[0].chord.as_ref().unwrap().name, "Am");
+        } else {
+            panic!("expected lyrics line inside custom section");
+        }
+    }
+
+    #[test]
+    fn custom_section_various_names() {
+        for name in &["outro", "solo", "interlude", "coda", "pre_chorus"] {
+            let input = format!("{{start_of_{name}}}");
+            let result = lines(&input);
+            if let Line::Directive(ref d) = result[0] {
+                assert_eq!(d.name, format!("start_of_{name}"));
+                assert!(d.is_section_start(), "should be section start for {name}");
+            } else {
+                panic!("expected directive for {name}");
+            }
+        }
+    }
+
+    #[test]
+    fn custom_section_case_insensitive() {
+        let result = lines("{Start_Of_Intro}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "start_of_intro");
+            assert_eq!(d.kind, DirectiveKind::StartOfSection("intro".to_string()));
+        } else {
+            panic!("expected directive");
         }
     }
 }

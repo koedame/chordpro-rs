@@ -1,0 +1,169 @@
+Song {
+    metadata: Metadata {
+        title: Some(
+            "Custom Sections Test",
+        ),
+        subtitles: [],
+        artists: [],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: None,
+        tempo: None,
+        time: None,
+        capo: None,
+        sort_title: None,
+        sort_artist: None,
+        arrangers: [],
+        copyright: None,
+        duration: None,
+        tags: [],
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "title",
+                value: Some(
+                    "Custom Sections Test",
+                ),
+                kind: Title,
+            },
+        ),
+        Empty,
+        Directive(
+            Directive {
+                name: "start_of_intro",
+                value: Some(
+                    "Guitar Intro",
+                ),
+                kind: StartOfSection(
+                    "intro",
+                ),
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "Am",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: A,
+                                        root_accidental: None,
+                                        quality: Minor,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                            },
+                        ),
+                        text: "Da da ",
+                    },
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "G",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: G,
+                                        root_accidental: None,
+                                        quality: Major,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                            },
+                        ),
+                        text: "da",
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "end_of_intro",
+                value: None,
+                kind: EndOfSection(
+                    "intro",
+                ),
+            },
+        ),
+        Empty,
+        Directive(
+            Directive {
+                name: "start_of_solo",
+                value: None,
+                kind: StartOfSection(
+                    "solo",
+                ),
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "Em",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: E,
+                                        root_accidental: None,
+                                        quality: Minor,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                            },
+                        ),
+                        text: "Solo line",
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "end_of_solo",
+                value: None,
+                kind: EndOfSection(
+                    "solo",
+                ),
+            },
+        ),
+        Empty,
+        Directive(
+            Directive {
+                name: "start_of_outro",
+                value: Some(
+                    "Fade Out",
+                ),
+                kind: StartOfSection(
+                    "outro",
+                ),
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "Goodbye",
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "end_of_outro",
+                value: None,
+                kind: EndOfSection(
+                    "outro",
+                ),
+            },
+        ),
+    ],
+}

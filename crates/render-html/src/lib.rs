@@ -197,13 +197,28 @@ fn render_directive(directive: &chordpro_core::ast::Directive, html: &mut String
         DirectiveKind::StartOfTab => {
             render_section_open("tab", "Tab", &directive.value, html);
         }
+        DirectiveKind::StartOfSection(section_name) => {
+            let class = format!("section-{}", section_name);
+            let label = capitalize(section_name);
+            render_section_open(&class, &label, &directive.value, html);
+        }
         DirectiveKind::EndOfChorus
         | DirectiveKind::EndOfVerse
         | DirectiveKind::EndOfBridge
-        | DirectiveKind::EndOfTab => {
+        | DirectiveKind::EndOfTab
+        | DirectiveKind::EndOfSection(_) => {
             html.push_str("</section>\n");
         }
         _ => {}
+    }
+}
+
+/// Capitalize the first character of a string.
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
     }
 }
 
@@ -363,6 +378,38 @@ mod tests {
     fn test_empty_line() {
         let html = render("Line one\n\nLine two");
         assert!(html.contains("empty-line"));
+    }
+
+    // --- Custom sections (#108) ---
+
+    #[test]
+    fn test_render_custom_section_intro() {
+        let html = render("{start_of_intro}\n[Am]Da da\n{end_of_intro}");
+        assert!(html.contains("<section class=\"section-intro\">"));
+        assert!(html.contains("Intro"));
+        assert!(html.contains("</section>"));
+    }
+
+    #[test]
+    fn test_render_custom_section_with_label() {
+        let html = render("{start_of_intro: Guitar}\nNotes\n{end_of_intro}");
+        assert!(html.contains("<section class=\"section-intro\">"));
+        assert!(html.contains("Intro: Guitar"));
+    }
+
+    #[test]
+    fn test_render_custom_section_outro() {
+        let html = render("{start_of_outro}\nFinal\n{end_of_outro}");
+        assert!(html.contains("<section class=\"section-outro\">"));
+        assert!(html.contains("Outro"));
+    }
+
+    #[test]
+    fn test_render_custom_section_solo() {
+        let html = render("{start_of_solo}\n[Em]Solo\n{end_of_solo}");
+        assert!(html.contains("<section class=\"section-solo\">"));
+        assert!(html.contains("Solo"));
+        assert!(html.contains("</section>"));
     }
 }
 
