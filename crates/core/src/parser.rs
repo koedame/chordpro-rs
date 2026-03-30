@@ -509,6 +509,50 @@ impl Parser {
 /// assert_eq!(song.lines.len(), 2);
 /// ```
 pub fn parse(input: &str) -> Result<Song, ParseError> {
+    parse_with_options(input, &ParseOptions::default())
+}
+
+/// Options that control parser behavior.
+#[derive(Debug, Clone)]
+pub struct ParseOptions {
+    /// Maximum input size in bytes. Inputs exceeding this limit are rejected
+    /// with a [`ParseError`] before lexing begins. Set to `0` to disable.
+    ///
+    /// Default: 10 MB (10 × 1024 × 1024 bytes).
+    pub max_input_size: usize,
+}
+
+impl Default for ParseOptions {
+    fn default() -> Self {
+        Self {
+            max_input_size: 10 * 1024 * 1024, // 10 MB
+        }
+    }
+}
+
+/// Parses a ChordPro source string into a [`Song`] AST with custom options.
+///
+/// See [`parse`] for details. This variant allows configuring parser behavior
+/// via [`ParseOptions`].
+///
+/// # Errors
+///
+/// Returns a [`ParseError`] if the input exceeds the configured size limit
+/// or contains structural problems.
+pub fn parse_with_options(input: &str, options: &ParseOptions) -> Result<Song, ParseError> {
+    if options.max_input_size > 0 && input.len() > options.max_input_size {
+        return Err(ParseError::new(
+            format!(
+                "input size ({} bytes) exceeds maximum ({} bytes)",
+                input.len(),
+                options.max_input_size
+            ),
+            Span::new(
+                crate::token::Position::new(0, 0),
+                crate::token::Position::new(0, 0),
+            ),
+        ));
+    }
     let tokens = Lexer::new(input).tokenize();
     Parser::new(tokens).parse()
 }
@@ -529,6 +573,39 @@ mod tests {
     /// Parses the input and returns the lines, panicking on error.
     fn lines(input: &str) -> Vec<Line> {
         parse(input).expect("parse failed").lines
+    }
+
+    // -- Input size limits (#60) -----------------------------------------------
+
+    #[test]
+    fn input_within_limit_succeeds() {
+        let opts = ParseOptions {
+            max_input_size: 100,
+        };
+        let result = parse_with_options("{title: Test}", &opts);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn input_exceeding_limit_fails() {
+        let opts = ParseOptions { max_input_size: 10 };
+        let result = parse_with_options("{title: This is too long}", &opts);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("exceeds maximum"));
+    }
+
+    #[test]
+    fn zero_limit_disables_check() {
+        let opts = ParseOptions { max_input_size: 0 };
+        let result = parse_with_options("{title: Any size is fine}", &opts);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn default_limit_is_10mb() {
+        let opts = ParseOptions::default();
+        assert_eq!(opts.max_input_size, 10 * 1024 * 1024);
     }
 
     // -- Empty input --------------------------------------------------------
