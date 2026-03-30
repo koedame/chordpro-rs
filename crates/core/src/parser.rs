@@ -289,6 +289,26 @@ impl Parser {
             DirectiveKind::Tag => {
                 metadata.tags.push(value);
             }
+            DirectiveKind::Meta(ref key) => match key.to_ascii_lowercase().as_str() {
+                "title" | "t" => metadata.title = Some(value),
+                "subtitle" | "st" => metadata.subtitles.push(value),
+                "artist" => metadata.artists.push(value),
+                "composer" => metadata.composers.push(value),
+                "lyricist" => metadata.lyricists.push(value),
+                "album" => metadata.album = Some(value),
+                "year" => metadata.year = Some(value),
+                "key" => metadata.key = Some(value),
+                "tempo" => metadata.tempo = Some(value),
+                "time" => metadata.time = Some(value),
+                "capo" => metadata.capo = Some(value),
+                "sorttitle" => metadata.sort_title = Some(value),
+                "sortartist" => metadata.sort_artist = Some(value),
+                "arranger" => metadata.arrangers.push(value),
+                "copyright" => metadata.copyright = Some(value),
+                "duration" => metadata.duration = Some(value),
+                "tag" => metadata.tags.push(value),
+                _ => metadata.custom.push((key.clone(), value)),
+            },
             DirectiveKind::Unknown(ref name) => {
                 metadata.custom.push((name.clone(), value));
             }
@@ -479,6 +499,45 @@ impl Parser {
             };
             let text = value.unwrap_or_default();
             return Ok(Line::Comment(style, text));
+        }
+
+        // Meta directive: split value into key + remaining value.
+        if matches!(kind, DirectiveKind::Meta(_)) {
+            if let Some(ref val) = value {
+                let trimmed = val.trim();
+                if let Some(pos) = trimmed.find(|c: char| c.is_whitespace()) {
+                    let meta_key = trimmed[..pos].to_string();
+                    let meta_value = trimmed[pos..].trim().to_string();
+                    let kind = DirectiveKind::Meta(meta_key.clone());
+                    let directive = Directive {
+                        name: "meta".to_string(),
+                        value: if meta_value.is_empty() {
+                            None
+                        } else {
+                            Some(meta_value)
+                        },
+                        kind,
+                    };
+                    return Ok(Line::Directive(directive));
+                } else if !trimmed.is_empty() {
+                    // Only a key, no value
+                    let meta_key = trimmed.to_string();
+                    let kind = DirectiveKind::Meta(meta_key);
+                    let directive = Directive {
+                        name: "meta".to_string(),
+                        value: None,
+                        kind,
+                    };
+                    return Ok(Line::Directive(directive));
+                }
+            }
+            // {meta} without value — treat as unknown
+            let directive = Directive {
+                name: "meta".to_string(),
+                value: None,
+                kind: DirectiveKind::Unknown("meta".to_string()),
+            };
+            return Ok(Line::Directive(directive));
         }
 
         // Build the directive with canonical name and kind.
@@ -1640,13 +1699,27 @@ mod tests {
     #[test]
     fn multiple_colons_in_directive_value() {
         // Extra colons after the first are treated as part of the value.
+        // When the directive is "meta", it is parsed as a Meta directive.
+        // Since "key:value:extra" has no whitespace, the whole string
+        // becomes the meta key with no value.
         let result = lines("{meta: key:value:extra}");
         assert_eq!(
             result,
             vec![Line::Directive(Directive {
                 name: "meta".to_string(),
+                value: None,
+                kind: DirectiveKind::Meta("key:value:extra".to_string()),
+            })],
+        );
+
+        // For non-meta directives, extra colons remain in the value.
+        let result = lines("{custom_dir: key:value:extra}");
+        assert_eq!(
+            result,
+            vec![Line::Directive(Directive {
+                name: "custom_dir".to_string(),
                 value: Some("key:value:extra".to_string()),
-                kind: DirectiveKind::Unknown("meta".to_string()),
+                kind: DirectiveKind::Unknown("custom_dir".to_string()),
             })],
         );
     }

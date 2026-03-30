@@ -1,0 +1,16 @@
+{title: Test Song}
+{meta: artist Someone Famous}
+{meta: key Am}
+{meta: composer J.S. Bach}
+{meta: lyricist William Blake}
+{meta: album Greatest Hits}
+{meta: year 2024}
+{meta: tempo 120}
+{meta: time 4/4}
+{meta: capo 3}
+{meta: custom_field some custom value}
+{meta: mood melancholy}
+
+{start_of_verse}
+[Am]Hello [G]world
+{end_of_verse}
