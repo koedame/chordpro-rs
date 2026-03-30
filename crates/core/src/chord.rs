@@ -240,7 +240,7 @@ pub fn parse_chord(input: &str) -> Option<ChordDetail> {
     let rest: String = chars.collect();
 
     // --- Split off bass note (slash chord) ---
-    let (quality_ext_str, bass_str) = if let Some(slash_pos) = rest.rfind('/') {
+    let (quality_ext_str, bass_str) = if let Some(slash_pos) = rest.find('/') {
         let (before, after) = rest.split_at(slash_pos);
         // `after` starts with '/', skip it.
         (before, Some(&after[1..]))
@@ -732,6 +732,13 @@ mod tests {
     fn slash_bass_too_long() {
         // Bass should be just a note + optional accidental.
         assert!(parse_chord("G/Bm").is_none());
+    }
+
+    #[test]
+    fn multi_slash_is_invalid() {
+        // Multiple slashes: split on first slash so bass becomes "D/E",
+        // which is not a valid note+accidental. The chord is unparseable.
+        assert!(parse_chord("C/D/E").is_none());
     }
 
     // -- Display (round-trip) ------------------------------------------------
