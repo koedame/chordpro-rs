@@ -17,6 +17,8 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
+    # GITHUB_TOKEN only needs read access; git push uses CLAUDE_PAT
+    # (configured via actions/checkout token) to trigger CI on the pushed branch.
     permissions:
       pull-requests: read
       contents: read
@@ -28,7 +30,8 @@ jobs:
           script: |
             const MAX_PRS = 5;
 
-            const { data: prs } = await github.rest.pulls.list({
+            // Fetch all open PRs targeting main (paginated)
+            const prs = await github.paginate(github.rest.pulls.list, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open',
