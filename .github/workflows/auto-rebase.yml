@@ -1,0 +1,111 @@
+name: Auto Rebase
+
+on:
+  workflow_run:
+    workflows: ["Conflict Check"]
+    types: [completed]
+
+concurrency:
+  group: auto-rebase
+  cancel-in-progress: true
+
+jobs:
+  rebase-conflicted-prs:
+    name: Rebase PRs with trivial conflicts
+    # Only run when conflict-check succeeded after a push to main
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+      contents: read
+    steps:
+      - name: Find conflicted PRs
+        id: find-prs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const MAX_PRS = 5;
+
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              base: 'main',
+              per_page: 100,
+            });
+
+            const conflicted = [];
+            for (const pr of prs) {
+              if (pr.user.login === 'dependabot[bot]') {
+                console.log(`Skipping Dependabot PR #${pr.number}`);
+                continue;
+              }
+
+              const hasLabel = pr.labels.some(l => l.name === 'has-conflicts');
+              if (!hasLabel) continue;
+
+              conflicted.push({
+                number: pr.number,
+                headRefName: pr.head.ref,
+              });
+
+              if (conflicted.length >= MAX_PRS) {
+                console.log(`Reached max PR limit (${MAX_PRS}), remaining PRs will be picked up next cycle`);
+                break;
+              }
+            }
+
+            console.log(`Found ${conflicted.length} conflicted PR(s) to rebase`);
+            core.setOutput('prs', JSON.stringify(conflicted));
+
+      - name: Checkout repository
+        if: steps.find-prs.outputs.prs != '[]'
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.CLAUDE_PAT }}
+          fetch-depth: 0
+          ref: main
+
+      - name: Rebase conflicted PRs
+        if: steps.find-prs.outputs.prs != '[]'
+        env:
+          PRS_JSON: ${{ steps.find-prs.outputs.prs }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          echo "$PRS_JSON" | jq -c '.[]' | while read -r pr; do
+            NUMBER=$(echo "$pr" | jq -r '.number')
+            HEAD_REF=$(echo "$pr" | jq -r '.headRefName')
+
+            echo "::group::PR #$NUMBER ($HEAD_REF)"
+            echo "Attempting rebase of $HEAD_REF onto main..."
+
+            if ! git fetch origin "$HEAD_REF"; then
+              echo "::warning::Failed to fetch branch $HEAD_REF for PR #$NUMBER (branch may have been deleted)"
+              echo "::endgroup::"
+              continue
+            fi
+
+            git checkout -b "$HEAD_REF" "origin/$HEAD_REF"
+
+            if git rebase origin/main; then
+              echo "Rebase succeeded, pushing..."
+              if git push origin "$HEAD_REF" --force-with-lease; then
+                echo "Successfully rebased and pushed PR #$NUMBER"
+              else
+                echo "::warning::Push failed for PR #$NUMBER (branch may have been updated concurrently)"
+              fi
+            else
+              echo "::notice::Rebase failed for PR #$NUMBER — conflicts require manual resolution"
+              git rebase --abort
+            fi
+
+            git checkout main
+            git branch -D "$HEAD_REF" 2>/dev/null || true
+            echo "::endgroup::"
+
+            sleep 5
+          done
