@@ -1,0 +1,18 @@
+{title: Test Song}
+{subtitle: A Subtitle}
+
+{start_of_verse: Verse 1}
+[G]First line of [C]verse
+{end_of_verse}
+
+{start_of_chorus}
+[D]Chorus [G]line
+{end_of_chorus}
+
+{start_of_bridge}
+Bridge text
+{end_of_bridge}
+
+{start_of_tab}
+e|---0---|
+{end_of_tab}

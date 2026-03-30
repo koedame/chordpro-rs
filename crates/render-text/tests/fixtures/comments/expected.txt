@@ -1,0 +1,3 @@
+(This is a normal comment)
+(*This is italic*)
+[This is boxed]

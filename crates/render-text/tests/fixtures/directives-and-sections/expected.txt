@@ -1,0 +1,16 @@
+Test Song
+A Subtitle
+
+[Verse: Verse 1]
+G             C
+First line of verse
+
+[Chorus]
+D      G
+Chorus line
+
+[Bridge]
+Bridge text
+
+[Tab]
+e|---0---|
