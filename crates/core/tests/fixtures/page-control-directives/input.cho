@@ -1,0 +1,13 @@
+{title: Page Control Test}
+{columns: 2}
+[G]First verse line
+{column_break}
+[C]Second column line
+{new_page}
+[D]New page line
+{new_physical_page}
+[Em]Physical page line
+{col: 3}
+{np}
+{npp}
+{colb}

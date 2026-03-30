@@ -506,6 +506,16 @@ pub enum DirectiveKind {
     /// An optional label may override the default "Chorus" heading.
     Chorus,
 
+    // -- Page control directives ----------------------------------------------
+    /// `{new_page}` / `{np}` — forces a page break.
+    NewPage,
+    /// `{new_physical_page}` / `{npp}` — forces a physical page break (for duplex printing).
+    NewPhysicalPage,
+    /// `{column_break}` / `{colb}` — forces a column break.
+    ColumnBreak,
+    /// `{columns}` / `{col}` — sets the number of columns.
+    Columns,
+
     // -- Chord definition directives ----------------------------------------
     /// `{define}` — defines a custom chord fingering.
     Define,
@@ -631,6 +641,12 @@ impl DirectiveKind {
             // Recall
             "chorus" => Self::Chorus,
 
+            // Page control
+            "new_page" | "np" => Self::NewPage,
+            "new_physical_page" | "npp" => Self::NewPhysicalPage,
+            "column_break" | "colb" => Self::ColumnBreak,
+            "columns" | "col" => Self::Columns,
+
             // Chord definitions
             "define" => Self::Define,
             "chord" => Self::ChordDirective,
@@ -715,6 +731,10 @@ impl DirectiveKind {
             Self::StartOfTextblock => "start_of_textblock",
             Self::EndOfTextblock => "end_of_textblock",
             Self::Chorus => "chorus",
+            Self::NewPage => "new_page",
+            Self::NewPhysicalPage => "new_physical_page",
+            Self::ColumnBreak => "column_break",
+            Self::Columns => "columns",
             Self::Define => "define",
             Self::ChordDirective => "chord",
             Self::Meta(_) => "meta",
@@ -835,6 +855,15 @@ impl DirectiveKind {
     #[must_use]
     pub fn is_image(&self) -> bool {
         matches!(self, Self::Image(_))
+    }
+
+    /// Returns `true` if this is a page control directive.
+    #[must_use]
+    pub fn is_page_control(&self) -> bool {
+        matches!(
+            self,
+            Self::NewPage | Self::NewPhysicalPage | Self::ColumnBreak | Self::Columns
+        )
     }
 }
 
@@ -1224,6 +1253,26 @@ mod tests {
     }
 
     #[test]
+    fn directive_kind_from_name_page_control() {
+        assert_eq!(DirectiveKind::from_name("new_page"), DirectiveKind::NewPage);
+        assert_eq!(DirectiveKind::from_name("np"), DirectiveKind::NewPage);
+        assert_eq!(
+            DirectiveKind::from_name("new_physical_page"),
+            DirectiveKind::NewPhysicalPage
+        );
+        assert_eq!(
+            DirectiveKind::from_name("npp"),
+            DirectiveKind::NewPhysicalPage
+        );
+        assert_eq!(
+            DirectiveKind::from_name("column_break"),
+            DirectiveKind::ColumnBreak
+        );
+        assert_eq!(DirectiveKind::from_name("colb"), DirectiveKind::ColumnBreak);
+        assert_eq!(DirectiveKind::from_name("columns"), DirectiveKind::Columns);
+        assert_eq!(DirectiveKind::from_name("col"), DirectiveKind::Columns);
+    }
+    #[test]
     fn directive_kind_from_name_unknown() {
         let kind = DirectiveKind::from_name("custom_thing");
         assert_eq!(kind, DirectiveKind::Unknown("custom_thing".to_string()));
@@ -1240,6 +1289,11 @@ mod tests {
         assert_eq!(
             DirectiveKind::from_name("Comment_Italic"),
             DirectiveKind::CommentItalic
+        );
+        assert_eq!(DirectiveKind::from_name("NEW_PAGE"), DirectiveKind::NewPage);
+        assert_eq!(
+            DirectiveKind::from_name("Column_Break"),
+            DirectiveKind::ColumnBreak
         );
     }
 
@@ -1261,6 +1315,13 @@ mod tests {
         assert_eq!(DirectiveKind::Copyright.canonical_name(), "copyright");
         assert_eq!(DirectiveKind::Duration.canonical_name(), "duration");
         assert_eq!(DirectiveKind::Tag.canonical_name(), "tag");
+        assert_eq!(DirectiveKind::NewPage.canonical_name(), "new_page");
+        assert_eq!(
+            DirectiveKind::NewPhysicalPage.canonical_name(),
+            "new_physical_page"
+        );
+        assert_eq!(DirectiveKind::ColumnBreak.canonical_name(), "column_break");
+        assert_eq!(DirectiveKind::Columns.canonical_name(), "columns");
     }
 
     #[test]
@@ -1284,6 +1345,16 @@ mod tests {
         assert!(!unknown.is_metadata());
         assert!(!unknown.is_comment());
         assert!(!unknown.is_environment());
+
+        assert!(DirectiveKind::NewPage.is_page_control());
+        assert!(DirectiveKind::NewPhysicalPage.is_page_control());
+        assert!(DirectiveKind::ColumnBreak.is_page_control());
+        assert!(DirectiveKind::Columns.is_page_control());
+        assert!(!DirectiveKind::NewPage.is_metadata());
+        assert!(!DirectiveKind::NewPage.is_comment());
+        assert!(!DirectiveKind::NewPage.is_environment());
+        assert!(!DirectiveKind::Title.is_page_control());
+        assert!(!unknown.is_page_control());
     }
 
     // -- Directive ----------------------------------------------------------

@@ -2278,6 +2278,77 @@ mod tests {
         }
     }
 
+    #[test]
+    fn page_control_directives_long_form() {
+        let song = parse("{new_page}\n{new_physical_page}\n{column_break}\n{columns: 2}").unwrap();
+        if let Line::Directive(ref d) = song.lines[0] {
+            assert_eq!(d.kind, DirectiveKind::NewPage);
+            assert_eq!(d.name, "new_page");
+            assert!(d.value.is_none());
+        } else {
+            panic!("expected new_page directive");
+        }
+        if let Line::Directive(ref d) = song.lines[1] {
+            assert_eq!(d.kind, DirectiveKind::NewPhysicalPage);
+            assert_eq!(d.name, "new_physical_page");
+            assert!(d.value.is_none());
+        } else {
+            panic!("expected new_physical_page directive");
+        }
+        if let Line::Directive(ref d) = song.lines[2] {
+            assert_eq!(d.kind, DirectiveKind::ColumnBreak);
+            assert_eq!(d.name, "column_break");
+            assert!(d.value.is_none());
+        } else {
+            panic!("expected column_break directive");
+        }
+        if let Line::Directive(ref d) = song.lines[3] {
+            assert_eq!(d.kind, DirectiveKind::Columns);
+            assert_eq!(d.name, "columns");
+            assert_eq!(d.value.as_deref(), Some("2"));
+        } else {
+            panic!("expected columns directive");
+        }
+    }
+
+    #[test]
+    fn page_control_directives_short_form() {
+        let song = parse("{np}\n{npp}\n{colb}\n{col: 3}").unwrap();
+        if let Line::Directive(ref d) = song.lines[0] {
+            assert_eq!(d.kind, DirectiveKind::NewPage);
+            assert_eq!(d.name, "new_page");
+        } else {
+            panic!("expected new_page directive");
+        }
+        if let Line::Directive(ref d) = song.lines[1] {
+            assert_eq!(d.kind, DirectiveKind::NewPhysicalPage);
+            assert_eq!(d.name, "new_physical_page");
+        } else {
+            panic!("expected new_physical_page directive");
+        }
+        if let Line::Directive(ref d) = song.lines[2] {
+            assert_eq!(d.kind, DirectiveKind::ColumnBreak);
+            assert_eq!(d.name, "column_break");
+        } else {
+            panic!("expected column_break directive");
+        }
+        if let Line::Directive(ref d) = song.lines[3] {
+            assert_eq!(d.kind, DirectiveKind::Columns);
+            assert_eq!(d.name, "columns");
+            assert_eq!(d.value.as_deref(), Some("3"));
+        } else {
+            panic!("expected columns directive");
+        }
+    }
+
+    #[test]
+    fn page_control_not_metadata() {
+        let song = parse("{new_page}\n{columns: 2}").unwrap();
+        // Page control directives should not populate metadata
+        assert!(song.metadata.title.is_none());
+        assert!(song.metadata.custom.is_empty());
+    }
+
     // --- Lenient parsing / multi-error (#61) ---
 
     #[test]
