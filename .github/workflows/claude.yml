@@ -69,8 +69,6 @@ jobs:
         run: |
           PR_NUMBER="${{ github.event.issue.number || github.event.pull_request.number }}"
           HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName -q .headRefName)
-          BEFORE_SHA=$(gh pr view "$PR_NUMBER" --json commits -q '.commits[-1].oid')
-          # Only dispatch if there are new commits (Claude may not have pushed)
           if [ -n "$HEAD_REF" ]; then
             gh workflow run ci.yml --ref "$HEAD_REF" || true
           fi
