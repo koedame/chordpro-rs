@@ -1,0 +1,188 @@
+name: Conflict Check
+
+on:
+  push:
+    branches: [main]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  check-conflicts:
+    name: Check merge conflicts
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Detect conflicts and notify
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const LABEL_NAME = 'has-conflicts';
+            const LABEL_COLOR = 'e11d48';
+            const LABEL_DESCRIPTION = 'PR has merge conflicts that block CI';
+            const COMMENT_MARKER = '<!-- conflict-check -->';
+            const MAX_RETRIES = 5;
+            const RETRY_DELAY_MS = 2000;
+
+            async function ensureLabel() {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: LABEL_NAME,
+                });
+              } catch (e) {
+                if (e.status === 404) {
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: LABEL_NAME,
+                    color: LABEL_COLOR,
+                    description: LABEL_DESCRIPTION,
+                  });
+                  console.log(`Created label "${LABEL_NAME}"`);
+                } else {
+                  throw e;
+                }
+              }
+            }
+
+            async function getMergeableStatus(prNumber) {
+              for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                const { data: pr } = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                });
+
+                if (pr.mergeable !== null) {
+                  return pr.mergeable;
+                }
+
+                if (attempt < MAX_RETRIES) {
+                  console.log(`PR #${prNumber}: mergeable is null, retrying (${attempt}/${MAX_RETRIES})...`);
+                  await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+                }
+              }
+
+              console.log(`PR #${prNumber}: mergeable still null after ${MAX_RETRIES} retries, skipping`);
+              return null;
+            }
+
+            async function findConflictComment(prNumber) {
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+              });
+              return comments.find(c => c.body.includes(COMMENT_MARKER)) || null;
+            }
+
+            async function markConflicted(prNumber) {
+              await ensureLabel();
+
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                labels: [LABEL_NAME],
+              });
+
+              const existing = await findConflictComment(prNumber);
+              if (existing) {
+                console.log(`PR #${prNumber}: conflict comment already exists, skipping`);
+                return;
+              }
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: [
+                  COMMENT_MARKER,
+                  '',
+                  '> [!WARNING]',
+                  '> **This PR has merge conflicts** that must be resolved before CI can run.',
+                  '>',
+                  '> Branch protection requires all CI checks to pass, but GitHub cannot create',
+                  '> the merge ref when conflicts exist. All required checks will remain in',
+                  '> "Expected — Waiting for status to be reported" until the conflicts are resolved.',
+                  '>',
+                  '> **To fix:** rebase onto `main` or merge `main` into your branch, then push.',
+                  '>',
+                  '> ```bash',
+                  '> git fetch origin main',
+                  '> git rebase origin/main',
+                  '> git push --force-with-lease',
+                  '> ```',
+                ].join('\n'),
+              });
+              console.log(`PR #${prNumber}: marked as conflicted`);
+            }
+
+            async function markResolved(prNumber) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  name: LABEL_NAME,
+                });
+              } catch (e) {
+                if (e.status !== 404) throw e;
+              }
+
+              const comment = await findConflictComment(prNumber);
+              if (comment) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: comment.id,
+                });
+                console.log(`PR #${prNumber}: conflict resolved, cleaned up`);
+              }
+            }
+
+            async function processPR(prNumber) {
+              const mergeable = await getMergeableStatus(prNumber);
+              if (mergeable === null) return;
+
+              if (!mergeable) {
+                await markConflicted(prNumber);
+              } else {
+                await markResolved(prNumber);
+              }
+            }
+
+            if (context.eventName === 'push') {
+              console.log('Push to main detected, scanning all open PRs for conflicts...');
+
+              let page = 1;
+              const perPage = 100;
+              let hasMore = true;
+
+              while (hasMore) {
+                const { data: prs } = await github.rest.pulls.list({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  state: 'open',
+                  base: 'main',
+                  per_page: perPage,
+                  page: page,
+                });
+
+                for (const pr of prs) {
+                  console.log(`Checking PR #${pr.number} (${pr.title})...`);
+                  await processPR(pr.number);
+                }
+
+                hasMore = prs.length === perPage;
+                page++;
+              }
+
+              console.log('Finished scanning all open PRs');
+            } else {
+              const prNumber = context.payload.pull_request.number;
+              console.log(`PR event for #${prNumber}, checking conflict status...`);
+              await processPR(prNumber);
+            }
