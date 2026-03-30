@@ -107,6 +107,18 @@ pub struct Metadata {
     pub time: Option<String>,
     /// Capo position, from `{capo}`.
     pub capo: Option<String>,
+    /// Sortable title, from `{sorttitle}`.
+    pub sort_title: Option<String>,
+    /// Sortable artist name, from `{sortartist}`.
+    pub sort_artist: Option<String>,
+    /// Arranger names, from `{arranger}`. May appear multiple times.
+    pub arrangers: Vec<String>,
+    /// Copyright notice, from `{copyright}`.
+    pub copyright: Option<String>,
+    /// Song duration, from `{duration}`.
+    pub duration: Option<String>,
+    /// Tags for categorization, from `{tag}`. May appear multiple times.
+    pub tags: Vec<String>,
     /// Custom metadata directives not covered by the standard fields.
     /// Each entry is a `(name, value)` pair.
     pub custom: Vec<(String, String)>,
@@ -375,6 +387,18 @@ pub enum DirectiveKind {
     Time,
     /// `{capo}` — the capo position.
     Capo,
+    /// `{sorttitle}` — a sortable title.
+    SortTitle,
+    /// `{sortartist}` — a sortable artist name.
+    SortArtist,
+    /// `{arranger}` — the arranger name.
+    Arranger,
+    /// `{copyright}` — the copyright notice.
+    Copyright,
+    /// `{duration}` — the song duration.
+    Duration,
+    /// `{tag}` — a tag for categorization.
+    Tag,
 
     // -- Formatting directives (comment) ------------------------------------
     /// `{comment}` / `{c}` — a normal comment.
@@ -434,6 +458,12 @@ impl DirectiveKind {
             "tempo" => Self::Tempo,
             "time" => Self::Time,
             "capo" => Self::Capo,
+            "sorttitle" => Self::SortTitle,
+            "sortartist" => Self::SortArtist,
+            "arranger" => Self::Arranger,
+            "copyright" => Self::Copyright,
+            "duration" => Self::Duration,
+            "tag" => Self::Tag,
 
             // Formatting (comments)
             "comment" | "c" => Self::Comment,
@@ -476,6 +506,12 @@ impl DirectiveKind {
             Self::Tempo => "tempo",
             Self::Time => "time",
             Self::Capo => "capo",
+            Self::SortTitle => "sorttitle",
+            Self::SortArtist => "sortartist",
+            Self::Arranger => "arranger",
+            Self::Copyright => "copyright",
+            Self::Duration => "duration",
+            Self::Tag => "tag",
             Self::Comment => "comment",
             Self::CommentItalic => "comment_italic",
             Self::CommentBox => "comment_box",
@@ -509,6 +545,12 @@ impl DirectiveKind {
                 | Self::Tempo
                 | Self::Time
                 | Self::Capo
+                | Self::SortTitle
+                | Self::SortArtist
+                | Self::Arranger
+                | Self::Copyright
+                | Self::Duration
+                | Self::Tag
         )
     }
 
@@ -695,6 +737,12 @@ mod tests {
         assert_eq!(meta.tempo, None);
         assert_eq!(meta.time, None);
         assert_eq!(meta.capo, None);
+        assert_eq!(meta.sort_title, None);
+        assert_eq!(meta.sort_artist, None);
+        assert!(meta.arrangers.is_empty());
+        assert_eq!(meta.copyright, None);
+        assert_eq!(meta.duration, None);
+        assert!(meta.tags.is_empty());
         assert!(meta.custom.is_empty());
     }
 
@@ -829,6 +877,31 @@ mod tests {
         assert_eq!(DirectiveKind::from_name("tempo"), DirectiveKind::Tempo);
         assert_eq!(DirectiveKind::from_name("time"), DirectiveKind::Time);
         assert_eq!(DirectiveKind::from_name("capo"), DirectiveKind::Capo);
+        assert_eq!(
+            DirectiveKind::from_name("sorttitle"),
+            DirectiveKind::SortTitle
+        );
+        assert_eq!(
+            DirectiveKind::from_name("SORTTITLE"),
+            DirectiveKind::SortTitle
+        );
+        assert_eq!(
+            DirectiveKind::from_name("sortartist"),
+            DirectiveKind::SortArtist
+        );
+        assert_eq!(
+            DirectiveKind::from_name("arranger"),
+            DirectiveKind::Arranger
+        );
+        assert_eq!(
+            DirectiveKind::from_name("copyright"),
+            DirectiveKind::Copyright
+        );
+        assert_eq!(
+            DirectiveKind::from_name("duration"),
+            DirectiveKind::Duration
+        );
+        assert_eq!(DirectiveKind::from_name("tag"), DirectiveKind::Tag);
     }
 
     #[test]
@@ -929,6 +1002,12 @@ mod tests {
             DirectiveKind::Unknown("foo".to_string()).canonical_name(),
             "foo"
         );
+        assert_eq!(DirectiveKind::SortTitle.canonical_name(), "sorttitle");
+        assert_eq!(DirectiveKind::SortArtist.canonical_name(), "sortartist");
+        assert_eq!(DirectiveKind::Arranger.canonical_name(), "arranger");
+        assert_eq!(DirectiveKind::Copyright.canonical_name(), "copyright");
+        assert_eq!(DirectiveKind::Duration.canonical_name(), "duration");
+        assert_eq!(DirectiveKind::Tag.canonical_name(), "tag");
     }
 
     #[test]
