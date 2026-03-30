@@ -821,4 +821,30 @@ mod delegate_tests {
         let output = render(input);
         assert!(output.contains("[Am]Not a chord"));
     }
+
+    // -- inline markup rendering (plain text strips all tags) ------------------
+
+    #[test]
+    fn test_markup_stripped_in_text_output() {
+        let output = render("Hello <b>bold</b> world");
+        assert!(output.contains("Hello bold world"));
+        assert!(!output.contains("<b>"));
+        assert!(!output.contains("</b>"));
+    }
+
+    #[test]
+    fn test_markup_stripped_with_chord() {
+        let output = render("[Am]Hello <b>bold</b> world");
+        assert!(output.contains("Am"));
+        assert!(output.contains("Hello bold world"));
+        assert!(!output.contains("<b>"));
+    }
+
+    #[test]
+    fn test_span_markup_stripped_in_text_output() {
+        let output = render(r#"<span foreground="red">red text</span>"#);
+        assert!(output.contains("red text"));
+        assert!(!output.contains("<span"));
+        assert!(!output.contains("foreground"));
+    }
 }

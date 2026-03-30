@@ -4,6 +4,7 @@
 //! embedded CSS for chord-over-lyrics layout.
 
 use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
+use chordpro_core::inline_markup::{SpanAttributes, TextSpan};
 use chordpro_core::transpose::transpose_chord;
 
 /// Render a [`Song`] AST to an HTML5 document string.
@@ -229,14 +230,92 @@ fn render_lyrics(lyrics_line: &LyricsLine, transpose_offset: i8, html: &mut Stri
             html.push_str("<span class=\"chord\"></span>");
         }
 
-        html.push_str(&format!(
-            "<span class=\"lyrics\">{}</span>",
-            escape(&segment.text)
-        ));
+        html.push_str("<span class=\"lyrics\">");
+        if segment.has_markup() {
+            render_spans(&segment.spans, html);
+        } else {
+            html.push_str(&escape(&segment.text));
+        }
+        html.push_str("</span>");
         html.push_str("</span>");
     }
 
     html.push_str("</div>\n");
+}
+
+/// Render a list of [`TextSpan`]s as HTML inline elements.
+///
+/// Maps each markup tag to its HTML equivalent:
+/// - `Bold` → `<b>`
+/// - `Italic` → `<i>`
+/// - `Highlight` → `<mark>`
+/// - `Comment` → `<span class="comment">`
+/// - `Span` → `<span style="...">` with CSS properties from attributes
+fn render_spans(spans: &[TextSpan], html: &mut String) {
+    for span in spans {
+        match span {
+            TextSpan::Plain(text) => html.push_str(&escape(text)),
+            TextSpan::Bold(children) => {
+                html.push_str("<b>");
+                render_spans(children, html);
+                html.push_str("</b>");
+            }
+            TextSpan::Italic(children) => {
+                html.push_str("<i>");
+                render_spans(children, html);
+                html.push_str("</i>");
+            }
+            TextSpan::Highlight(children) => {
+                html.push_str("<mark>");
+                render_spans(children, html);
+                html.push_str("</mark>");
+            }
+            TextSpan::Comment(children) => {
+                html.push_str("<span class=\"comment\">");
+                render_spans(children, html);
+                html.push_str("</span>");
+            }
+            TextSpan::Span(attrs, children) => {
+                let css = span_attrs_to_css(attrs);
+                if css.is_empty() {
+                    html.push_str("<span>");
+                } else {
+                    html.push_str(&format!("<span style=\"{}\">", escape(&css)));
+                }
+                render_spans(children, html);
+                html.push_str("</span>");
+            }
+        }
+    }
+}
+
+/// Convert [`SpanAttributes`] to a CSS inline style string.
+fn span_attrs_to_css(attrs: &SpanAttributes) -> String {
+    let mut css = String::new();
+    if let Some(ref font_family) = attrs.font_family {
+        css.push_str(&format!("font-family: {};", font_family));
+    }
+    if let Some(ref size) = attrs.size {
+        // If the size is a plain number, treat it as pt; otherwise pass through.
+        if size.chars().all(|c| c.is_ascii_digit()) {
+            css.push_str(&format!("font-size: {}pt;", size));
+        } else {
+            css.push_str(&format!("font-size: {};", size));
+        }
+    }
+    if let Some(ref fg) = attrs.foreground {
+        css.push_str(&format!("color: {};", fg));
+    }
+    if let Some(ref bg) = attrs.background {
+        css.push_str(&format!("background-color: {};", bg));
+    }
+    if let Some(ref weight) = attrs.weight {
+        css.push_str(&format!("font-weight: {};", weight));
+    }
+    if let Some(ref style) = attrs.style {
+        css.push_str(&format!("font-style: {};", style));
+    }
+    css
 }
 
 // ---------------------------------------------------------------------------
@@ -605,6 +684,75 @@ mod transpose_tests {
         // "Chorus text" should appear twice: once in original, once in recall
         let count = html.matches("Chorus text").count();
         assert_eq!(count, 2, "chorus content should appear twice");
+    }
+
+    // -- inline markup rendering tests ----------------------------------------
+
+    #[test]
+    fn test_render_bold_markup() {
+        let html = render("Hello <b>bold</b> world");
+        assert!(html.contains("<b>bold</b>"));
+        assert!(html.contains("Hello "));
+        assert!(html.contains(" world"));
+    }
+
+    #[test]
+    fn test_render_italic_markup() {
+        let html = render("Hello <i>italic</i> text");
+        assert!(html.contains("<i>italic</i>"));
+    }
+
+    #[test]
+    fn test_render_highlight_markup() {
+        let html = render("<highlight>important</highlight>");
+        assert!(html.contains("<mark>important</mark>"));
+    }
+
+    #[test]
+    fn test_render_comment_inline_markup() {
+        let html = render("<comment>note</comment>");
+        assert!(html.contains("<span class=\"comment\">note</span>"));
+    }
+
+    #[test]
+    fn test_render_span_with_foreground() {
+        let html = render(r#"<span foreground="red">red text</span>"#);
+        assert!(html.contains("color: red;"));
+        assert!(html.contains("red text"));
+    }
+
+    #[test]
+    fn test_render_span_with_multiple_attrs() {
+        let html = render(
+            r#"<span font_family="Serif" size="14" foreground="blue" weight="bold">styled</span>"#,
+        );
+        assert!(html.contains("font-family: Serif;"));
+        assert!(html.contains("font-size: 14pt;"));
+        assert!(html.contains("color: blue;"));
+        assert!(html.contains("font-weight: bold;"));
+        assert!(html.contains("styled"));
+    }
+
+    #[test]
+    fn test_render_nested_markup() {
+        let html = render("<b><i>bold italic</i></b>");
+        assert!(html.contains("<b><i>bold italic</i></b>"));
+    }
+
+    #[test]
+    fn test_render_markup_with_chord() {
+        let html = render("[Am]Hello <b>bold</b> world");
+        assert!(html.contains("<b>bold</b>"));
+        assert!(html.contains("<span class=\"chord\">Am</span>"));
+    }
+
+    #[test]
+    fn test_render_no_markup_unchanged() {
+        let html = render("Just plain text");
+        // Should NOT have any inline formatting tags
+        assert!(!html.contains("<b>"));
+        assert!(!html.contains("<i>"));
+        assert!(html.contains("Just plain text"));
     }
 }
 

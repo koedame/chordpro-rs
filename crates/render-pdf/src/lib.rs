@@ -5,6 +5,7 @@
 //! generated directly from raw PDF object structures.
 
 use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
+use chordpro_core::inline_markup::TextSpan;
 use chordpro_core::transpose::transpose_chord;
 
 // ---------------------------------------------------------------------------
@@ -143,8 +144,14 @@ pub fn try_render(input: &str) -> Result<Vec<u8>, chordpro_core::ParseError> {
 // ---------------------------------------------------------------------------
 
 fn render_lyrics(lyrics: &LyricsLine, transpose_offset: i8, page: &mut PageBuilder) {
+    let has_markup = lyrics.segments.iter().any(|s| s.has_markup());
+
     if !lyrics.has_chords() {
-        page.text(&lyrics.text(), Font::Helvetica, LYRICS_SIZE);
+        if has_markup {
+            render_lyrics_spans(lyrics, page);
+        } else {
+            page.text(&lyrics.text(), Font::Helvetica, LYRICS_SIZE);
+        }
         page.newline(LYRICS_SIZE + LINE_GAP);
         return;
     }
@@ -175,8 +182,82 @@ fn render_lyrics(lyrics: &LyricsLine, transpose_offset: i8, page: &mut PageBuild
 
     // Lyrics row
     page.y -= CHORD_SIZE + 2.0;
-    page.text(&lyrics.text(), Font::Helvetica, LYRICS_SIZE);
+    if has_markup {
+        render_lyrics_spans(lyrics, page);
+    } else {
+        page.text(&lyrics.text(), Font::Helvetica, LYRICS_SIZE);
+    }
     page.newline(LYRICS_SIZE + LINE_GAP);
+}
+
+/// Render lyrics line with inline markup using font changes.
+///
+/// Walks the span tree for each segment, switching between Helvetica,
+/// HelveticaBold, HelveticaOblique, and HelveticaBoldOblique as needed.
+fn render_lyrics_spans(lyrics: &LyricsLine, page: &mut PageBuilder) {
+    let mut x = MARGIN_LEFT;
+    let y = page.y;
+    for seg in &lyrics.segments {
+        if seg.has_markup() {
+            x = render_span_list(&seg.spans, page, x, y, false, false);
+        } else {
+            page.text_at(&seg.text, Font::Helvetica, LYRICS_SIZE, x, y);
+            x += seg.text.chars().count() as f32 * LYRICS_SIZE * CHAR_WIDTH;
+        }
+    }
+}
+
+/// Recursively render a list of [`TextSpan`]s at the given (x, y) position.
+///
+/// Returns the new X position after all text has been emitted.
+fn render_span_list(
+    spans: &[TextSpan],
+    page: &mut PageBuilder,
+    mut x: f32,
+    y: f32,
+    bold: bool,
+    italic: bool,
+) -> f32 {
+    for span in spans {
+        match span {
+            TextSpan::Plain(text) => {
+                let font = match (bold, italic) {
+                    (true, true) => Font::HelveticaBoldOblique,
+                    (true, false) => Font::HelveticaBold,
+                    (false, true) => Font::HelveticaOblique,
+                    (false, false) => Font::Helvetica,
+                };
+                page.text_at(text, font, LYRICS_SIZE, x, y);
+                x += text.chars().count() as f32 * LYRICS_SIZE * CHAR_WIDTH;
+            }
+            TextSpan::Bold(children) => {
+                x = render_span_list(children, page, x, y, true, italic);
+            }
+            TextSpan::Italic(children) => {
+                x = render_span_list(children, page, x, y, bold, true);
+            }
+            TextSpan::Highlight(children) | TextSpan::Comment(children) => {
+                // Highlight/comment: render children with current style
+                // (no distinct visual in basic PDF)
+                x = render_span_list(children, page, x, y, bold, italic);
+            }
+            TextSpan::Span(attrs, children) => {
+                // Apply weight/style from span attributes
+                let span_bold = bold
+                    || attrs
+                        .weight
+                        .as_deref()
+                        .is_some_and(|w| w.eq_ignore_ascii_case("bold"));
+                let span_italic = italic
+                    || attrs
+                        .style
+                        .as_deref()
+                        .is_some_and(|s| s.eq_ignore_ascii_case("italic"));
+                x = render_span_list(children, page, x, y, span_bold, span_italic);
+            }
+        }
+    }
+    x
 }
 
 /// Render the section label for a start-of-section directive.
@@ -657,5 +738,63 @@ mod delegate_tests {
         let bytes = render_song(&song);
         let content = String::from_utf8_lossy(&bytes);
         assert!(content.contains("Textblock"));
+    }
+}
+
+#[cfg(test)]
+mod inline_markup_tests {
+    use super::*;
+
+    #[test]
+    fn test_bold_markup_uses_bold_font() {
+        let input = "Hello <b>bold</b> world";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        // PDF should contain both Helvetica (regular) and HelveticaBold
+        assert!(content.contains("/F1"));
+        assert!(content.contains("/F2"));
+        assert!(content.contains("bold"));
+    }
+
+    #[test]
+    fn test_italic_markup_uses_oblique_font() {
+        let input = "Hello <i>italic</i> text";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("/F3")); // HelveticaOblique
+        assert!(content.contains("italic"));
+    }
+
+    #[test]
+    fn test_bold_italic_markup_uses_bold_oblique_font() {
+        let input = "<b><i>bold italic</i></b>";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("/F4")); // HelveticaBoldOblique
+        assert!(content.contains("bold italic"));
+    }
+
+    #[test]
+    fn test_markup_with_chords_produces_valid_pdf() {
+        let input = "[Am]Hello <b>bold</b> world";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF"));
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("Am"));
+        assert!(content.contains("bold"));
+    }
+
+    #[test]
+    fn test_span_weight_bold_uses_bold_font() {
+        let input = r#"<span weight="bold">weighted</span>"#;
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("/F2")); // HelveticaBold
+        assert!(content.contains("weighted"));
     }
 }
