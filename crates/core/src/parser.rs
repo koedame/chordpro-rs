@@ -100,13 +100,20 @@ pub struct Parser {
     tokens: Vec<Token>,
     /// Current index into `tokens`.
     pos: usize,
+    /// Whether we are currently inside a `{start_of_tab}`..`{end_of_tab}` block.
+    /// Lines inside tab sections are treated as verbatim text (no chord parsing).
+    in_tab: bool,
 }
 
 impl Parser {
     /// Creates a new parser for the given token stream.
     #[must_use]
     pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, pos: 0 }
+        Self {
+            tokens,
+            pos: 0,
+            in_tab: false,
+        }
     }
 
     /// Parses the token stream and returns a [`Song`] AST.
@@ -225,9 +232,92 @@ impl Parser {
                 Ok(Line::Empty)
             }
             // A directive line: starts with `{`.
-            TokenKind::DirectiveOpen => self.parse_directive_line(),
+            TokenKind::DirectiveOpen => {
+                // Inside tab: only {end_of_tab}/{eot} is parsed as a directive;
+                // everything else is verbatim text.
+                if self.in_tab && !self.is_end_of_tab_ahead() {
+                    return self.parse_verbatim_line();
+                }
+                let line = self.parse_directive_line()?;
+                // Track tab section state.
+                if let Line::Directive(ref d) = line {
+                    match d.kind {
+                        DirectiveKind::StartOfTab => self.in_tab = true,
+                        DirectiveKind::EndOfTab => self.in_tab = false,
+                        _ => {}
+                    }
+                }
+                Ok(line)
+            }
+            // Inside a tab section: treat as verbatim text (no chord parsing).
+            _ if self.in_tab => self.parse_verbatim_line(),
             // Anything else: a lyrics line.
             _ => self.parse_lyrics_line(),
+        }
+    }
+
+    /// Peeks ahead to check if the current `{` starts an `{end_of_tab}` or
+    /// `{eot}` directive. This allows the parser to exit tab mode.
+    fn is_end_of_tab_ahead(&self) -> bool {
+        // Look for pattern: DirectiveOpen, Text("end_of_tab" | "eot"), DirectiveClose
+        if self.pos + 1 < self.tokens.len() {
+            if let TokenKind::Text(ref text) = self.tokens[self.pos + 1].kind {
+                let trimmed = text.trim().to_ascii_lowercase();
+                return trimmed == "end_of_tab" || trimmed == "eot";
+            }
+        }
+        false
+    }
+
+    /// Parses a verbatim text line (used inside tab sections).
+    ///
+    /// All tokens until the next Newline/Eof are collected as plain text,
+    /// with no chord bracket interpretation. The result is a lyrics line
+    /// with a single text-only segment.
+    fn parse_verbatim_line(&mut self) -> Result<Line, ParseError> {
+        let mut text = String::new();
+
+        loop {
+            match self.peek_kind() {
+                TokenKind::Newline | TokenKind::Eof => break,
+                TokenKind::ChordOpen => {
+                    text.push('[');
+                    self.advance();
+                }
+                TokenKind::ChordClose => {
+                    text.push(']');
+                    self.advance();
+                }
+                TokenKind::DirectiveOpen => {
+                    text.push('{');
+                    self.advance();
+                }
+                TokenKind::DirectiveClose => {
+                    text.push('}');
+                    self.advance();
+                }
+                TokenKind::Colon => {
+                    text.push(':');
+                    self.advance();
+                }
+                TokenKind::Text(t) => {
+                    text.push_str(t);
+                    self.advance();
+                }
+            }
+        }
+
+        // Consume the newline.
+        if self.peek_kind() == &TokenKind::Newline {
+            self.advance();
+        }
+
+        if text.is_empty() {
+            Ok(Line::Empty)
+        } else {
+            Ok(Line::Lyrics(LyricsLine {
+                segments: vec![LyricsSegment::text_only(text)],
+            }))
         }
     }
 
@@ -1666,5 +1756,74 @@ mod tests {
         let err = parse("{title\n{another").unwrap_err();
         assert!(err.message.contains("unclosed directive"));
         assert_eq!(err.span.start.line, 1);
+    }
+
+    // --- Tab verbatim (#59) ---
+
+    #[test]
+    fn tab_content_is_verbatim() {
+        // Brackets inside tab should NOT be parsed as chords.
+        let song = parse("{start_of_tab}\ne|---[0]---|\n{end_of_tab}").unwrap();
+        // Line 0: start_of_tab directive
+        // Line 1: verbatim text line
+        // Line 2: end_of_tab directive
+        if let Line::Lyrics(ref l) = song.lines[1] {
+            assert_eq!(l.segments.len(), 1);
+            assert!(l.segments[0].chord.is_none());
+            assert_eq!(l.segments[0].text, "e|---[0]---|");
+        } else {
+            panic!("expected lyrics line for tab content");
+        }
+    }
+
+    #[test]
+    fn tab_content_preserves_braces() {
+        let song = parse("{sot}\n{some text}\n{eot}").unwrap();
+        if let Line::Lyrics(ref l) = song.lines[1] {
+            assert_eq!(l.segments[0].text, "{some text}");
+        } else {
+            panic!("expected lyrics line for tab content");
+        }
+    }
+
+    #[test]
+    fn chords_parsed_after_tab_ends() {
+        // After end_of_tab, chord parsing should resume.
+        let song = parse("{sot}\ne|---|\n{eot}\n[Am]Hello").unwrap();
+        // Line 3 should be a lyrics line with a chord.
+        if let Line::Lyrics(ref l) = song.lines[3] {
+            assert!(l.segments[0].chord.is_some());
+            assert_eq!(l.segments[0].chord.as_ref().unwrap().name, "Am");
+        } else {
+            panic!("expected lyrics line with chord after tab section");
+        }
+    }
+
+    // --- Define directive (#37) ---
+
+    #[test]
+    fn define_directive_parsed() {
+        let song = parse("{define: Asus4 base-fret 1 frets x 0 2 2 3 0}").unwrap();
+        if let Line::Directive(ref d) = song.lines[0] {
+            assert_eq!(d.kind, DirectiveKind::Define);
+            assert_eq!(d.name, "define");
+            assert_eq!(
+                d.value.as_deref(),
+                Some("Asus4 base-fret 1 frets x 0 2 2 3 0")
+            );
+        } else {
+            panic!("expected define directive");
+        }
+    }
+
+    #[test]
+    fn chord_directive_parsed() {
+        let song = parse("{chord: Asus4}").unwrap();
+        if let Line::Directive(ref d) = song.lines[0] {
+            assert_eq!(d.kind, DirectiveKind::ChordDirective);
+            assert_eq!(d.value.as_deref(), Some("Asus4"));
+        } else {
+            panic!("expected chord directive");
+        }
     }
 }

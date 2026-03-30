@@ -402,6 +402,12 @@ pub enum DirectiveKind {
     /// `{end_of_tab}` / `{eot}` — ends a tab section.
     EndOfTab,
 
+    // -- Chord definition directives ----------------------------------------
+    /// `{define}` — defines a custom chord fingering.
+    Define,
+    /// `{chord}` — references a custom chord.
+    ChordDirective,
+
     // -- Unknown ------------------------------------------------------------
     /// A directive not recognized as a standard ChordPro directive.
     /// The original directive name (lowercased) is preserved.
@@ -444,6 +450,10 @@ impl DirectiveKind {
             "start_of_tab" | "sot" => Self::StartOfTab,
             "end_of_tab" | "eot" => Self::EndOfTab,
 
+            // Chord definitions
+            "define" => Self::Define,
+            "chord" => Self::ChordDirective,
+
             // Unknown
             other => Self::Unknown(other.to_string()),
         }
@@ -477,6 +487,8 @@ impl DirectiveKind {
             Self::EndOfBridge => "end_of_bridge",
             Self::StartOfTab => "start_of_tab",
             Self::EndOfTab => "end_of_tab",
+            Self::Define => "define",
+            Self::ChordDirective => "chord",
             Self::Unknown(name) => name.as_str(),
         }
     }
