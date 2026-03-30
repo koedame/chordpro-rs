@@ -3,6 +3,10 @@
 //! Converts a parsed ChordPro AST into a PDF document using built-in PDF
 //! Type1 fonts (Helvetica family). No external dependencies — the PDF is
 //! generated directly from raw PDF object structures.
+//!
+//! Supports multi-page output: content automatically flows to new pages when
+//! the current page overflows, and `{new_page}` / `{new_physical_page}`
+//! directives trigger explicit page breaks.
 
 use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
 use chordpro_core::inline_markup::TextSpan;
@@ -62,6 +66,8 @@ const PAGE_H: f32 = 842.0;
 const MARGIN_LEFT: f32 = 56.0;
 /// Top margin (distance from top of page).
 const MARGIN_TOP: f32 = 56.0;
+/// Bottom margin — content below this Y coordinate triggers a new page.
+const MARGIN_BOTTOM: f32 = 56.0;
 /// Title font size.
 const TITLE_SIZE: f32 = 18.0;
 /// Subtitle font size.
@@ -90,6 +96,9 @@ const CHAR_WIDTH: f32 = 0.52;
 ///
 /// The `{chorus}` directive recalls the most recently defined chorus section,
 /// re-rendering its content with a "Chorus" label.
+///
+/// Long songs automatically flow across multiple pages. The `{new_page}` and
+/// `{new_physical_page}` directives trigger explicit page breaks.
 #[must_use]
 pub fn render_song(song: &Song) -> Vec<u8> {
     render_song_with_transpose(song, 0)
@@ -101,19 +110,19 @@ pub fn render_song(song: &Song) -> Vec<u8> {
 /// values, allowing the CLI `--transpose` flag to combine with in-file directives.
 #[must_use]
 pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
-    let mut page = PageBuilder::new();
+    let mut doc = PdfDocument::new();
     let mut transpose_offset: i8 = cli_transpose;
     let mut fmt_state = PdfFormattingState::default();
 
     // Title
     if let Some(title) = &song.metadata.title {
-        page.text(title, Font::HelveticaBold, TITLE_SIZE);
-        page.newline(TITLE_SIZE + LINE_GAP);
+        doc.text(title, Font::HelveticaBold, TITLE_SIZE);
+        doc.newline(TITLE_SIZE + LINE_GAP);
     }
     // Subtitles
     for subtitle in &song.metadata.subtitles {
-        page.text(subtitle, Font::Helvetica, SUBTITLE_SIZE);
-        page.newline(SUBTITLE_SIZE + LINE_GAP);
+        doc.text(subtitle, Font::Helvetica, SUBTITLE_SIZE);
+        doc.newline(SUBTITLE_SIZE + LINE_GAP);
     }
 
     // Stores the AST lines of the most recently defined chorus body for replay.
@@ -127,7 +136,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
                 if let Some(buf) = chorus_buf.as_mut() {
                     buf.push(line.clone());
                 }
-                render_lyrics(lyrics, transpose_offset, &fmt_state, &mut page);
+                render_lyrics(lyrics, transpose_offset, &fmt_state, &mut doc);
             }
             Line::Directive(d) if !d.kind.is_metadata() => {
                 if d.kind == DirectiveKind::Transpose {
@@ -142,7 +151,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
                 }
                 match &d.kind {
                     DirectiveKind::StartOfChorus => {
-                        render_section_label(d, &mut page);
+                        render_section_label(d, &mut doc);
                         chorus_buf = Some(Vec::new());
                     }
                     DirectiveKind::EndOfChorus => {
@@ -156,14 +165,17 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
                             &chorus_body,
                             transpose_offset,
                             &fmt_state,
-                            &mut page,
+                            &mut doc,
                         );
+                    }
+                    DirectiveKind::NewPage | DirectiveKind::NewPhysicalPage => {
+                        doc.new_page();
                     }
                     _ => {
                         if let Some(buf) = chorus_buf.as_mut() {
                             buf.push(line.clone());
                         }
-                        render_directive(d, &mut page);
+                        render_directive(d, &mut doc);
                     }
                 }
             }
@@ -171,19 +183,19 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
                 if let Some(buf) = chorus_buf.as_mut() {
                     buf.push(line.clone());
                 }
-                render_comment(*style, text, &mut page);
+                render_comment(*style, text, &mut doc);
             }
             Line::Empty => {
                 if let Some(buf) = chorus_buf.as_mut() {
                     buf.push(line.clone());
                 }
-                page.newline(LINE_GAP * 2.0);
+                doc.newline(LINE_GAP * 2.0);
             }
             _ => {}
         }
     }
 
-    build_pdf(&page.ops)
+    doc.build_pdf()
 }
 
 /// Parse and render a ChordPro source string to PDF bytes.
@@ -200,25 +212,29 @@ fn render_lyrics(
     lyrics: &LyricsLine,
     transpose_offset: i8,
     fmt_state: &PdfFormattingState,
-    page: &mut PageBuilder,
+    doc: &mut PdfDocument,
 ) {
     let has_markup = lyrics.segments.iter().any(|s| s.has_markup());
     let lyrics_size = fmt_state.lyrics_size();
     let chord_size = fmt_state.chord_size();
 
     if !lyrics.has_chords() {
+        doc.ensure_space(lyrics_size + LINE_GAP);
         if has_markup {
-            render_lyrics_spans(lyrics, lyrics_size, page);
+            render_lyrics_spans(lyrics, lyrics_size, doc);
         } else {
-            page.text(&lyrics.text(), Font::Helvetica, lyrics_size);
+            doc.text(&lyrics.text(), Font::Helvetica, lyrics_size);
         }
-        page.newline(lyrics_size + LINE_GAP);
+        doc.newline(lyrics_size + LINE_GAP);
         return;
     }
 
+    // Need space for chord row + lyrics row
+    doc.ensure_space(chord_size + 2.0 + lyrics_size + LINE_GAP);
+
     // Chord row
     let mut x = MARGIN_LEFT;
-    let start_y = page.y;
+    let start_y = doc.y();
     for seg in &lyrics.segments {
         if let Some(chord) = &seg.chord {
             let display_name = if transpose_offset != 0 {
@@ -226,7 +242,7 @@ fn render_lyrics(
             } else {
                 chord.name.clone()
             };
-            page.text_at(&display_name, Font::HelveticaBold, chord_size, x, start_y);
+            doc.text_at(&display_name, Font::HelveticaBold, chord_size, x, start_y);
         }
         let text_w = seg.text.chars().count() as f32 * lyrics_size * CHAR_WIDTH;
         let chord_w = seg.chord.as_ref().map_or(0.0, |c| {
@@ -241,27 +257,27 @@ fn render_lyrics(
     }
 
     // Lyrics row
-    page.y -= chord_size + 2.0;
+    doc.advance_y(chord_size + 2.0);
     if has_markup {
-        render_lyrics_spans(lyrics, lyrics_size, page);
+        render_lyrics_spans(lyrics, lyrics_size, doc);
     } else {
-        page.text(&lyrics.text(), Font::Helvetica, lyrics_size);
+        doc.text(&lyrics.text(), Font::Helvetica, lyrics_size);
     }
-    page.newline(lyrics_size + LINE_GAP);
+    doc.newline(lyrics_size + LINE_GAP);
 }
 
 /// Render lyrics line with inline markup using font changes.
 ///
 /// Walks the span tree for each segment, switching between Helvetica,
 /// HelveticaBold, HelveticaOblique, and HelveticaBoldOblique as needed.
-fn render_lyrics_spans(lyrics: &LyricsLine, font_size: f32, page: &mut PageBuilder) {
+fn render_lyrics_spans(lyrics: &LyricsLine, font_size: f32, doc: &mut PdfDocument) {
     let mut x = MARGIN_LEFT;
-    let y = page.y;
+    let y = doc.y();
     for seg in &lyrics.segments {
         if seg.has_markup() {
-            x = render_span_list(&seg.spans, page, x, y, font_size, false, false);
+            x = render_span_list(&seg.spans, doc, x, y, font_size, false, false);
         } else {
-            page.text_at(&seg.text, Font::Helvetica, font_size, x, y);
+            doc.text_at(&seg.text, Font::Helvetica, font_size, x, y);
             x += seg.text.chars().count() as f32 * font_size * CHAR_WIDTH;
         }
     }
@@ -272,7 +288,7 @@ fn render_lyrics_spans(lyrics: &LyricsLine, font_size: f32, page: &mut PageBuild
 /// Returns the new X position after all text has been emitted.
 fn render_span_list(
     spans: &[TextSpan],
-    page: &mut PageBuilder,
+    doc: &mut PdfDocument,
     mut x: f32,
     y: f32,
     font_size: f32,
@@ -288,19 +304,19 @@ fn render_span_list(
                     (false, true) => Font::HelveticaOblique,
                     (false, false) => Font::Helvetica,
                 };
-                page.text_at(text, font, font_size, x, y);
+                doc.text_at(text, font, font_size, x, y);
                 x += text.chars().count() as f32 * font_size * CHAR_WIDTH;
             }
             TextSpan::Bold(children) => {
-                x = render_span_list(children, page, x, y, font_size, true, italic);
+                x = render_span_list(children, doc, x, y, font_size, true, italic);
             }
             TextSpan::Italic(children) => {
-                x = render_span_list(children, page, x, y, font_size, bold, true);
+                x = render_span_list(children, doc, x, y, font_size, bold, true);
             }
             TextSpan::Highlight(children) | TextSpan::Comment(children) => {
                 // Highlight/comment: render children with current style
                 // (no distinct visual in basic PDF)
-                x = render_span_list(children, page, x, y, font_size, bold, italic);
+                x = render_span_list(children, doc, x, y, font_size, bold, italic);
             }
             TextSpan::Span(attrs, children) => {
                 // Apply weight/style from span attributes
@@ -314,7 +330,7 @@ fn render_span_list(
                         .style
                         .as_deref()
                         .is_some_and(|s| s.eq_ignore_ascii_case("italic"));
-                x = render_span_list(children, page, x, y, font_size, span_bold, span_italic);
+                x = render_span_list(children, doc, x, y, font_size, span_bold, span_italic);
             }
         }
     }
@@ -322,7 +338,7 @@ fn render_span_list(
 }
 
 /// Render the section label for a start-of-section directive.
-fn render_section_label(directive: &chordpro_core::ast::Directive, page: &mut PageBuilder) {
+fn render_section_label(directive: &chordpro_core::ast::Directive, doc: &mut PdfDocument) {
     let label: Option<String> = match &directive.kind {
         DirectiveKind::StartOfChorus => Some("Chorus".to_string()),
         DirectiveKind::StartOfVerse => Some("Verse".to_string()),
@@ -341,8 +357,9 @@ fn render_section_label(directive: &chordpro_core::ast::Directive, page: &mut Pa
             Some(v) if !v.is_empty() => format!("{label}: {v}"),
             _ => label,
         };
-        page.text(&text, Font::HelveticaBoldOblique, SECTION_SIZE);
-        page.newline(SECTION_SIZE + LINE_GAP);
+        doc.ensure_space(SECTION_SIZE + LINE_GAP);
+        doc.text(&text, Font::HelveticaBoldOblique, SECTION_SIZE);
+        doc.newline(SECTION_SIZE + LINE_GAP);
     }
 }
 
@@ -355,8 +372,8 @@ fn capitalize(s: &str) -> String {
     }
 }
 
-fn render_directive(directive: &chordpro_core::ast::Directive, page: &mut PageBuilder) {
-    render_section_label(directive, page);
+fn render_directive(directive: &chordpro_core::ast::Directive, doc: &mut PdfDocument) {
+    render_section_label(directive, doc);
 }
 
 /// Render a `{chorus}` recall directive in the PDF.
@@ -368,49 +385,82 @@ fn render_chorus_recall(
     chorus_body: &[Line],
     transpose_offset: i8,
     fmt_state: &PdfFormattingState,
-    page: &mut PageBuilder,
+    doc: &mut PdfDocument,
 ) {
     let text = match value {
         Some(v) if !v.is_empty() => format!("Chorus: {v}"),
         _ => "Chorus".to_string(),
     };
-    page.text(&text, Font::HelveticaBoldOblique, SECTION_SIZE);
-    page.newline(SECTION_SIZE + LINE_GAP);
+    doc.ensure_space(SECTION_SIZE + LINE_GAP);
+    doc.text(&text, Font::HelveticaBoldOblique, SECTION_SIZE);
+    doc.newline(SECTION_SIZE + LINE_GAP);
 
     // Replay the stored chorus body lines.
     for line in chorus_body {
         match line {
-            Line::Lyrics(lyrics) => render_lyrics(lyrics, transpose_offset, fmt_state, page),
-            Line::Comment(style, text) => render_comment(*style, text, page),
-            Line::Empty => page.newline(LINE_GAP * 2.0),
-            Line::Directive(d) if !d.kind.is_metadata() => render_directive(d, page),
+            Line::Lyrics(lyrics) => render_lyrics(lyrics, transpose_offset, fmt_state, doc),
+            Line::Comment(style, text) => render_comment(*style, text, doc),
+            Line::Empty => doc.newline(LINE_GAP * 2.0),
+            Line::Directive(d) if !d.kind.is_metadata() => render_directive(d, doc),
             _ => {}
         }
     }
 }
 
-fn render_comment(_style: CommentStyle, text: &str, page: &mut PageBuilder) {
+fn render_comment(_style: CommentStyle, text: &str, doc: &mut PdfDocument) {
     let font = Font::HelveticaOblique;
-    page.text(text, font, COMMENT_SIZE);
-    page.newline(COMMENT_SIZE + LINE_GAP);
+    doc.ensure_space(COMMENT_SIZE + LINE_GAP);
+    doc.text(text, font, COMMENT_SIZE);
+    doc.newline(COMMENT_SIZE + LINE_GAP);
 }
 
 // ---------------------------------------------------------------------------
-// PDF text operation accumulator
+// Multi-page PDF document builder
 // ---------------------------------------------------------------------------
 
-/// Tracks the current Y position and accumulates PDF content-stream operations.
-struct PageBuilder {
+/// Accumulates content across multiple pages and builds the final PDF.
+///
+/// Each page has its own content stream. When the Y cursor drops below the
+/// bottom margin, a new page is automatically started.
+struct PdfDocument {
+    /// Content-stream operations for each page.
+    pages: Vec<Vec<String>>,
+    /// Current Y position on the current page.
     y: f32,
-    ops: Vec<String>,
 }
 
-impl PageBuilder {
+impl PdfDocument {
+    /// Create a new document with one empty page.
     fn new() -> Self {
         Self {
+            pages: vec![Vec::new()],
             y: PAGE_H - MARGIN_TOP,
-            ops: Vec::new(),
         }
+    }
+
+    /// Returns the current Y position.
+    fn y(&self) -> f32 {
+        self.y
+    }
+
+    /// Returns the number of pages.
+    #[cfg(test)]
+    fn page_count(&self) -> usize {
+        self.pages.len()
+    }
+
+    /// Ensure there is at least `needed` points of vertical space remaining.
+    /// If not, start a new page.
+    fn ensure_space(&mut self, needed: f32) {
+        if self.y - needed < MARGIN_BOTTOM {
+            self.new_page();
+        }
+    }
+
+    /// Start a new page, resetting the Y cursor.
+    fn new_page(&mut self) {
+        self.pages.push(Vec::new());
+        self.y = PAGE_H - MARGIN_TOP;
     }
 
     /// Emit text at the current left margin and Y position.
@@ -420,17 +470,127 @@ impl PageBuilder {
 
     /// Emit text at an explicit (x, y) position.
     fn text_at(&mut self, text: &str, font: Font, size: f32, x: f32, y: f32) {
-        self.ops.push("BT".to_string());
-        self.ops
-            .push(format!("{} {} Tf", font.pdf_name(), fmt_f32(size)));
-        self.ops.push(format!("{} {} Td", fmt_f32(x), fmt_f32(y)));
-        self.ops.push(format!("({}) Tj", pdf_escape(text)));
-        self.ops.push("ET".to_string());
+        let ops = self.current_page_mut();
+        ops.push("BT".to_string());
+        ops.push(format!("{} {} Tf", font.pdf_name(), fmt_f32(size)));
+        ops.push(format!("{} {} Td", fmt_f32(x), fmt_f32(y)));
+        ops.push(format!("({}) Tj", pdf_escape(text)));
+        ops.push("ET".to_string());
     }
 
-    /// Move the Y cursor down.
+    /// Move the Y cursor down. May trigger a new page if past bottom margin.
     fn newline(&mut self, amount: f32) {
         self.y -= amount;
+        if self.y < MARGIN_BOTTOM {
+            self.new_page();
+        }
+    }
+
+    /// Advance Y cursor without triggering auto page break.
+    ///
+    /// Used for intra-element positioning (e.g., chord row to lyrics row).
+    fn advance_y(&mut self, amount: f32) {
+        self.y -= amount;
+    }
+
+    /// Returns a mutable reference to the current page's operations.
+    fn current_page_mut(&mut self) -> &mut Vec<String> {
+        // pages always has at least one element (initialized in new())
+        self.pages.last_mut().expect("pages is never empty")
+    }
+
+    /// Build the complete multi-page PDF document.
+    fn build_pdf(&self) -> Vec<u8> {
+        let num_pages = self.pages.len();
+        let mut offsets: Vec<usize> = Vec::new();
+        let mut pdf = Vec::<u8>::new();
+
+        // Header
+        pdf.extend_from_slice(b"%PDF-1.4\n");
+
+        // Object 1: Catalog
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+        // Object 2: Pages (parent of all page objects)
+        offsets.push(pdf.len());
+        let font_refs: String = FONTS
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("{} {} 0 R", FONTS[i].pdf_name(), i + 3))
+            .collect::<Vec<_>>()
+            .join(" ");
+        // Kids: page objects start at object 3+FONTS.len()
+        let page_obj_start = 3 + FONTS.len();
+        let kids: String = (0..num_pages)
+            .map(|i| format!("{} 0 R", page_obj_start + i * 2))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let obj2 = format!(
+            "2 0 obj\n<< /Type /Pages /MediaBox [0 0 {} {}] /Resources << /Font << {} >> /ProcSet [/PDF /Text] >> /Kids [{}] /Count {} >>\nendobj\n",
+            fmt_f32(PAGE_W),
+            fmt_f32(PAGE_H),
+            font_refs,
+            kids,
+            num_pages
+        );
+        pdf.extend_from_slice(obj2.as_bytes());
+
+        // Font dictionaries: objects 3 .. 3+FONTS.len()-1
+        for font in &FONTS {
+            offsets.push(pdf.len());
+            let obj_num = offsets.len();
+            let obj = format!(
+                "{} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /{} /Encoding /WinAnsiEncoding >>\nendobj\n",
+                obj_num,
+                font.base_name()
+            );
+            pdf.extend_from_slice(obj.as_bytes());
+        }
+
+        // Page + content stream pairs
+        for (i, page_ops) in self.pages.iter().enumerate() {
+            let page_obj_num = page_obj_start + i * 2;
+            let content_obj_num = page_obj_num + 1;
+
+            // Page object
+            offsets.push(pdf.len());
+            let page_obj = format!(
+                "{} 0 obj\n<< /Type /Page /Parent 2 0 R /Contents {} 0 R >>\nendobj\n",
+                page_obj_num, content_obj_num
+            );
+            pdf.extend_from_slice(page_obj.as_bytes());
+
+            // Content stream
+            let content = page_ops.join("\n");
+            offsets.push(pdf.len());
+            let stream_obj = format!(
+                "{} 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
+                content_obj_num,
+                content.len() + 1, // +1 for trailing newline in stream
+                content
+            );
+            pdf.extend_from_slice(stream_obj.as_bytes());
+        }
+
+        // Cross-reference table
+        let xref_offset = pdf.len();
+        let num_objects = offsets.len() + 1; // +1 for object 0
+        pdf.extend_from_slice(format!("xref\n0 {num_objects}\n").as_bytes());
+        pdf.extend_from_slice(b"0000000000 65535 f \n");
+        for offset in &offsets {
+            pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+
+        // Trailer
+        pdf.extend_from_slice(
+            format!(
+                "trailer\n<< /Size {num_objects} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n"
+            )
+            .as_bytes(),
+        );
+
+        pdf
     }
 }
 
@@ -478,7 +638,7 @@ const FONTS: [Font; 4] = [
 ];
 
 // ---------------------------------------------------------------------------
-// PDF document assembly
+// PDF helpers
 // ---------------------------------------------------------------------------
 
 /// Escape a string for inclusion in a PDF literal string `(...)`.
@@ -506,81 +666,6 @@ fn fmt_f32(v: f32) -> String {
     } else {
         s
     }
-}
-
-/// Build a complete PDF file from content-stream operations.
-fn build_pdf(ops: &[String]) -> Vec<u8> {
-    let mut offsets: Vec<usize> = Vec::new();
-    let mut pdf = Vec::<u8>::new();
-
-    // Header
-    let header = b"%PDF-1.4\n";
-    pdf.extend_from_slice(header);
-
-    // Object 1: Catalog
-    offsets.push(pdf.len());
-    let obj1 = "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
-    pdf.extend_from_slice(obj1.as_bytes());
-
-    // Object 2: Pages
-    offsets.push(pdf.len());
-    let font_refs: String = FONTS
-        .iter()
-        .enumerate()
-        .map(|(i, _)| format!("{} {} 0 R", FONTS[i].pdf_name(), i + 4))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let obj2 = format!(
-        "2 0 obj\n<< /Type /Pages /MediaBox [0 0 {PAGE_W} {PAGE_H}] /Resources << /Font << {font_refs} >> /ProcSet [/PDF /Text] >> /Kids [3 0 R] /Count 1 >>\nendobj\n"
-    );
-    pdf.extend_from_slice(obj2.as_bytes());
-
-    // Object 3: Page
-    offsets.push(pdf.len());
-    let content_obj_num = 4 + FONTS.len();
-    let obj3 = format!(
-        "3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents {content_obj_num} 0 R >>\nendobj\n"
-    );
-    pdf.extend_from_slice(obj3.as_bytes());
-
-    // Objects 4..7: Font dictionaries
-    for font in &FONTS {
-        offsets.push(pdf.len());
-        let obj = format!(
-            "{} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /{} /Encoding /WinAnsiEncoding >>\nendobj\n",
-            offsets.len(),
-            font.base_name()
-        );
-        pdf.extend_from_slice(obj.as_bytes());
-    }
-
-    // Content stream
-    let content = ops.join("\n");
-    offsets.push(pdf.len());
-    let stream_obj = format!(
-        "{content_obj_num} 0 obj\n<< /Length {} >>\nstream\n{content}\nendstream\nendobj\n",
-        content.len() + 1 // +1 for trailing newline in stream
-    );
-    pdf.extend_from_slice(stream_obj.as_bytes());
-
-    // Cross-reference table
-    let xref_offset = pdf.len();
-    let num_objects = offsets.len() + 1; // +1 for object 0
-    pdf.extend_from_slice(format!("xref\n0 {num_objects}\n").as_bytes());
-    pdf.extend_from_slice(b"0000000000 65535 f \n");
-    for offset in &offsets {
-        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
-    }
-
-    // Trailer
-    pdf.extend_from_slice(
-        format!(
-            "trailer\n<< /Size {num_objects} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n"
-        )
-        .as_bytes(),
-    );
-
-    pdf
 }
 
 // ===========================================================================
@@ -891,5 +976,91 @@ mod formatting_directive_tests {
         let song = chordpro_core::parse(input).unwrap();
         let bytes = render_song(&song);
         assert!(bytes.starts_with(b"%PDF"));
+    }
+}
+
+#[cfg(test)]
+mod multipage_tests {
+    use super::*;
+
+    #[test]
+    fn test_new_page_directive_creates_two_pages() {
+        let input = "{title: Test}\nPage one\n{new_page}\nPage two";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF"));
+        let content = String::from_utf8_lossy(&bytes);
+        // Should have /Count 2 in the Pages object
+        assert!(content.contains("/Count 2"));
+        assert!(content.contains("Page one"));
+        assert!(content.contains("Page two"));
+    }
+
+    #[test]
+    fn test_new_physical_page_directive_creates_two_pages() {
+        let input = "Page one\n{new_physical_page}\nPage two";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("/Count 2"));
+    }
+
+    #[test]
+    fn test_single_page_has_count_one() {
+        let input = "{title: Short Song}\n[Am]Hello";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("/Count 1"));
+    }
+
+    #[test]
+    fn test_automatic_page_break_for_long_content() {
+        // Generate enough lines to overflow a single A4 page
+        let mut lines = vec!["{title: Long Song}".to_string()];
+        for i in 0..80 {
+            lines.push(format!("[Am]Line number {i}"));
+        }
+        let input = lines.join("\n");
+        let song = chordpro_core::parse(&input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        // Should have more than one page
+        assert!(
+            !content.contains("/Count 1"),
+            "80 chord-lyrics lines should overflow one page"
+        );
+    }
+
+    #[test]
+    fn test_multiple_new_page_directives() {
+        let input = "Page 1\n{new_page}\nPage 2\n{new_page}\nPage 3";
+        let song = chordpro_core::parse(&input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("/Count 3"));
+    }
+
+    #[test]
+    fn test_multipage_pdf_structure_valid() {
+        let input = "First page\n{new_page}\nSecond page";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert!(bytes.ends_with(b"%%EOF\n"));
+        // Verify both pages have content
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("First page"));
+        assert!(content.contains("Second page"));
+    }
+
+    #[test]
+    fn test_page_count_method() {
+        let mut doc = PdfDocument::new();
+        assert_eq!(doc.page_count(), 1);
+        doc.new_page();
+        assert_eq!(doc.page_count(), 2);
+        doc.new_page();
+        assert_eq!(doc.page_count(), 3);
     }
 }
