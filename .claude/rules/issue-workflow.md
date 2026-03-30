@@ -36,7 +36,22 @@
 - Individual tasks are created as **GitHub sub-issues** of the tracking issue.
 - Sub-issues follow the same rules as regular issues (imperative title, English only, Goal, Acceptance Criteria, labels).
 - Sub-issues inherit the `phase:N` label from their parent tracking issue.
-- When all sub-issues are closed, close the tracking issue.
+- A phase tracking issue may only be closed after the **Phase Completion Gate**
+  (see below).
+
+### Phase Completion Gate
+
+Before closing a phase tracking issue, perform the following review against
+`main`:
+
+1. **`/review`** — full code review of the phase's changes on `main`.
+2. **`/security-review`** — security review of the phase's changes on `main`.
+3. If either review finds issues, create new sub-issues under the phase tracking
+   issue for each finding. These sub-issues follow normal workflow (implement,
+   PR, CI, review, merge).
+4. Repeat steps 1–3 until a review pass produces **no new findings**.
+5. Only when both `/review` and `/security-review` pass with no new sub-issues
+   may the phase tracking issue be closed.
 
 ### Creating Sub-Issue Relationships
 
