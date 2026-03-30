@@ -38,12 +38,7 @@ fn main() -> ExitCode {
     let mut combined_output = String::new();
     let mut had_error = false;
 
-    for (i, path) in cli.files.iter().enumerate() {
-        // Separate multiple files with a blank line.
-        if i > 0 && !combined_output.is_empty() {
-            combined_output.push('\n');
-        }
-
+    for path in &cli.files {
         let input = match fs::read_to_string(path) {
             Ok(content) => content,
             Err(e) => {
@@ -54,7 +49,13 @@ fn main() -> ExitCode {
         };
 
         match render(&cli.format, &input) {
-            Ok(text) => combined_output.push_str(&text),
+            Ok(text) => {
+                // Separate multiple files with a blank line.
+                if !combined_output.is_empty() {
+                    combined_output.push('\n');
+                }
+                combined_output.push_str(&text);
+            }
             Err(e) => {
                 eprintln!("error: {path}: {e}");
                 had_error = true;
