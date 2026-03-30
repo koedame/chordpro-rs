@@ -126,11 +126,8 @@ fn render_directive(directive: &chordpro_core::ast::Directive, page: &mut PageBu
     }
 }
 
-fn render_comment(style: CommentStyle, text: &str, page: &mut PageBuilder) {
-    let font = match style {
-        CommentStyle::Normal | CommentStyle::Italic => Font::HelveticaOblique,
-        CommentStyle::Boxed => Font::HelveticaOblique,
-    };
+fn render_comment(_style: CommentStyle, text: &str, page: &mut PageBuilder) {
+    let font = Font::HelveticaOblique;
     page.text(text, font, COMMENT_SIZE);
     page.newline(COMMENT_SIZE + LINE_GAP);
 }
@@ -250,7 +247,6 @@ fn fmt_f32(v: f32) -> String {
 
 /// Build a complete PDF file from content-stream operations.
 fn build_pdf(ops: &[String]) -> Vec<u8> {
-    let mut objects: Vec<String> = Vec::new();
     let mut offsets: Vec<usize> = Vec::new();
     let mut pdf = Vec::<u8>::new();
 
@@ -261,7 +257,6 @@ fn build_pdf(ops: &[String]) -> Vec<u8> {
     // Object 1: Catalog
     offsets.push(pdf.len());
     let obj1 = "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
-    objects.push(obj1.to_string());
     pdf.extend_from_slice(obj1.as_bytes());
 
     // Object 2: Pages
@@ -275,7 +270,6 @@ fn build_pdf(ops: &[String]) -> Vec<u8> {
     let obj2 = format!(
         "2 0 obj\n<< /Type /Pages /MediaBox [0 0 {PAGE_W} {PAGE_H}] /Resources << /Font << {font_refs} >> /ProcSet [/PDF /Text] >> /Kids [3 0 R] /Count 1 >>\nendobj\n"
     );
-    objects.push(obj2.clone());
     pdf.extend_from_slice(obj2.as_bytes());
 
     // Object 3: Page
@@ -284,7 +278,6 @@ fn build_pdf(ops: &[String]) -> Vec<u8> {
     let obj3 = format!(
         "3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents {content_obj_num} 0 R >>\nendobj\n"
     );
-    objects.push(obj3.clone());
     pdf.extend_from_slice(obj3.as_bytes());
 
     // Objects 4..7: Font dictionaries
@@ -295,7 +288,6 @@ fn build_pdf(ops: &[String]) -> Vec<u8> {
             offsets.len(),
             font.base_name()
         );
-        objects.push(obj.clone());
         pdf.extend_from_slice(obj.as_bytes());
     }
 
@@ -306,7 +298,6 @@ fn build_pdf(ops: &[String]) -> Vec<u8> {
         "{content_obj_num} 0 obj\n<< /Length {} >>\nstream\n{content}\nendstream\nendobj\n",
         content.len() + 1 // +1 for trailing newline in stream
     );
-    objects.push(stream_obj.clone());
     pdf.extend_from_slice(stream_obj.as_bytes());
 
     // Cross-reference table
