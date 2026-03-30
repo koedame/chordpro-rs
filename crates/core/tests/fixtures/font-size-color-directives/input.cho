@@ -1,0 +1,10 @@
+{title: Font Test}
+{textfont: Times}
+{textsize: 12}
+{textcolour: black}
+{chordfont: Helvetica Bold}
+{chordsize: 10}
+{chordcolour: #FF0000}
+{tabfont: Courier}
+{tabsize: 9}
+{tabcolour: blue}

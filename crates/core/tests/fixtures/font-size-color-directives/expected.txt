@@ -1,0 +1,116 @@
+Song {
+    metadata: Metadata {
+        title: Some(
+            "Font Test",
+        ),
+        subtitles: [],
+        artists: [],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: None,
+        tempo: None,
+        time: None,
+        capo: None,
+        sort_title: None,
+        sort_artist: None,
+        arrangers: [],
+        copyright: None,
+        duration: None,
+        tags: [],
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "title",
+                value: Some(
+                    "Font Test",
+                ),
+                kind: Title,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "textfont",
+                value: Some(
+                    "Times",
+                ),
+                kind: TextFont,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "textsize",
+                value: Some(
+                    "12",
+                ),
+                kind: TextSize,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "textcolour",
+                value: Some(
+                    "black",
+                ),
+                kind: TextColour,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "chordfont",
+                value: Some(
+                    "Helvetica Bold",
+                ),
+                kind: ChordFont,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "chordsize",
+                value: Some(
+                    "10",
+                ),
+                kind: ChordSize,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "chordcolour",
+                value: Some(
+                    "#FF0000",
+                ),
+                kind: ChordColour,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "tabfont",
+                value: Some(
+                    "Courier",
+                ),
+                kind: TabFont,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "tabsize",
+                value: Some(
+                    "9",
+                ),
+                kind: TabSize,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "tabcolour",
+                value: Some(
+                    "blue",
+                ),
+                kind: TabColour,
+            },
+        ),
+    ],
+}

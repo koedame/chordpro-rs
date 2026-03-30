@@ -480,6 +480,26 @@ pub enum DirectiveKind {
     /// `{end_of_grid}` / `{eog}` — ends a grid section.
     EndOfGrid,
 
+    // -- Font, size, and color directives -----------------------------------
+    /// `{textfont}` / `{tf}` — sets the font for lyrics text.
+    TextFont,
+    /// `{textsize}` / `{ts}` — sets the font size for lyrics text.
+    TextSize,
+    /// `{textcolour}` / `{textcolor}` / `{tc}` — sets the color for lyrics text.
+    TextColour,
+    /// `{chordfont}` / `{cf}` — sets the font for chord names.
+    ChordFont,
+    /// `{chordsize}` / `{cs}` — sets the font size for chord names.
+    ChordSize,
+    /// `{chordcolour}` / `{chordcolor}` / `{cc}` — sets the color for chord names.
+    ChordColour,
+    /// `{tabfont}` — sets the font for tab sections.
+    TabFont,
+    /// `{tabsize}` — sets the font size for tab sections.
+    TabSize,
+    /// `{tabcolour}` / `{tabcolor}` — sets the color for tab sections.
+    TabColour,
+
     // -- Chord definition directives ----------------------------------------
     /// `{define}` — defines a custom chord fingering.
     Define,
@@ -559,6 +579,17 @@ impl DirectiveKind {
             "start_of_grid" | "sog" => Self::StartOfGrid,
             "end_of_grid" | "eog" => Self::EndOfGrid,
 
+            // Font, size, and color
+            "textfont" | "tf" => Self::TextFont,
+            "textsize" | "ts" => Self::TextSize,
+            "textcolour" | "textcolor" | "tc" => Self::TextColour,
+            "chordfont" | "cf" => Self::ChordFont,
+            "chordsize" | "cs" => Self::ChordSize,
+            "chordcolour" | "chordcolor" | "cc" => Self::ChordColour,
+            "tabfont" => Self::TabFont,
+            "tabsize" => Self::TabSize,
+            "tabcolour" | "tabcolor" => Self::TabColour,
+
             // Chord definitions
             "define" => Self::Define,
             "chord" => Self::ChordDirective,
@@ -624,6 +655,15 @@ impl DirectiveKind {
             Self::EndOfTab => "end_of_tab",
             Self::StartOfGrid => "start_of_grid",
             Self::EndOfGrid => "end_of_grid",
+            Self::TextFont => "textfont",
+            Self::TextSize => "textsize",
+            Self::TextColour => "textcolour",
+            Self::ChordFont => "chordfont",
+            Self::ChordSize => "chordsize",
+            Self::ChordColour => "chordcolour",
+            Self::TabFont => "tabfont",
+            Self::TabSize => "tabsize",
+            Self::TabColour => "tabcolour",
             Self::Define => "define",
             Self::ChordDirective => "chord",
             Self::Meta(_) => "meta",
@@ -679,6 +719,23 @@ impl DirectiveKind {
     #[must_use]
     pub fn is_comment(&self) -> bool {
         matches!(self, Self::Comment | Self::CommentItalic | Self::CommentBox)
+    }
+
+    /// Returns `true` if this is a font, size, or color formatting directive.
+    #[must_use]
+    pub fn is_font_size_color(&self) -> bool {
+        matches!(
+            self,
+            Self::TextFont
+                | Self::TextSize
+                | Self::TextColour
+                | Self::ChordFont
+                | Self::ChordSize
+                | Self::ChordColour
+                | Self::TabFont
+                | Self::TabSize
+                | Self::TabColour
+        )
     }
 
     /// Returns `true` if this is a section start directive.
@@ -1305,6 +1362,69 @@ mod tests {
         );
     }
 
+    // -- Font, size, and color directives -----------------------------------
+
+    #[test]
+    fn directive_kind_from_name_font_size_color() {
+        // Text font directives
+        assert_eq!(
+            DirectiveKind::from_name("textfont"),
+            DirectiveKind::TextFont
+        );
+        assert_eq!(DirectiveKind::from_name("tf"), DirectiveKind::TextFont);
+        assert_eq!(
+            DirectiveKind::from_name("TEXTFONT"),
+            DirectiveKind::TextFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("textsize"),
+            DirectiveKind::TextSize
+        );
+        assert_eq!(DirectiveKind::from_name("ts"), DirectiveKind::TextSize);
+        assert_eq!(
+            DirectiveKind::from_name("textcolour"),
+            DirectiveKind::TextColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("textcolor"),
+            DirectiveKind::TextColour
+        );
+        assert_eq!(DirectiveKind::from_name("tc"), DirectiveKind::TextColour);
+
+        // Chord font directives
+        assert_eq!(
+            DirectiveKind::from_name("chordfont"),
+            DirectiveKind::ChordFont
+        );
+        assert_eq!(DirectiveKind::from_name("cf"), DirectiveKind::ChordFont);
+        assert_eq!(
+            DirectiveKind::from_name("chordsize"),
+            DirectiveKind::ChordSize
+        );
+        assert_eq!(DirectiveKind::from_name("cs"), DirectiveKind::ChordSize);
+        assert_eq!(
+            DirectiveKind::from_name("chordcolour"),
+            DirectiveKind::ChordColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("chordcolor"),
+            DirectiveKind::ChordColour
+        );
+        assert_eq!(DirectiveKind::from_name("cc"), DirectiveKind::ChordColour);
+
+        // Tab font directives
+        assert_eq!(DirectiveKind::from_name("tabfont"), DirectiveKind::TabFont);
+        assert_eq!(DirectiveKind::from_name("tabsize"), DirectiveKind::TabSize);
+        assert_eq!(
+            DirectiveKind::from_name("tabcolour"),
+            DirectiveKind::TabColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("tabcolor"),
+            DirectiveKind::TabColour
+        );
+    }
+
     #[test]
     fn directive_custom_section_full_canonical_name() {
         let kind = DirectiveKind::StartOfSection("intro".to_string());
@@ -1359,6 +1479,59 @@ mod tests {
             DirectiveKind::from_name("start_of_tab"),
             DirectiveKind::StartOfTab
         );
+    }
+
+    #[test]
+    fn directive_kind_font_size_color_canonical_names() {
+        assert_eq!(DirectiveKind::TextFont.canonical_name(), "textfont");
+        assert_eq!(DirectiveKind::TextSize.canonical_name(), "textsize");
+        assert_eq!(DirectiveKind::TextColour.canonical_name(), "textcolour");
+        assert_eq!(DirectiveKind::ChordFont.canonical_name(), "chordfont");
+        assert_eq!(DirectiveKind::ChordSize.canonical_name(), "chordsize");
+        assert_eq!(DirectiveKind::ChordColour.canonical_name(), "chordcolour");
+        assert_eq!(DirectiveKind::TabFont.canonical_name(), "tabfont");
+        assert_eq!(DirectiveKind::TabSize.canonical_name(), "tabsize");
+        assert_eq!(DirectiveKind::TabColour.canonical_name(), "tabcolour");
+    }
+
+    #[test]
+    fn directive_kind_font_size_color_category_checks() {
+        let font_kinds = [
+            DirectiveKind::TextFont,
+            DirectiveKind::TextSize,
+            DirectiveKind::TextColour,
+            DirectiveKind::ChordFont,
+            DirectiveKind::ChordSize,
+            DirectiveKind::ChordColour,
+            DirectiveKind::TabFont,
+            DirectiveKind::TabSize,
+            DirectiveKind::TabColour,
+        ];
+        for kind in &font_kinds {
+            assert!(
+                kind.is_font_size_color(),
+                "{kind:?} should be font_size_color"
+            );
+            assert!(!kind.is_metadata(), "{kind:?} should not be metadata");
+            assert!(!kind.is_comment(), "{kind:?} should not be comment");
+            assert!(!kind.is_environment(), "{kind:?} should not be environment");
+        }
+    }
+
+    #[test]
+    fn directive_font_alias_resolution() {
+        let d = Directive::with_value("tf", "Times");
+        assert_eq!(d.name, "textfont");
+        assert_eq!(d.kind, DirectiveKind::TextFont);
+        assert_eq!(d.value.as_deref(), Some("Times"));
+
+        let d = Directive::with_value("cc", "#FF0000");
+        assert_eq!(d.name, "chordcolour");
+        assert_eq!(d.kind, DirectiveKind::ChordColour);
+
+        let d = Directive::with_value("textcolor", "blue");
+        assert_eq!(d.name, "textcolour");
+        assert_eq!(d.kind, DirectiveKind::TextColour);
     }
 
     // -- CommentStyle -------------------------------------------------------
