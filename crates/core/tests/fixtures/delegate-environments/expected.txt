@@ -1,0 +1,193 @@
+Song {
+    metadata: Metadata {
+        title: None,
+        subtitles: [],
+        artists: [],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: None,
+        tempo: None,
+        time: None,
+        capo: None,
+        sort_title: None,
+        sort_artist: None,
+        arrangers: [],
+        copyright: None,
+        duration: None,
+        tags: [],
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "start_of_abc",
+                value: None,
+                kind: StartOfAbc,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "X:1",
+                    },
+                ],
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "T:Test",
+                    },
+                ],
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "M:4/4",
+                    },
+                ],
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "K:G",
+                    },
+                ],
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "|:GABc|d2d2:|",
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "end_of_abc",
+                value: None,
+                kind: EndOfAbc,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "start_of_ly",
+                value: None,
+                kind: StartOfLy,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "\\relative c' { c4 d e f | g1 }",
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "end_of_ly",
+                value: None,
+                kind: EndOfLy,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "start_of_svg",
+                value: None,
+                kind: StartOfSvg,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "<svg><circle cx=\"50\" cy=\"50\" r=\"40\"/></svg>",
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "end_of_svg",
+                value: None,
+                kind: EndOfSvg,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "start_of_textblock",
+                value: None,
+                kind: StartOfTextblock,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "This is [verbatim] text with {braces} and [brackets].",
+                    },
+                ],
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "No chord parsing here.",
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "end_of_textblock",
+                value: None,
+                kind: EndOfTextblock,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "Am",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: A,
+                                        root_accidental: None,
+                                        quality: Minor,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                            },
+                        ),
+                        text: "After delegate sections",
+                    },
+                ],
+            },
+        ),
+    ],
+}

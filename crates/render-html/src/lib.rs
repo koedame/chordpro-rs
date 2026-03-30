@@ -200,6 +200,18 @@ fn render_directive(directive: &chordpro_core::ast::Directive, html: &mut String
         DirectiveKind::StartOfGrid => {
             render_section_open("grid", "Grid", &directive.value, html);
         }
+        DirectiveKind::StartOfAbc => {
+            render_section_open("abc", "ABC", &directive.value, html);
+        }
+        DirectiveKind::StartOfLy => {
+            render_section_open("ly", "Lilypond", &directive.value, html);
+        }
+        DirectiveKind::StartOfSvg => {
+            render_section_open("svg", "SVG", &directive.value, html);
+        }
+        DirectiveKind::StartOfTextblock => {
+            render_section_open("textblock", "Textblock", &directive.value, html);
+        }
         DirectiveKind::StartOfSection(section_name) => {
             let class = format!("section-{}", section_name);
             let label = capitalize(section_name);
@@ -210,6 +222,10 @@ fn render_directive(directive: &chordpro_core::ast::Directive, html: &mut String
         | DirectiveKind::EndOfBridge
         | DirectiveKind::EndOfTab
         | DirectiveKind::EndOfGrid
+        | DirectiveKind::EndOfAbc
+        | DirectiveKind::EndOfLy
+        | DirectiveKind::EndOfSvg
+        | DirectiveKind::EndOfTextblock
         | DirectiveKind::EndOfSection(_) => {
             html.push_str("</section>\n");
         }
@@ -472,5 +488,49 @@ mod transpose_tests {
         let html = render_song_with_transpose(&song, 3);
         // 2 + 3 = 5, C+5=F
         assert!(html.contains("<span class=\"chord\">F</span>"));
+    }
+}
+
+#[cfg(test)]
+mod delegate_tests {
+    use super::*;
+
+    #[test]
+    fn test_render_abc_section() {
+        let html = render("{start_of_abc}\nX:1\n{end_of_abc}");
+        assert!(html.contains("<section class=\"abc\">"));
+        assert!(html.contains("ABC"));
+        assert!(html.contains("</section>"));
+    }
+
+    #[test]
+    fn test_render_abc_section_with_label() {
+        let html = render("{start_of_abc: Melody}\nX:1\n{end_of_abc}");
+        assert!(html.contains("<section class=\"abc\">"));
+        assert!(html.contains("ABC: Melody"));
+    }
+
+    #[test]
+    fn test_render_ly_section() {
+        let html = render("{start_of_ly}\nnotes\n{end_of_ly}");
+        assert!(html.contains("<section class=\"ly\">"));
+        assert!(html.contains("Lilypond"));
+        assert!(html.contains("</section>"));
+    }
+
+    #[test]
+    fn test_render_svg_section() {
+        let html = render("{start_of_svg}\n<svg/>\n{end_of_svg}");
+        assert!(html.contains("<section class=\"svg\">"));
+        assert!(html.contains("SVG"));
+        assert!(html.contains("</section>"));
+    }
+
+    #[test]
+    fn test_render_textblock_section() {
+        let html = render("{start_of_textblock}\nPreformatted\n{end_of_textblock}");
+        assert!(html.contains("<section class=\"textblock\">"));
+        assert!(html.contains("Textblock"));
+        assert!(html.contains("</section>"));
     }
 }
