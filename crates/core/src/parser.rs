@@ -995,29 +995,34 @@ fn split_at_new_song(input: &str) -> Vec<&str> {
     let mut segments = Vec::new();
     let mut start = 0;
     let mut line_byte_start = 0;
+    let bytes = input.as_bytes();
 
     for line in input.lines() {
         let line_byte_end = line_byte_start + line.len();
         let trimmed = line.trim();
 
+        // Calculate the number of bytes used by the line terminator (\r\n or \n).
+        let newline_len = if line_byte_end < bytes.len() && bytes[line_byte_end] == b'\r' {
+            if line_byte_end + 1 < bytes.len() && bytes[line_byte_end + 1] == b'\n' {
+                2
+            } else {
+                0
+            }
+        } else if line_byte_end < bytes.len() && bytes[line_byte_end] == b'\n' {
+            1
+        } else {
+            0
+        };
+
         if is_new_song_line(trimmed) {
             // Add everything before this line as a segment.
             segments.push(&input[start..line_byte_start]);
-            // Skip past this line (including its newline if present).
-            start = if line_byte_end < input.len() && input.as_bytes()[line_byte_end] == b'\n' {
-                line_byte_end + 1
-            } else {
-                line_byte_end
-            };
+            // Skip past this line and its line terminator.
+            start = line_byte_end + newline_len;
         }
 
-        // Advance past this line and its newline.
-        line_byte_start = if line_byte_end < input.len() && input.as_bytes()[line_byte_end] == b'\n'
-        {
-            line_byte_end + 1
-        } else {
-            line_byte_end
-        };
+        // Advance past this line and its line terminator.
+        line_byte_start = line_byte_end + newline_len;
     }
 
     // Add the remaining text as the last segment.
@@ -3331,6 +3336,15 @@ mod delegate_tests {
         let input = "{title: A}\n{ new_song }\n{title: B}";
         let songs = parse_multi(input).unwrap();
         assert_eq!(songs.len(), 2);
+    }
+
+    #[test]
+    fn parse_multi_crlf_line_endings() {
+        let input = "{title: A}\r\n[G]Hello\r\n{new_song}\r\n{title: B}\r\n[Am]World\r\n";
+        let songs = parse_multi(input).unwrap();
+        assert_eq!(songs.len(), 2);
+        assert_eq!(songs[0].metadata.title, Some("A".to_string()));
+        assert_eq!(songs[1].metadata.title, Some("B".to_string()));
     }
 
     #[test]
