@@ -444,6 +444,14 @@ pub enum DirectiveKind {
     /// The contained `String` is the section type name (e.g., `"intro"`).
     EndOfSection(String),
 
+    // -- Generic metadata directive -----------------------------------------
+    /// `{meta: key value}` — a generic metadata directive.
+    ///
+    /// The first word of the value is the metadata key name (e.g., `"artist"`),
+    /// and the remainder is the metadata value. This allows setting any metadata
+    /// field using the generic `{meta}` directive syntax.
+    Meta(String),
+
     // -- Unknown ------------------------------------------------------------
     /// A directive not recognized as a standard ChordPro directive.
     /// The original directive name (lowercased) is preserved.
@@ -499,6 +507,9 @@ impl DirectiveKind {
             "define" => Self::Define,
             "chord" => Self::ChordDirective,
 
+            // Generic metadata
+            "meta" => Self::Meta(String::new()),
+
             // Custom sections (start_of_X / end_of_X)
             other => {
                 if let Some(section) = other.strip_prefix("start_of_") {
@@ -553,6 +564,7 @@ impl DirectiveKind {
             Self::EndOfTab => "end_of_tab",
             Self::Define => "define",
             Self::ChordDirective => "chord",
+            Self::Meta(_) => "meta",
             Self::StartOfSection(name) | Self::EndOfSection(name) | Self::Unknown(name) => {
                 name.as_str()
             }
@@ -595,6 +607,7 @@ impl DirectiveKind {
                 | Self::Copyright
                 | Self::Duration
                 | Self::Tag
+                | Self::Meta(_)
         )
     }
 
