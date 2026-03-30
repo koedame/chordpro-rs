@@ -1,0 +1,187 @@
+Song {
+    metadata: Metadata {
+        title: Some(
+            "Page Control Test",
+        ),
+        subtitles: [],
+        artists: [],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: None,
+        tempo: None,
+        time: None,
+        capo: None,
+        sort_title: None,
+        sort_artist: None,
+        arrangers: [],
+        copyright: None,
+        duration: None,
+        tags: [],
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "title",
+                value: Some(
+                    "Page Control Test",
+                ),
+                kind: Title,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "columns",
+                value: Some(
+                    "2",
+                ),
+                kind: Columns,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "G",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: G,
+                                        root_accidental: None,
+                                        quality: Major,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                            },
+                        ),
+                        text: "First verse line",
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "column_break",
+                value: None,
+                kind: ColumnBreak,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "C",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: C,
+                                        root_accidental: None,
+                                        quality: Major,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                            },
+                        ),
+                        text: "Second column line",
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "new_page",
+                value: None,
+                kind: NewPage,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "D",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: D,
+                                        root_accidental: None,
+                                        quality: Major,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                            },
+                        ),
+                        text: "New page line",
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "new_physical_page",
+                value: None,
+                kind: NewPhysicalPage,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "Em",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: E,
+                                        root_accidental: None,
+                                        quality: Minor,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                            },
+                        ),
+                        text: "Physical page line",
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "columns",
+                value: Some(
+                    "3",
+                ),
+                kind: Columns,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "new_page",
+                value: None,
+                kind: NewPage,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "new_physical_page",
+                value: None,
+                kind: NewPhysicalPage,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "column_break",
+                value: None,
+                kind: ColumnBreak,
+            },
+        ),
+    ],
+}
