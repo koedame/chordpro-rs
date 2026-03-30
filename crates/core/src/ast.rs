@@ -550,6 +550,50 @@ pub enum DirectiveKind {
     /// `{columns}` / `{col}` — sets the number of columns.
     Columns,
 
+    // -- Font, size, and color directives -----------------------------------
+    /// `{titlefont}` — sets the font for song titles.
+    TitleFont,
+    /// `{titlesize}` — sets the font size for song titles.
+    TitleSize,
+    /// `{titlecolour}` / `{titlecolor}` — sets the color for song titles.
+    TitleColour,
+    /// `{chorusfont}` — sets the font for chorus sections.
+    ChorusFont,
+    /// `{chorussize}` — sets the font size for chorus sections.
+    ChorusSize,
+    /// `{choruscolour}` / `{choruscolor}` — sets the color for chorus sections.
+    ChorusColour,
+    /// `{footerfont}` — sets the font for footer text.
+    FooterFont,
+    /// `{footersize}` — sets the font size for footer text.
+    FooterSize,
+    /// `{footercolour}` / `{footercolor}` — sets the color for footer text.
+    FooterColour,
+    /// `{headerfont}` — sets the font for header text.
+    HeaderFont,
+    /// `{headersize}` — sets the font size for header text.
+    HeaderSize,
+    /// `{headercolour}` / `{headercolor}` — sets the color for header text.
+    HeaderColour,
+    /// `{labelfont}` — sets the font for labels.
+    LabelFont,
+    /// `{labelsize}` — sets the font size for labels.
+    LabelSize,
+    /// `{labelcolour}` / `{labelcolor}` — sets the color for labels.
+    LabelColour,
+    /// `{gridfont}` — sets the font for grid sections.
+    GridFont,
+    /// `{gridsize}` — sets the font size for grid sections.
+    GridSize,
+    /// `{gridcolour}` / `{gridcolor}` — sets the color for grid sections.
+    GridColour,
+    /// `{tocfont}` — sets the font for table of contents.
+    TocFont,
+    /// `{tocsize}` — sets the font size for table of contents.
+    TocSize,
+    /// `{toccolour}` / `{toccolor}` — sets the color for table of contents.
+    TocColour,
+
     // -- Chord definition directives ----------------------------------------
     /// `{define}` — defines a custom chord fingering.
     Define,
@@ -681,6 +725,29 @@ impl DirectiveKind {
             "column_break" | "colb" => Self::ColumnBreak,
             "columns" | "col" => Self::Columns,
 
+            // Font, size, and color
+            "titlefont" => Self::TitleFont,
+            "titlesize" => Self::TitleSize,
+            "titlecolour" | "titlecolor" => Self::TitleColour,
+            "chorusfont" => Self::ChorusFont,
+            "chorussize" => Self::ChorusSize,
+            "choruscolour" | "choruscolor" => Self::ChorusColour,
+            "footerfont" => Self::FooterFont,
+            "footersize" => Self::FooterSize,
+            "footercolour" | "footercolor" => Self::FooterColour,
+            "headerfont" => Self::HeaderFont,
+            "headersize" => Self::HeaderSize,
+            "headercolour" | "headercolor" => Self::HeaderColour,
+            "labelfont" => Self::LabelFont,
+            "labelsize" => Self::LabelSize,
+            "labelcolour" | "labelcolor" => Self::LabelColour,
+            "gridfont" => Self::GridFont,
+            "gridsize" => Self::GridSize,
+            "gridcolour" | "gridcolor" => Self::GridColour,
+            "tocfont" => Self::TocFont,
+            "tocsize" => Self::TocSize,
+            "toccolour" | "toccolor" => Self::TocColour,
+
             // Chord definitions
             "define" => Self::Define,
             "chord" => Self::ChordDirective,
@@ -756,6 +823,27 @@ impl DirectiveKind {
             Self::TabFont => "tabfont",
             Self::TabSize => "tabsize",
             Self::TabColour => "tabcolour",
+            Self::TitleFont => "titlefont",
+            Self::TitleSize => "titlesize",
+            Self::TitleColour => "titlecolour",
+            Self::ChorusFont => "chorusfont",
+            Self::ChorusSize => "chorussize",
+            Self::ChorusColour => "choruscolour",
+            Self::FooterFont => "footerfont",
+            Self::FooterSize => "footersize",
+            Self::FooterColour => "footercolour",
+            Self::HeaderFont => "headerfont",
+            Self::HeaderSize => "headersize",
+            Self::HeaderColour => "headercolour",
+            Self::LabelFont => "labelfont",
+            Self::LabelSize => "labelsize",
+            Self::LabelColour => "labelcolour",
+            Self::GridFont => "gridfont",
+            Self::GridSize => "gridsize",
+            Self::GridColour => "gridcolour",
+            Self::TocFont => "tocfont",
+            Self::TocSize => "tocsize",
+            Self::TocColour => "toccolour",
             Self::StartOfAbc => "start_of_abc",
             Self::EndOfAbc => "end_of_abc",
             Self::StartOfLy => "start_of_ly",
@@ -840,6 +928,27 @@ impl DirectiveKind {
                 | Self::TabFont
                 | Self::TabSize
                 | Self::TabColour
+                | Self::TitleFont
+                | Self::TitleSize
+                | Self::TitleColour
+                | Self::ChorusFont
+                | Self::ChorusSize
+                | Self::ChorusColour
+                | Self::FooterFont
+                | Self::FooterSize
+                | Self::FooterColour
+                | Self::HeaderFont
+                | Self::HeaderSize
+                | Self::HeaderColour
+                | Self::LabelFont
+                | Self::LabelSize
+                | Self::LabelColour
+                | Self::GridFont
+                | Self::GridSize
+                | Self::GridColour
+                | Self::TocFont
+                | Self::TocSize
+                | Self::TocColour
         )
     }
 
@@ -1812,6 +1921,216 @@ mod tests {
         let eog = Directive::name_only("eog");
         assert!(eog.is_section_end());
         assert_eq!(eog.section_name(), Some("grid"));
+    }
+
+    // -- Font, size, and color directives -----------------------------------
+
+    #[test]
+    fn directive_kind_from_name_title_font_size_color() {
+        assert_eq!(
+            DirectiveKind::from_name("titlefont"),
+            DirectiveKind::TitleFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("TITLEFONT"),
+            DirectiveKind::TitleFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("titlesize"),
+            DirectiveKind::TitleSize
+        );
+        assert_eq!(
+            DirectiveKind::from_name("titlecolour"),
+            DirectiveKind::TitleColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("titlecolor"),
+            DirectiveKind::TitleColour
+        );
+    }
+
+    #[test]
+    fn directive_kind_from_name_chorus_font_size_color() {
+        assert_eq!(
+            DirectiveKind::from_name("chorusfont"),
+            DirectiveKind::ChorusFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("chorussize"),
+            DirectiveKind::ChorusSize
+        );
+        assert_eq!(
+            DirectiveKind::from_name("choruscolour"),
+            DirectiveKind::ChorusColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("choruscolor"),
+            DirectiveKind::ChorusColour
+        );
+    }
+
+    #[test]
+    fn directive_kind_from_name_footer_header_label() {
+        assert_eq!(
+            DirectiveKind::from_name("footerfont"),
+            DirectiveKind::FooterFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("footersize"),
+            DirectiveKind::FooterSize
+        );
+        assert_eq!(
+            DirectiveKind::from_name("footercolour"),
+            DirectiveKind::FooterColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("footercolor"),
+            DirectiveKind::FooterColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("headerfont"),
+            DirectiveKind::HeaderFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("headersize"),
+            DirectiveKind::HeaderSize
+        );
+        assert_eq!(
+            DirectiveKind::from_name("headercolour"),
+            DirectiveKind::HeaderColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("headercolor"),
+            DirectiveKind::HeaderColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("labelfont"),
+            DirectiveKind::LabelFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("labelsize"),
+            DirectiveKind::LabelSize
+        );
+        assert_eq!(
+            DirectiveKind::from_name("labelcolour"),
+            DirectiveKind::LabelColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("labelcolor"),
+            DirectiveKind::LabelColour
+        );
+    }
+
+    #[test]
+    fn directive_kind_from_name_grid_toc() {
+        assert_eq!(
+            DirectiveKind::from_name("gridfont"),
+            DirectiveKind::GridFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("gridsize"),
+            DirectiveKind::GridSize
+        );
+        assert_eq!(
+            DirectiveKind::from_name("gridcolour"),
+            DirectiveKind::GridColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("gridcolor"),
+            DirectiveKind::GridColour
+        );
+        assert_eq!(DirectiveKind::from_name("tocfont"), DirectiveKind::TocFont);
+        assert_eq!(DirectiveKind::from_name("tocsize"), DirectiveKind::TocSize);
+        assert_eq!(
+            DirectiveKind::from_name("toccolour"),
+            DirectiveKind::TocColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("toccolor"),
+            DirectiveKind::TocColour
+        );
+    }
+
+    #[test]
+    fn directive_kind_extra_font_size_color_canonical_names() {
+        assert_eq!(DirectiveKind::TitleFont.canonical_name(), "titlefont");
+        assert_eq!(DirectiveKind::TitleSize.canonical_name(), "titlesize");
+        assert_eq!(DirectiveKind::TitleColour.canonical_name(), "titlecolour");
+        assert_eq!(DirectiveKind::ChorusFont.canonical_name(), "chorusfont");
+        assert_eq!(DirectiveKind::ChorusSize.canonical_name(), "chorussize");
+        assert_eq!(DirectiveKind::ChorusColour.canonical_name(), "choruscolour");
+        assert_eq!(DirectiveKind::FooterFont.canonical_name(), "footerfont");
+        assert_eq!(DirectiveKind::FooterSize.canonical_name(), "footersize");
+        assert_eq!(DirectiveKind::FooterColour.canonical_name(), "footercolour");
+        assert_eq!(DirectiveKind::HeaderFont.canonical_name(), "headerfont");
+        assert_eq!(DirectiveKind::HeaderSize.canonical_name(), "headersize");
+        assert_eq!(DirectiveKind::HeaderColour.canonical_name(), "headercolour");
+        assert_eq!(DirectiveKind::LabelFont.canonical_name(), "labelfont");
+        assert_eq!(DirectiveKind::LabelSize.canonical_name(), "labelsize");
+        assert_eq!(DirectiveKind::LabelColour.canonical_name(), "labelcolour");
+        assert_eq!(DirectiveKind::GridFont.canonical_name(), "gridfont");
+        assert_eq!(DirectiveKind::GridSize.canonical_name(), "gridsize");
+        assert_eq!(DirectiveKind::GridColour.canonical_name(), "gridcolour");
+        assert_eq!(DirectiveKind::TocFont.canonical_name(), "tocfont");
+        assert_eq!(DirectiveKind::TocSize.canonical_name(), "tocsize");
+        assert_eq!(DirectiveKind::TocColour.canonical_name(), "toccolour");
+    }
+
+    #[test]
+    fn directive_kind_extra_font_size_color_category_checks() {
+        let font_kinds = [
+            DirectiveKind::TitleFont,
+            DirectiveKind::TitleSize,
+            DirectiveKind::TitleColour,
+            DirectiveKind::ChorusFont,
+            DirectiveKind::ChorusSize,
+            DirectiveKind::ChorusColour,
+            DirectiveKind::FooterFont,
+            DirectiveKind::FooterSize,
+            DirectiveKind::FooterColour,
+            DirectiveKind::HeaderFont,
+            DirectiveKind::HeaderSize,
+            DirectiveKind::HeaderColour,
+            DirectiveKind::LabelFont,
+            DirectiveKind::LabelSize,
+            DirectiveKind::LabelColour,
+            DirectiveKind::GridFont,
+            DirectiveKind::GridSize,
+            DirectiveKind::GridColour,
+            DirectiveKind::TocFont,
+            DirectiveKind::TocSize,
+            DirectiveKind::TocColour,
+        ];
+        for kind in &font_kinds {
+            assert!(
+                kind.is_font_size_color(),
+                "{kind:?} should be font_size_color"
+            );
+            assert!(!kind.is_metadata(), "{kind:?} should not be metadata");
+            assert!(!kind.is_comment(), "{kind:?} should not be comment");
+            assert!(!kind.is_environment(), "{kind:?} should not be environment");
+        }
+    }
+
+    #[test]
+    fn directive_font_size_color_alias_resolution() {
+        let d = Directive::with_value("titlefont", "Times");
+        assert_eq!(d.name, "titlefont");
+        assert_eq!(d.kind, DirectiveKind::TitleFont);
+        assert_eq!(d.value.as_deref(), Some("Times"));
+
+        let d = Directive::with_value("choruscolor", "#FF0000");
+        assert_eq!(d.name, "choruscolour");
+        assert_eq!(d.kind, DirectiveKind::ChorusColour);
+
+        let d = Directive::with_value("titlecolor", "blue");
+        assert_eq!(d.name, "titlecolour");
+        assert_eq!(d.kind, DirectiveKind::TitleColour);
+
+        let d = Directive::with_value("gridsize", "12");
+        assert_eq!(d.name, "gridsize");
+        assert_eq!(d.kind, DirectiveKind::GridSize);
+        assert_eq!(d.value.as_deref(), Some("12"));
     }
 }
 

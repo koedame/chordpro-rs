@@ -323,3 +323,207 @@ fn extended_metadata_directives_golden_test() {
     assert!(DirectiveKind::Duration.is_metadata());
     assert!(DirectiveKind::Tag.is_metadata());
 }
+
+#[test]
+fn formatting_directives_golden_test() {
+    let input = fixture("formatting-directives/input.cho");
+    let song = parse(&input).expect("parse failed");
+
+    // Line 0: title (metadata)
+    if let Line::Directive(ref d) = song.lines[0] {
+        assert_eq!(d.kind, DirectiveKind::Title);
+    } else {
+        panic!("expected title directive");
+    }
+
+    // Line 1: titlefont
+    if let Line::Directive(ref d) = song.lines[1] {
+        assert_eq!(d.kind, DirectiveKind::TitleFont);
+        assert_eq!(d.name, "titlefont");
+        assert_eq!(d.value.as_deref(), Some("Times New Roman"));
+        assert!(d.kind.is_font_size_color());
+    } else {
+        panic!("expected titlefont directive");
+    }
+
+    // Line 2: titlesize
+    if let Line::Directive(ref d) = song.lines[2] {
+        assert_eq!(d.kind, DirectiveKind::TitleSize);
+        assert_eq!(d.name, "titlesize");
+        assert_eq!(d.value.as_deref(), Some("18"));
+    } else {
+        panic!("expected titlesize directive");
+    }
+
+    // Line 3: titlecolour
+    if let Line::Directive(ref d) = song.lines[3] {
+        assert_eq!(d.kind, DirectiveKind::TitleColour);
+        assert_eq!(d.name, "titlecolour");
+        assert_eq!(d.value.as_deref(), Some("#333333"));
+    } else {
+        panic!("expected titlecolour directive");
+    }
+
+    // Line 4: chorusfont
+    if let Line::Directive(ref d) = song.lines[4] {
+        assert_eq!(d.kind, DirectiveKind::ChorusFont);
+        assert_eq!(d.name, "chorusfont");
+        assert_eq!(d.value.as_deref(), Some("Helvetica"));
+    } else {
+        panic!("expected chorusfont directive");
+    }
+
+    // Line 5: chorussize
+    if let Line::Directive(ref d) = song.lines[5] {
+        assert_eq!(d.kind, DirectiveKind::ChorusSize);
+        assert_eq!(d.name, "chorussize");
+        assert_eq!(d.value.as_deref(), Some("14"));
+    } else {
+        panic!("expected chorussize directive");
+    }
+
+    // Line 6: choruscolor -> canonical choruscolour
+    if let Line::Directive(ref d) = song.lines[6] {
+        assert_eq!(d.kind, DirectiveKind::ChorusColour);
+        assert_eq!(d.name, "choruscolour");
+        assert_eq!(d.value.as_deref(), Some("blue"));
+    } else {
+        panic!("expected choruscolour directive");
+    }
+
+    // Line 7: footerfont
+    if let Line::Directive(ref d) = song.lines[7] {
+        assert_eq!(d.kind, DirectiveKind::FooterFont);
+        assert_eq!(d.name, "footerfont");
+        assert_eq!(d.value.as_deref(), Some("Arial"));
+    } else {
+        panic!("expected footerfont directive");
+    }
+
+    // Line 8: footersize
+    if let Line::Directive(ref d) = song.lines[8] {
+        assert_eq!(d.kind, DirectiveKind::FooterSize);
+        assert_eq!(d.value.as_deref(), Some("10"));
+    } else {
+        panic!("expected footersize directive");
+    }
+
+    // Line 9: footercolour
+    if let Line::Directive(ref d) = song.lines[9] {
+        assert_eq!(d.kind, DirectiveKind::FooterColour);
+        assert_eq!(d.name, "footercolour");
+        assert_eq!(d.value.as_deref(), Some("gray"));
+    } else {
+        panic!("expected footercolour directive");
+    }
+
+    // Line 10: headerfont
+    if let Line::Directive(ref d) = song.lines[10] {
+        assert_eq!(d.kind, DirectiveKind::HeaderFont);
+        assert_eq!(d.name, "headerfont");
+    } else {
+        panic!("expected headerfont directive");
+    }
+
+    // Line 11: headersize
+    if let Line::Directive(ref d) = song.lines[11] {
+        assert_eq!(d.kind, DirectiveKind::HeaderSize);
+        assert_eq!(d.value.as_deref(), Some("16"));
+    } else {
+        panic!("expected headersize directive");
+    }
+
+    // Line 12: headercolor -> canonical headercolour
+    if let Line::Directive(ref d) = song.lines[12] {
+        assert_eq!(d.kind, DirectiveKind::HeaderColour);
+        assert_eq!(d.name, "headercolour");
+    } else {
+        panic!("expected headercolour directive");
+    }
+
+    // Line 13: labelfont
+    if let Line::Directive(ref d) = song.lines[13] {
+        assert_eq!(d.kind, DirectiveKind::LabelFont);
+        assert_eq!(d.name, "labelfont");
+    } else {
+        panic!("expected labelfont directive");
+    }
+
+    // Line 14: labelsize
+    if let Line::Directive(ref d) = song.lines[14] {
+        assert_eq!(d.kind, DirectiveKind::LabelSize);
+    } else {
+        panic!("expected labelsize directive");
+    }
+
+    // Line 15: labelcolour
+    if let Line::Directive(ref d) = song.lines[15] {
+        assert_eq!(d.kind, DirectiveKind::LabelColour);
+        assert_eq!(d.name, "labelcolour");
+    } else {
+        panic!("expected labelcolour directive");
+    }
+
+    // Line 16: gridfont
+    if let Line::Directive(ref d) = song.lines[16] {
+        assert_eq!(d.kind, DirectiveKind::GridFont);
+        assert_eq!(d.name, "gridfont");
+    } else {
+        panic!("expected gridfont directive");
+    }
+
+    // Line 17: gridsize
+    if let Line::Directive(ref d) = song.lines[17] {
+        assert_eq!(d.kind, DirectiveKind::GridSize);
+    } else {
+        panic!("expected gridsize directive");
+    }
+
+    // Line 18: gridcolour
+    if let Line::Directive(ref d) = song.lines[18] {
+        assert_eq!(d.kind, DirectiveKind::GridColour);
+        assert_eq!(d.name, "gridcolour");
+    } else {
+        panic!("expected gridcolour directive");
+    }
+
+    // Line 19: tocfont
+    if let Line::Directive(ref d) = song.lines[19] {
+        assert_eq!(d.kind, DirectiveKind::TocFont);
+        assert_eq!(d.name, "tocfont");
+    } else {
+        panic!("expected tocfont directive");
+    }
+
+    // Line 20: tocsize
+    if let Line::Directive(ref d) = song.lines[20] {
+        assert_eq!(d.kind, DirectiveKind::TocSize);
+    } else {
+        panic!("expected tocsize directive");
+    }
+
+    // Line 21: toccolor -> canonical toccolour
+    if let Line::Directive(ref d) = song.lines[21] {
+        assert_eq!(d.kind, DirectiveKind::TocColour);
+        assert_eq!(d.name, "toccolour");
+        assert_eq!(d.value.as_deref(), Some("navy"));
+    } else {
+        panic!("expected toccolour directive");
+    }
+
+    // Verify none of these are metadata
+    for i in 1..=21 {
+        if let Line::Directive(ref d) = song.lines[i] {
+            assert!(
+                d.kind.is_font_size_color(),
+                "line {i}: {:?} should be font_size_color",
+                d.kind
+            );
+            assert!(
+                !d.kind.is_metadata(),
+                "line {i}: {:?} should not be metadata",
+                d.kind
+            );
+        }
+    }
+}

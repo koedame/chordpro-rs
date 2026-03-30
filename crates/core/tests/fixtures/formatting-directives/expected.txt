@@ -1,0 +1,224 @@
+Song {
+    metadata: Metadata {
+        title: Some(
+            "Formatting Test",
+        ),
+        subtitles: [],
+        artists: [],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: None,
+        tempo: None,
+        time: None,
+        capo: None,
+        sort_title: None,
+        sort_artist: None,
+        arrangers: [],
+        copyright: None,
+        duration: None,
+        tags: [],
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "title",
+                value: Some(
+                    "Formatting Test",
+                ),
+                kind: Title,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "titlefont",
+                value: Some(
+                    "Times New Roman",
+                ),
+                kind: TitleFont,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "titlesize",
+                value: Some(
+                    "18",
+                ),
+                kind: TitleSize,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "titlecolour",
+                value: Some(
+                    "#333333",
+                ),
+                kind: TitleColour,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "chorusfont",
+                value: Some(
+                    "Helvetica",
+                ),
+                kind: ChorusFont,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "chorussize",
+                value: Some(
+                    "14",
+                ),
+                kind: ChorusSize,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "choruscolour",
+                value: Some(
+                    "blue",
+                ),
+                kind: ChorusColour,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "footerfont",
+                value: Some(
+                    "Arial",
+                ),
+                kind: FooterFont,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "footersize",
+                value: Some(
+                    "10",
+                ),
+                kind: FooterSize,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "footercolour",
+                value: Some(
+                    "gray",
+                ),
+                kind: FooterColour,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "headerfont",
+                value: Some(
+                    "Georgia",
+                ),
+                kind: HeaderFont,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "headersize",
+                value: Some(
+                    "16",
+                ),
+                kind: HeaderSize,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "headercolour",
+                value: Some(
+                    "#000000",
+                ),
+                kind: HeaderColour,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "labelfont",
+                value: Some(
+                    "Verdana",
+                ),
+                kind: LabelFont,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "labelsize",
+                value: Some(
+                    "12",
+                ),
+                kind: LabelSize,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "labelcolour",
+                value: Some(
+                    "#444444",
+                ),
+                kind: LabelColour,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "gridfont",
+                value: Some(
+                    "Courier",
+                ),
+                kind: GridFont,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "gridsize",
+                value: Some(
+                    "11",
+                ),
+                kind: GridSize,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "gridcolour",
+                value: Some(
+                    "#666666",
+                ),
+                kind: GridColour,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "tocfont",
+                value: Some(
+                    "Palatino",
+                ),
+                kind: TocFont,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "tocsize",
+                value: Some(
+                    "13",
+                ),
+                kind: TocSize,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "toccolour",
+                value: Some(
+                    "navy",
+                ),
+                kind: TocColour,
+            },
+        ),
+    ],
+}
