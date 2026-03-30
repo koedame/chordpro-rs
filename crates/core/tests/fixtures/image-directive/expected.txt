@@ -29,6 +29,7 @@ Song {
                     "Image Test",
                 ),
                 kind: Title,
+                selector: None,
             },
         ),
         Directive(
@@ -47,6 +48,7 @@ Song {
                         anchor: None,
                     },
                 ),
+                selector: None,
             },
         ),
         Directive(
@@ -69,6 +71,7 @@ Song {
                         anchor: None,
                     },
                 ),
+                selector: None,
             },
         ),
         Directive(
@@ -91,6 +94,7 @@ Song {
                         anchor: None,
                     },
                 ),
+                selector: None,
             },
         ),
     ],

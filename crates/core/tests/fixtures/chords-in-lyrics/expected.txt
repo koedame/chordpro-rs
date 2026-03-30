@@ -29,6 +29,7 @@ Song {
                     "Simple Song",
                 ),
                 kind: Title,
+                selector: None,
             },
         ),
         Empty,

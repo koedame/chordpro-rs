@@ -31,6 +31,7 @@ Song {
                     "Amazing Grace",
                 ),
                 kind: Title,
+                selector: None,
             },
         ),
         Directive(
@@ -40,6 +41,7 @@ Song {
                     "A Hymn",
                 ),
                 kind: Subtitle,
+                selector: None,
             },
         ),
         Comment(

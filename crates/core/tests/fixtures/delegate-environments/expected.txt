@@ -25,6 +25,7 @@ Song {
                 name: "start_of_abc",
                 value: None,
                 kind: StartOfAbc,
+                selector: None,
             },
         ),
         Lyrics(
@@ -87,6 +88,7 @@ Song {
                 name: "end_of_abc",
                 value: None,
                 kind: EndOfAbc,
+                selector: None,
             },
         ),
         Directive(
@@ -94,6 +96,7 @@ Song {
                 name: "start_of_ly",
                 value: None,
                 kind: StartOfLy,
+                selector: None,
             },
         ),
         Lyrics(
@@ -112,6 +115,7 @@ Song {
                 name: "end_of_ly",
                 value: None,
                 kind: EndOfLy,
+                selector: None,
             },
         ),
         Directive(
@@ -119,6 +123,7 @@ Song {
                 name: "start_of_svg",
                 value: None,
                 kind: StartOfSvg,
+                selector: None,
             },
         ),
         Lyrics(
@@ -137,6 +142,7 @@ Song {
                 name: "end_of_svg",
                 value: None,
                 kind: EndOfSvg,
+                selector: None,
             },
         ),
         Directive(
@@ -144,6 +150,7 @@ Song {
                 name: "start_of_textblock",
                 value: None,
                 kind: StartOfTextblock,
+                selector: None,
             },
         ),
         Lyrics(
@@ -173,6 +180,7 @@ Song {
                 name: "end_of_textblock",
                 value: None,
                 kind: EndOfTextblock,
+                selector: None,
             },
         ),
         Lyrics(

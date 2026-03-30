@@ -25,6 +25,7 @@ Song {
                 name: "start_of_grid",
                 value: None,
                 kind: StartOfGrid,
+                selector: None,
             },
         ),
         Lyrics(
@@ -54,6 +55,7 @@ Song {
                 name: "end_of_grid",
                 value: None,
                 kind: EndOfGrid,
+                selector: None,
             },
         ),
         Lyrics(

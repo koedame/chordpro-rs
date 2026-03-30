@@ -439,6 +439,8 @@ impl ImageAttributes {
 ///   `artist`, `album`, `year`, `key`, `tempo`, `time`, `capo`, etc.).
 /// - **Formatting** — comment directives (`comment`, `comment_italic`,
 ///   `comment_box`).
+/// - **Font/size/color** — legacy rendering directives (`titlefont`,
+///   `titlesize`, `titlecolour`, `chorusfont`, etc.).
 /// - **Environment** — section start/end directives (`start_of_chorus`,
 ///   `end_of_chorus`, `start_of_verse`, etc.).
 /// - **Unknown** — any directive not recognized as a standard directive.
@@ -550,6 +552,54 @@ pub enum DirectiveKind {
     /// `{columns}` / `{col}` — sets the number of columns.
     Columns,
 
+    // -- Font, size, and color directives -----------------------------------
+    /// `{titlefont}` — sets the font for song titles.
+    TitleFont,
+    /// `{titlesize}` — sets the font size for song titles.
+    TitleSize,
+    /// `{titlecolour}` / `{titlecolor}` — sets the color for song titles.
+    TitleColour,
+    /// `{chorusfont}` — sets the font for chorus sections.
+    ChorusFont,
+    /// `{chorussize}` — sets the font size for chorus sections.
+    ChorusSize,
+    /// `{choruscolour}` / `{choruscolor}` — sets the color for chorus sections.
+    ChorusColour,
+    /// `{footerfont}` — sets the font for footer text.
+    FooterFont,
+    /// `{footersize}` — sets the font size for footer text.
+    FooterSize,
+    /// `{footercolour}` / `{footercolor}` — sets the color for footer text.
+    FooterColour,
+    /// `{headerfont}` — sets the font for header text.
+    HeaderFont,
+    /// `{headersize}` — sets the font size for header text.
+    HeaderSize,
+    /// `{headercolour}` / `{headercolor}` — sets the color for header text.
+    HeaderColour,
+    /// `{labelfont}` — sets the font for labels.
+    LabelFont,
+    /// `{labelsize}` — sets the font size for labels.
+    LabelSize,
+    /// `{labelcolour}` / `{labelcolor}` — sets the color for labels.
+    LabelColour,
+    /// `{gridfont}` — sets the font for grid sections.
+    GridFont,
+    /// `{gridsize}` — sets the font size for grid sections.
+    GridSize,
+    /// `{gridcolour}` / `{gridcolor}` — sets the color for grid sections.
+    GridColour,
+    /// `{tocfont}` — sets the font for table of contents.
+    TocFont,
+    /// `{tocsize}` — sets the font size for table of contents.
+    TocSize,
+    /// `{toccolour}` / `{toccolor}` — sets the color for table of contents.
+    TocColour,
+
+    // -- Song boundary directives --------------------------------------------
+    /// `{new_song}` / `{ns}` — marks the start of a new song in a multi-song file.
+    NewSong,
+
     // -- Chord definition directives ----------------------------------------
     /// `{define}` — defines a custom chord fingering.
     Define,
@@ -634,6 +684,9 @@ impl DirectiveKind {
             // Transpose
             "transpose" => Self::Transpose,
 
+            // Song boundary
+            "new_song" | "ns" => Self::NewSong,
+
             // Formatting (comments)
             "comment" | "c" => Self::Comment,
             "comment_italic" | "ci" => Self::CommentItalic,
@@ -681,6 +734,29 @@ impl DirectiveKind {
             "column_break" | "colb" => Self::ColumnBreak,
             "columns" | "col" => Self::Columns,
 
+            // Font, size, and color
+            "titlefont" => Self::TitleFont,
+            "titlesize" => Self::TitleSize,
+            "titlecolour" | "titlecolor" => Self::TitleColour,
+            "chorusfont" => Self::ChorusFont,
+            "chorussize" => Self::ChorusSize,
+            "choruscolour" | "choruscolor" => Self::ChorusColour,
+            "footerfont" => Self::FooterFont,
+            "footersize" => Self::FooterSize,
+            "footercolour" | "footercolor" => Self::FooterColour,
+            "headerfont" => Self::HeaderFont,
+            "headersize" => Self::HeaderSize,
+            "headercolour" | "headercolor" => Self::HeaderColour,
+            "labelfont" => Self::LabelFont,
+            "labelsize" => Self::LabelSize,
+            "labelcolour" | "labelcolor" => Self::LabelColour,
+            "gridfont" => Self::GridFont,
+            "gridsize" => Self::GridSize,
+            "gridcolour" | "gridcolor" => Self::GridColour,
+            "tocfont" => Self::TocFont,
+            "tocsize" => Self::TocSize,
+            "toccolour" | "toccolor" => Self::TocColour,
+
             // Chord definitions
             "define" => Self::Define,
             "chord" => Self::ChordDirective,
@@ -709,6 +785,59 @@ impl DirectiveKind {
         }
     }
 
+    /// Resolves a directive name to a ([`DirectiveKind`], optional selector) pair.
+    ///
+    /// The algorithm works as follows:
+    ///
+    /// 1. First try to match the full name as a known directive (via
+    ///    [`from_name`](Self::from_name)). If it resolves to a **known,
+    ///    non-`Unknown`, non-custom-section** directive, return it with no
+    ///    selector.
+    /// 2. Otherwise, split at the **last** hyphen. Re-resolve the prefix
+    ///    and, if it matches a known non-`Unknown` directive, treat the
+    ///    suffix as the selector.
+    /// 3. If neither approach yields a known directive, return the full name
+    ///    as an `Unknown` directive with no selector.
+    ///
+    /// Custom section directives (`StartOfSection`, `EndOfSection`) are
+    /// special-cased: `{start_of_chorus-piano}` must resolve as
+    /// `StartOfChorus` with selector `"piano"`, not as
+    /// `StartOfSection("chorus-piano")`.
+    ///
+    /// The lookup is case-insensitive, matching the behavior of
+    /// [`from_name`](Self::from_name).
+    #[must_use]
+    pub fn resolve_with_selector(name: &str) -> (Self, Option<String>) {
+        let kind = Self::from_name(name);
+
+        // If it resolves to a known directive that is NOT Unknown and NOT
+        // a custom section, return it directly — no selector.
+        let is_known = !matches!(
+            kind,
+            Self::Unknown(_) | Self::StartOfSection(_) | Self::EndOfSection(_)
+        );
+        if is_known {
+            return (kind, None);
+        }
+
+        // Try splitting at the last hyphen.
+        if let Some(last_hyphen) = name.rfind('-') {
+            let prefix = &name[..last_hyphen];
+            let suffix = &name[last_hyphen + 1..];
+
+            if !prefix.is_empty() && !suffix.is_empty() {
+                let prefix_kind = Self::from_name(prefix);
+                if !matches!(prefix_kind, Self::Unknown(_)) {
+                    return (prefix_kind, Some(suffix.to_ascii_lowercase()));
+                }
+            }
+        }
+
+        // Fall back to the original resolution (Unknown or custom section
+        // without a selector).
+        (kind, None)
+    }
+
     /// Returns the canonical (long-form) directive name for known directives.
     ///
     /// For [`DirectiveKind::Unknown`], returns the stored name.
@@ -733,6 +862,7 @@ impl DirectiveKind {
             Self::Duration => "duration",
             Self::Tag => "tag",
             Self::Transpose => "transpose",
+            Self::NewSong => "new_song",
             Self::Comment => "comment",
             Self::CommentItalic => "comment_italic",
             Self::CommentBox => "comment_box",
@@ -756,6 +886,27 @@ impl DirectiveKind {
             Self::TabFont => "tabfont",
             Self::TabSize => "tabsize",
             Self::TabColour => "tabcolour",
+            Self::TitleFont => "titlefont",
+            Self::TitleSize => "titlesize",
+            Self::TitleColour => "titlecolour",
+            Self::ChorusFont => "chorusfont",
+            Self::ChorusSize => "chorussize",
+            Self::ChorusColour => "choruscolour",
+            Self::FooterFont => "footerfont",
+            Self::FooterSize => "footersize",
+            Self::FooterColour => "footercolour",
+            Self::HeaderFont => "headerfont",
+            Self::HeaderSize => "headersize",
+            Self::HeaderColour => "headercolour",
+            Self::LabelFont => "labelfont",
+            Self::LabelSize => "labelsize",
+            Self::LabelColour => "labelcolour",
+            Self::GridFont => "gridfont",
+            Self::GridSize => "gridsize",
+            Self::GridColour => "gridcolour",
+            Self::TocFont => "tocfont",
+            Self::TocSize => "tocsize",
+            Self::TocColour => "toccolour",
             Self::StartOfAbc => "start_of_abc",
             Self::EndOfAbc => "end_of_abc",
             Self::StartOfLy => "start_of_ly",
@@ -840,6 +991,27 @@ impl DirectiveKind {
                 | Self::TabFont
                 | Self::TabSize
                 | Self::TabColour
+                | Self::TitleFont
+                | Self::TitleSize
+                | Self::TitleColour
+                | Self::ChorusFont
+                | Self::ChorusSize
+                | Self::ChorusColour
+                | Self::FooterFont
+                | Self::FooterSize
+                | Self::FooterColour
+                | Self::HeaderFont
+                | Self::HeaderSize
+                | Self::HeaderColour
+                | Self::LabelFont
+                | Self::LabelSize
+                | Self::LabelColour
+                | Self::GridFont
+                | Self::GridSize
+                | Self::GridColour
+                | Self::TocFont
+                | Self::TocSize
+                | Self::TocColour
         )
     }
 
@@ -915,6 +1087,16 @@ impl DirectiveKind {
 /// alias resolution. The `kind` field provides a typed classification for
 /// pattern matching.
 ///
+/// # Selector Suffixes
+///
+/// Directives may carry an optional **selector suffix** that targets a specific
+/// instrument or user. The selector is separated from the directive name by a
+/// hyphen (e.g., `{textfont-piano: Courier}` has selector `"piano"`). The
+/// parser splits the raw directive name at the **last** hyphen to detect
+/// selectors: if the prefix resolves to a known directive, the suffix is
+/// stored in `selector`; otherwise the entire name is treated as a single
+/// (possibly unknown) directive with no selector.
+///
 /// # Examples
 ///
 /// ```
@@ -925,12 +1107,14 @@ impl DirectiveKind {
 /// assert_eq!(d.name, "title");
 /// assert_eq!(d.value.as_deref(), Some("My Song"));
 /// assert_eq!(d.kind, DirectiveKind::Title);
+/// assert_eq!(d.selector, None);
 ///
 /// // {start_of_chorus}
 /// let d = Directive::name_only("start_of_chorus");
 /// assert_eq!(d.name, "start_of_chorus");
 /// assert!(d.value.is_none());
 /// assert_eq!(d.kind, DirectiveKind::StartOfChorus);
+/// assert_eq!(d.selector, None);
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Directive {
@@ -940,6 +1124,11 @@ pub struct Directive {
     pub value: Option<String>,
     /// The classified kind of this directive.
     pub kind: DirectiveKind,
+    /// An optional selector suffix for instrument/user targeting.
+    ///
+    /// For example, `{textfont-piano: Courier}` has `selector` = `Some("piano")`.
+    /// When no selector suffix is present, this is `None`.
+    pub selector: Option<String>,
 }
 
 impl Directive {
@@ -956,6 +1145,7 @@ impl Directive {
             name: canonical,
             value: Some(value.into()),
             kind,
+            selector: None,
         }
     }
 
@@ -972,6 +1162,28 @@ impl Directive {
             name: canonical,
             value: None,
             kind,
+            selector: None,
+        }
+    }
+
+    /// Creates a directive with a name, value, and selector suffix.
+    ///
+    /// The name is resolved to its canonical form and the [`DirectiveKind`]
+    /// is determined automatically.
+    #[must_use]
+    pub fn with_selector(
+        name: impl Into<String>,
+        value: Option<String>,
+        selector: impl Into<String>,
+    ) -> Self {
+        let name_str = name.into();
+        let kind = DirectiveKind::from_name(&name_str);
+        let canonical = kind.full_canonical_name();
+        Self {
+            name: canonical,
+            value,
+            kind,
+            selector: Some(selector.into()),
         }
     }
 
@@ -1736,6 +1948,117 @@ mod tests {
         assert_eq!(line, cloned);
     }
 
+    // -- Directive selector -------------------------------------------------
+
+    #[test]
+    fn directive_with_selector_constructor() {
+        let d = Directive::with_selector("title", Some("My Song".to_string()), "piano");
+        assert_eq!(d.name, "title");
+        assert_eq!(d.value.as_deref(), Some("My Song"));
+        assert_eq!(d.kind, DirectiveKind::Title);
+        assert_eq!(d.selector.as_deref(), Some("piano"));
+    }
+
+    #[test]
+    fn directive_with_value_has_no_selector() {
+        let d = Directive::with_value("title", "My Song");
+        assert_eq!(d.selector, None);
+    }
+
+    #[test]
+    fn directive_name_only_has_no_selector() {
+        let d = Directive::name_only("start_of_chorus");
+        assert_eq!(d.selector, None);
+    }
+
+    #[test]
+    fn resolve_with_selector_plain_directive() {
+        let (kind, sel) = DirectiveKind::resolve_with_selector("title");
+        assert_eq!(kind, DirectiveKind::Title);
+        assert_eq!(sel, None);
+    }
+
+    #[test]
+    fn resolve_with_selector_with_suffix() {
+        let (kind, sel) = DirectiveKind::resolve_with_selector("title-piano");
+        assert_eq!(kind, DirectiveKind::Title);
+        assert_eq!(sel.as_deref(), Some("piano"));
+    }
+
+    #[test]
+    fn resolve_with_selector_comment() {
+        let (kind, sel) = DirectiveKind::resolve_with_selector("comment-bass");
+        assert_eq!(kind, DirectiveKind::Comment);
+        assert_eq!(sel.as_deref(), Some("bass"));
+    }
+
+    #[test]
+    fn resolve_with_selector_comment_italic() {
+        let (kind, sel) = DirectiveKind::resolve_with_selector("comment_italic-guitar");
+        assert_eq!(kind, DirectiveKind::CommentItalic);
+        assert_eq!(sel.as_deref(), Some("guitar"));
+    }
+
+    #[test]
+    fn resolve_with_selector_environment() {
+        let (kind, sel) = DirectiveKind::resolve_with_selector("start_of_chorus-piano");
+        assert_eq!(kind, DirectiveKind::StartOfChorus);
+        assert_eq!(sel.as_deref(), Some("piano"));
+    }
+
+    #[test]
+    fn resolve_with_selector_end_of_tab() {
+        let (kind, sel) = DirectiveKind::resolve_with_selector("end_of_tab-guitar");
+        assert_eq!(kind, DirectiveKind::EndOfTab);
+        assert_eq!(sel.as_deref(), Some("guitar"));
+    }
+
+    #[test]
+    fn resolve_with_selector_custom_section_no_selector() {
+        let (kind, sel) = DirectiveKind::resolve_with_selector("start_of_intro");
+        assert_eq!(kind, DirectiveKind::StartOfSection("intro".to_string()));
+        assert_eq!(sel, None);
+    }
+
+    #[test]
+    fn resolve_with_selector_custom_section_with_selector() {
+        // start_of_intro-piano: "start_of_intro" resolves to StartOfSection("intro"),
+        // which is a custom section. The last hyphen splits into "start_of_intro" + "piano".
+        // "start_of_intro" is NOT Unknown (it's StartOfSection), so we split successfully.
+        let (kind, sel) = DirectiveKind::resolve_with_selector("start_of_intro-piano");
+        assert_eq!(kind, DirectiveKind::StartOfSection("intro".to_string()));
+        assert_eq!(sel.as_deref(), Some("piano"));
+    }
+
+    #[test]
+    fn resolve_with_selector_unknown_no_hyphen() {
+        let (kind, sel) = DirectiveKind::resolve_with_selector("mything");
+        assert_eq!(kind, DirectiveKind::Unknown("mything".to_string()));
+        assert_eq!(sel, None);
+    }
+
+    #[test]
+    fn resolve_with_selector_unknown_with_hyphen() {
+        // "my-thing" -> prefix "my" is Unknown, so no selector is detected.
+        let (kind, sel) = DirectiveKind::resolve_with_selector("my-thing");
+        assert_eq!(kind, DirectiveKind::Unknown("my-thing".to_string()));
+        assert_eq!(sel, None);
+    }
+
+    #[test]
+    fn resolve_with_selector_case_insensitive() {
+        let (kind, sel) = DirectiveKind::resolve_with_selector("Title-Piano");
+        assert_eq!(kind, DirectiveKind::Title);
+        assert_eq!(sel.as_deref(), Some("piano"));
+    }
+
+    #[test]
+    fn resolve_with_selector_short_alias_with_suffix() {
+        let (kind, sel) = DirectiveKind::resolve_with_selector("t-guitar");
+        assert_eq!(kind, DirectiveKind::Title);
+        assert_eq!(sel.as_deref(), Some("guitar"));
+    }
+
     // -- Integration: full song construction --------------------------------
 
     #[test]
@@ -1812,6 +2135,216 @@ mod tests {
         let eog = Directive::name_only("eog");
         assert!(eog.is_section_end());
         assert_eq!(eog.section_name(), Some("grid"));
+    }
+
+    // -- Font, size, and color directives -----------------------------------
+
+    #[test]
+    fn directive_kind_from_name_title_font_size_color() {
+        assert_eq!(
+            DirectiveKind::from_name("titlefont"),
+            DirectiveKind::TitleFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("TITLEFONT"),
+            DirectiveKind::TitleFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("titlesize"),
+            DirectiveKind::TitleSize
+        );
+        assert_eq!(
+            DirectiveKind::from_name("titlecolour"),
+            DirectiveKind::TitleColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("titlecolor"),
+            DirectiveKind::TitleColour
+        );
+    }
+
+    #[test]
+    fn directive_kind_from_name_chorus_font_size_color() {
+        assert_eq!(
+            DirectiveKind::from_name("chorusfont"),
+            DirectiveKind::ChorusFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("chorussize"),
+            DirectiveKind::ChorusSize
+        );
+        assert_eq!(
+            DirectiveKind::from_name("choruscolour"),
+            DirectiveKind::ChorusColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("choruscolor"),
+            DirectiveKind::ChorusColour
+        );
+    }
+
+    #[test]
+    fn directive_kind_from_name_footer_header_label() {
+        assert_eq!(
+            DirectiveKind::from_name("footerfont"),
+            DirectiveKind::FooterFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("footersize"),
+            DirectiveKind::FooterSize
+        );
+        assert_eq!(
+            DirectiveKind::from_name("footercolour"),
+            DirectiveKind::FooterColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("footercolor"),
+            DirectiveKind::FooterColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("headerfont"),
+            DirectiveKind::HeaderFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("headersize"),
+            DirectiveKind::HeaderSize
+        );
+        assert_eq!(
+            DirectiveKind::from_name("headercolour"),
+            DirectiveKind::HeaderColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("headercolor"),
+            DirectiveKind::HeaderColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("labelfont"),
+            DirectiveKind::LabelFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("labelsize"),
+            DirectiveKind::LabelSize
+        );
+        assert_eq!(
+            DirectiveKind::from_name("labelcolour"),
+            DirectiveKind::LabelColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("labelcolor"),
+            DirectiveKind::LabelColour
+        );
+    }
+
+    #[test]
+    fn directive_kind_from_name_grid_toc() {
+        assert_eq!(
+            DirectiveKind::from_name("gridfont"),
+            DirectiveKind::GridFont
+        );
+        assert_eq!(
+            DirectiveKind::from_name("gridsize"),
+            DirectiveKind::GridSize
+        );
+        assert_eq!(
+            DirectiveKind::from_name("gridcolour"),
+            DirectiveKind::GridColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("gridcolor"),
+            DirectiveKind::GridColour
+        );
+        assert_eq!(DirectiveKind::from_name("tocfont"), DirectiveKind::TocFont);
+        assert_eq!(DirectiveKind::from_name("tocsize"), DirectiveKind::TocSize);
+        assert_eq!(
+            DirectiveKind::from_name("toccolour"),
+            DirectiveKind::TocColour
+        );
+        assert_eq!(
+            DirectiveKind::from_name("toccolor"),
+            DirectiveKind::TocColour
+        );
+    }
+
+    #[test]
+    fn directive_kind_extra_font_size_color_canonical_names() {
+        assert_eq!(DirectiveKind::TitleFont.canonical_name(), "titlefont");
+        assert_eq!(DirectiveKind::TitleSize.canonical_name(), "titlesize");
+        assert_eq!(DirectiveKind::TitleColour.canonical_name(), "titlecolour");
+        assert_eq!(DirectiveKind::ChorusFont.canonical_name(), "chorusfont");
+        assert_eq!(DirectiveKind::ChorusSize.canonical_name(), "chorussize");
+        assert_eq!(DirectiveKind::ChorusColour.canonical_name(), "choruscolour");
+        assert_eq!(DirectiveKind::FooterFont.canonical_name(), "footerfont");
+        assert_eq!(DirectiveKind::FooterSize.canonical_name(), "footersize");
+        assert_eq!(DirectiveKind::FooterColour.canonical_name(), "footercolour");
+        assert_eq!(DirectiveKind::HeaderFont.canonical_name(), "headerfont");
+        assert_eq!(DirectiveKind::HeaderSize.canonical_name(), "headersize");
+        assert_eq!(DirectiveKind::HeaderColour.canonical_name(), "headercolour");
+        assert_eq!(DirectiveKind::LabelFont.canonical_name(), "labelfont");
+        assert_eq!(DirectiveKind::LabelSize.canonical_name(), "labelsize");
+        assert_eq!(DirectiveKind::LabelColour.canonical_name(), "labelcolour");
+        assert_eq!(DirectiveKind::GridFont.canonical_name(), "gridfont");
+        assert_eq!(DirectiveKind::GridSize.canonical_name(), "gridsize");
+        assert_eq!(DirectiveKind::GridColour.canonical_name(), "gridcolour");
+        assert_eq!(DirectiveKind::TocFont.canonical_name(), "tocfont");
+        assert_eq!(DirectiveKind::TocSize.canonical_name(), "tocsize");
+        assert_eq!(DirectiveKind::TocColour.canonical_name(), "toccolour");
+    }
+
+    #[test]
+    fn directive_kind_extra_font_size_color_category_checks() {
+        let font_kinds = [
+            DirectiveKind::TitleFont,
+            DirectiveKind::TitleSize,
+            DirectiveKind::TitleColour,
+            DirectiveKind::ChorusFont,
+            DirectiveKind::ChorusSize,
+            DirectiveKind::ChorusColour,
+            DirectiveKind::FooterFont,
+            DirectiveKind::FooterSize,
+            DirectiveKind::FooterColour,
+            DirectiveKind::HeaderFont,
+            DirectiveKind::HeaderSize,
+            DirectiveKind::HeaderColour,
+            DirectiveKind::LabelFont,
+            DirectiveKind::LabelSize,
+            DirectiveKind::LabelColour,
+            DirectiveKind::GridFont,
+            DirectiveKind::GridSize,
+            DirectiveKind::GridColour,
+            DirectiveKind::TocFont,
+            DirectiveKind::TocSize,
+            DirectiveKind::TocColour,
+        ];
+        for kind in &font_kinds {
+            assert!(
+                kind.is_font_size_color(),
+                "{kind:?} should be font_size_color"
+            );
+            assert!(!kind.is_metadata(), "{kind:?} should not be metadata");
+            assert!(!kind.is_comment(), "{kind:?} should not be comment");
+            assert!(!kind.is_environment(), "{kind:?} should not be environment");
+        }
+    }
+
+    #[test]
+    fn directive_font_size_color_alias_resolution() {
+        let d = Directive::with_value("titlefont", "Times");
+        assert_eq!(d.name, "titlefont");
+        assert_eq!(d.kind, DirectiveKind::TitleFont);
+        assert_eq!(d.value.as_deref(), Some("Times"));
+
+        let d = Directive::with_value("choruscolor", "#FF0000");
+        assert_eq!(d.name, "choruscolour");
+        assert_eq!(d.kind, DirectiveKind::ChorusColour);
+
+        let d = Directive::with_value("titlecolor", "blue");
+        assert_eq!(d.name, "titlecolour");
+        assert_eq!(d.kind, DirectiveKind::TitleColour);
+
+        let d = Directive::with_value("gridsize", "12");
+        assert_eq!(d.name, "gridsize");
+        assert_eq!(d.kind, DirectiveKind::GridSize);
+        assert_eq!(d.value.as_deref(), Some("12"));
     }
 }
 

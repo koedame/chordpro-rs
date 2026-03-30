@@ -518,11 +518,13 @@ impl Parser {
         let name = name.trim().to_string();
         let value = value.map(|v| v.trim().to_string());
 
-        // Classify the directive.
-        let kind = DirectiveKind::from_name(&name);
+        // Classify the directive, detecting any selector suffix.
+        let (kind, selector) = DirectiveKind::resolve_with_selector(&name);
 
-        // Comment directives → Line::Comment with appropriate style.
-        if kind.is_comment() {
+        // Comment directives without a selector → Line::Comment with appropriate style.
+        // Comment directives WITH a selector are kept as Line::Directive so
+        // the selector information is preserved for downstream filtering.
+        if kind.is_comment() && selector.is_none() {
             let style = match kind {
                 DirectiveKind::Comment => CommentStyle::Normal,
                 DirectiveKind::CommentItalic => CommentStyle::Italic,
@@ -549,6 +551,7 @@ impl Parser {
                             Some(meta_value)
                         },
                         kind,
+                        selector,
                     };
                     return Ok(Line::Directive(directive));
                 } else if !trimmed.is_empty() {
@@ -559,6 +562,7 @@ impl Parser {
                         name: "meta".to_string(),
                         value: None,
                         kind,
+                        selector,
                     };
                     return Ok(Line::Directive(directive));
                 }
@@ -568,6 +572,7 @@ impl Parser {
                 name: "meta".to_string(),
                 value: None,
                 kind: DirectiveKind::Unknown("meta".to_string()),
+                selector,
             };
             return Ok(Line::Directive(directive));
         }
@@ -584,16 +589,18 @@ impl Parser {
                 name: canonical,
                 value,
                 kind,
+                selector,
             };
             return Ok(Line::Directive(directive));
         }
 
-        // Build the directive with canonical name and kind.
+        // Build the directive with canonical name, kind, and optional selector.
         let canonical = kind.full_canonical_name();
         let directive = Directive {
             name: canonical,
             value,
             kind,
+            selector,
         };
 
         Ok(Line::Directive(directive))
@@ -928,6 +935,228 @@ pub fn parse_lenient_with_options(input: &str, options: &ParseOptions) -> ParseR
     }
     let tokens = Lexer::new(input).tokenize();
     Parser::new(tokens).parse_lenient()
+}
+
+// ---------------------------------------------------------------------------
+// Multi-song result
+// ---------------------------------------------------------------------------
+
+/// The result of a lenient multi-song parse.
+///
+/// When using [`parse_multi_lenient`], the parser splits the input at `{new_song}`
+/// boundaries and parses each segment independently. Each entry in `results`
+/// contains the lenient parse result for one song segment.
+#[derive(Debug, Clone)]
+pub struct MultiParseResult {
+    /// The parsed songs, one per segment between `{new_song}` boundaries.
+    /// Each entry is the lenient parse result for that song segment.
+    pub results: Vec<ParseResult>,
+}
+
+impl MultiParseResult {
+    /// Returns all successfully parsed songs.
+    #[must_use]
+    pub fn songs(&self) -> Vec<&Song> {
+        self.results.iter().map(|r| &r.song).collect()
+    }
+
+    /// Returns `true` if no errors were encountered in any song.
+    #[must_use]
+    pub fn is_ok(&self) -> bool {
+        self.results.iter().all(|r| r.is_ok())
+    }
+
+    /// Returns `true` if any errors were encountered in any song.
+    #[must_use]
+    pub fn has_errors(&self) -> bool {
+        self.results.iter().any(|r| r.has_errors())
+    }
+
+    /// Returns all errors from all songs.
+    #[must_use]
+    pub fn all_errors(&self) -> Vec<&ParseError> {
+        self.results.iter().flat_map(|r| r.errors.iter()).collect()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Multi-song convenience functions
+// ---------------------------------------------------------------------------
+
+/// Checks whether a trimmed line is a `{new_song}` or `{ns}` directive.
+fn is_new_song_line(trimmed: &str) -> bool {
+    // Match patterns like {new_song}, { new_song }, {ns}, { ns }, case-insensitive
+    if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
+        return false;
+    }
+    let inner = trimmed[1..trimmed.len() - 1].trim().to_ascii_lowercase();
+    inner == "new_song" || inner == "ns"
+}
+
+/// Splits input text at `{new_song}` / `{ns}` directive boundaries.
+///
+/// Returns a vector of string slices, where each element is the text of one
+/// song. If the input contains no `{new_song}` directives, returns a
+/// single-element vector containing the entire input.
+fn split_at_new_song(input: &str) -> Vec<&str> {
+    let mut segments = Vec::new();
+    let mut start = 0;
+    let mut line_byte_start = 0;
+    let bytes = input.as_bytes();
+
+    for line in input.lines() {
+        let line_byte_end = line_byte_start + line.len();
+        let trimmed = line.trim();
+
+        // Calculate the number of bytes used by the line terminator (\r\n or \n).
+        let newline_len = if line_byte_end < bytes.len() && bytes[line_byte_end] == b'\r' {
+            if line_byte_end + 1 < bytes.len() && bytes[line_byte_end + 1] == b'\n' {
+                2
+            } else {
+                0
+            }
+        } else if line_byte_end < bytes.len() && bytes[line_byte_end] == b'\n' {
+            1
+        } else {
+            0
+        };
+
+        if is_new_song_line(trimmed) {
+            // Add everything before this line as a segment.
+            segments.push(&input[start..line_byte_start]);
+            // Skip past this line and its line terminator.
+            start = line_byte_end + newline_len;
+        }
+
+        // Advance past this line and its line terminator.
+        line_byte_start = line_byte_end + newline_len;
+    }
+
+    // Add the remaining text as the last segment.
+    segments.push(&input[start..]);
+    segments
+}
+
+/// Parses a multi-song ChordPro source string, splitting at `{new_song}` / `{ns}`
+/// boundaries and parsing each segment as an independent [`Song`].
+///
+/// If the input contains no `{new_song}` directives, the result is a single-element
+/// vector containing the entire input parsed as one song.
+///
+/// # Errors
+///
+/// Returns a [`ParseError`] if any song segment contains structural problems.
+/// On error, parsing stops at the first problematic segment.
+///
+/// # Examples
+///
+/// use chordpro_core::parser::parse_multi;
+///
+/// let input = "{title: Song One}\nLyrics one\n{new_song}\n{title: Song Two}\nLyrics two";
+/// let songs = parse_multi(input).unwrap();
+/// assert_eq!(songs.len(), 2);
+/// assert_eq!(songs[0].metadata.title.as_deref(), Some("Song One"));
+/// assert_eq!(songs[1].metadata.title.as_deref(), Some("Song Two"));
+/// ```
+pub fn parse_multi(input: &str) -> Result<Vec<Song>, ParseError> {
+    parse_multi_with_options(input, &ParseOptions::default())
+}
+
+/// Parses a multi-song ChordPro source string with custom options.
+///
+/// See [`parse_multi`] for details. This variant allows configuring parser
+/// behavior via [`ParseOptions`]. The size limit applies to the entire input,
+/// not individual song segments.
+///
+/// # Errors
+///
+/// Returns a [`ParseError`] if the input exceeds the configured size limit
+/// or any song segment contains structural problems.
+pub fn parse_multi_with_options(
+    input: &str,
+    options: &ParseOptions,
+) -> Result<Vec<Song>, ParseError> {
+    if options.max_input_size > 0 && input.len() > options.max_input_size {
+        return Err(ParseError::new(
+            format!(
+                "input size ({} bytes) exceeds maximum ({} bytes)",
+                input.len(),
+                options.max_input_size
+            ),
+            Span::new(
+                crate::token::Position::new(0, 0),
+                crate::token::Position::new(0, 0),
+            ),
+        ));
+    }
+
+    let segments = split_at_new_song(input);
+    let mut songs = Vec::with_capacity(segments.len());
+
+    for segment in segments {
+        let tokens = Lexer::new(segment).tokenize();
+        let song = Parser::new(tokens).parse()?;
+        songs.push(song);
+    }
+
+    Ok(songs)
+}
+
+/// Parses a multi-song ChordPro source string leniently, collecting all errors.
+///
+/// Unlike [`parse_multi`], this function does not fail on the first error.
+/// Each song segment is parsed independently with [`parse_lenient`], and all
+/// errors are collected. The size limit from [`ParseOptions::default`] is
+/// enforced on the entire input.
+///
+/// # Examples
+///
+/// ```
+/// use chordpro_core::parser::parse_multi_lenient;
+///
+/// let input = "{title: Song One}\n[Am\n{new_song}\n{title: Song Two}\n[G]Hello";
+/// let result = parse_multi_lenient(input);
+/// assert_eq!(result.results.len(), 2);
+/// assert!(result.results[0].has_errors()); // unclosed chord
+/// assert!(result.results[1].is_ok());
+/// ```
+pub fn parse_multi_lenient(input: &str) -> MultiParseResult {
+    parse_multi_lenient_with_options(input, &ParseOptions::default())
+}
+
+/// Parses a multi-song ChordPro source string leniently with custom options.
+///
+/// See [`parse_multi_lenient`] for details.
+pub fn parse_multi_lenient_with_options(input: &str, options: &ParseOptions) -> MultiParseResult {
+    if options.max_input_size > 0 && input.len() > options.max_input_size {
+        return MultiParseResult {
+            results: vec![ParseResult {
+                song: Song::new(),
+                errors: vec![ParseError::new(
+                    format!(
+                        "input size ({} bytes) exceeds maximum ({} bytes)",
+                        input.len(),
+                        options.max_input_size
+                    ),
+                    Span::new(
+                        crate::token::Position::new(0, 0),
+                        crate::token::Position::new(0, 0),
+                    ),
+                )],
+            }],
+        };
+    }
+
+    let segments = split_at_new_song(input);
+    let results: Vec<ParseResult> = segments
+        .into_iter()
+        .map(|segment| {
+            let tokens = Lexer::new(segment).tokenize();
+            Parser::new(tokens).parse_lenient()
+        })
+        .collect();
+
+    MultiParseResult { results }
 }
 
 // ---------------------------------------------------------------------------
@@ -1426,6 +1655,7 @@ mod tests {
                 name: "my_custom".to_string(),
                 value: Some("value".to_string()),
                 kind: DirectiveKind::Unknown("my_custom".to_string()),
+                selector: None,
             })],
         );
     }
@@ -1889,6 +2119,7 @@ mod tests {
                 name: "meta".to_string(),
                 value: None,
                 kind: DirectiveKind::Meta("key:value:extra".to_string()),
+                selector: None,
             })],
         );
 
@@ -1900,6 +2131,7 @@ mod tests {
                 name: "custom_dir".to_string(),
                 value: Some("key:value:extra".to_string()),
                 kind: DirectiveKind::Unknown("custom_dir".to_string()),
+                selector: None,
             })],
         );
     }
@@ -2971,12 +3203,40 @@ mod delegate_tests {
         }
     }
 
+    // -- Selector suffix parsing --------------------------------------------
+
+    #[test]
+    fn selector_suffix_on_metadata_directive() {
+        let result = lines("{title-piano: My Song}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "title");
+            assert_eq!(d.value.as_deref(), Some("My Song"));
+            assert_eq!(d.kind, DirectiveKind::Title);
+            assert_eq!(d.selector.as_deref(), Some("piano"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
     #[test]
     fn textblock_directive_with_label() {
         let result = lines("{start_of_textblock: Notes}");
         if let Line::Directive(ref d) = result[0] {
             assert_eq!(d.kind, DirectiveKind::StartOfTextblock);
             assert_eq!(d.value.as_deref(), Some("Notes"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn selector_suffix_on_key_directive() {
+        let result = lines("{key-bass: E}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "key");
+            assert_eq!(d.value.as_deref(), Some("E"));
+            assert_eq!(d.kind, DirectiveKind::Key);
+            assert_eq!(d.selector.as_deref(), Some("bass"));
         } else {
             panic!("expected directive");
         }
@@ -3011,6 +3271,299 @@ mod delegate_tests {
                 assert_eq!(lyrics.text(), "Hello bold world");
             }
             _ => panic!("expected lyrics line"),
+        }
+    }
+
+    // -- NewSong directive --------------------------------------------------
+
+    #[test]
+    fn new_song_directive_kind() {
+        assert_eq!(DirectiveKind::from_name("new_song"), DirectiveKind::NewSong);
+        assert_eq!(DirectiveKind::from_name("ns"), DirectiveKind::NewSong);
+        assert_eq!(DirectiveKind::from_name("NEW_SONG"), DirectiveKind::NewSong);
+        assert_eq!(DirectiveKind::from_name("Ns"), DirectiveKind::NewSong);
+    }
+
+    #[test]
+    fn new_song_canonical_name() {
+        assert_eq!(DirectiveKind::NewSong.canonical_name(), "new_song");
+    }
+
+    #[test]
+    fn new_song_parsed_as_directive() {
+        let result = lines("{new_song}");
+        assert_eq!(result.len(), 1);
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "new_song");
+            assert_eq!(d.kind, DirectiveKind::NewSong);
+            assert!(d.value.is_none());
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn selector_suffix_on_comment_directive() {
+        // Comment directives with selectors are kept as Line::Directive
+        // (not converted to Line::Comment) to preserve the selector.
+        let result = lines("{comment-piano: Play softly}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.kind, DirectiveKind::Comment);
+            assert_eq!(d.value.as_deref(), Some("Play softly"));
+            assert_eq!(d.selector.as_deref(), Some("piano"));
+        } else {
+            panic!(
+                "expected directive for comment with selector, got {:?}",
+                result[0]
+            );
+        }
+    }
+
+    #[test]
+    fn ns_alias_parsed_as_directive() {
+        let result = lines("{ns}");
+        assert_eq!(result.len(), 1);
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "new_song");
+            assert_eq!(d.kind, DirectiveKind::NewSong);
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    // -- Multi-song parsing -------------------------------------------------
+
+    #[test]
+    fn parse_multi_single_song() {
+        let input = "{title: Only Song}\n[G]Hello";
+        let songs = parse_multi(input).unwrap();
+        assert_eq!(songs.len(), 1);
+        assert_eq!(songs[0].metadata.title.as_deref(), Some("Only Song"));
+    }
+
+    #[test]
+    fn parse_multi_two_songs() {
+        let input = "{title: Song One}\nLyrics one\n{new_song}\n{title: Song Two}\nLyrics two";
+        let songs = parse_multi(input).unwrap();
+        assert_eq!(songs.len(), 2);
+        assert_eq!(songs[0].metadata.title.as_deref(), Some("Song One"));
+        assert_eq!(songs[1].metadata.title.as_deref(), Some("Song Two"));
+    }
+
+    #[test]
+    fn parse_multi_ns_alias() {
+        let input = "{title: First}\n{ns}\n{title: Second}";
+        let songs = parse_multi(input).unwrap();
+        assert_eq!(songs.len(), 2);
+        assert_eq!(songs[0].metadata.title.as_deref(), Some("First"));
+        assert_eq!(songs[1].metadata.title.as_deref(), Some("Second"));
+    }
+
+    #[test]
+    fn parse_multi_three_songs() {
+        let input = "{title: A}\n{new_song}\n{title: B}\n{new_song}\n{title: C}";
+        let songs = parse_multi(input).unwrap();
+        assert_eq!(songs.len(), 3);
+        assert_eq!(songs[0].metadata.title.as_deref(), Some("A"));
+        assert_eq!(songs[1].metadata.title.as_deref(), Some("B"));
+        assert_eq!(songs[2].metadata.title.as_deref(), Some("C"));
+    }
+
+    #[test]
+    fn parse_multi_empty_first_song() {
+        // {new_song} at the very beginning means the first segment is empty
+        let input = "{new_song}\n{title: Second}";
+        let songs = parse_multi(input).unwrap();
+        assert_eq!(songs.len(), 2);
+        assert!(songs[0].metadata.title.is_none());
+        assert_eq!(songs[1].metadata.title.as_deref(), Some("Second"));
+    }
+
+    #[test]
+    fn parse_multi_case_insensitive() {
+        let input = "{title: A}\n{NEW_SONG}\n{title: B}";
+        let songs = parse_multi(input).unwrap();
+        assert_eq!(songs.len(), 2);
+    }
+
+    #[test]
+    fn parse_multi_with_whitespace() {
+        let input = "{title: A}\n{ new_song }\n{title: B}";
+        let songs = parse_multi(input).unwrap();
+        assert_eq!(songs.len(), 2);
+    }
+
+    #[test]
+    fn parse_multi_crlf_line_endings() {
+        let input = "{title: A}\r\n[G]Hello\r\n{new_song}\r\n{title: B}\r\n[Am]World\r\n";
+        let songs = parse_multi(input).unwrap();
+        assert_eq!(songs.len(), 2);
+        assert_eq!(songs[0].metadata.title, Some("A".to_string()));
+        assert_eq!(songs[1].metadata.title, Some("B".to_string()));
+    }
+
+    #[test]
+    fn parse_multi_lenient_collects_errors() {
+        let input = "{title: Good}\n[Am\n{new_song}\n{title: Also Good}\n[G]Hello";
+        let result = parse_multi_lenient(input);
+        assert_eq!(result.results.len(), 2);
+        assert!(result.results[0].has_errors()); // unclosed chord
+        assert!(result.results[1].is_ok());
+        assert_eq!(
+            result.results[1].song.metadata.title.as_deref(),
+            Some("Also Good")
+        );
+    }
+
+    #[test]
+    fn comment_without_selector_still_becomes_line_comment() {
+        let result = lines("{comment: Normal comment}");
+        assert!(
+            matches!(result[0], Line::Comment(CommentStyle::Normal, _)),
+            "comment without selector should still be Line::Comment"
+        );
+    }
+
+    #[test]
+    fn parse_multi_songs_helper() {
+        let input = "{title: A}\n{new_song}\n{title: B}";
+        let result = parse_multi_lenient(input);
+        let songs = result.songs();
+        assert_eq!(songs.len(), 2);
+        assert_eq!(songs[0].metadata.title.as_deref(), Some("A"));
+        assert_eq!(songs[1].metadata.title.as_deref(), Some("B"));
+    }
+
+    #[test]
+    fn parse_multi_preserves_song_content() {
+        let input = "{title: Song One}
+{artist: Artist One}
+{start_of_chorus}
+[G]La la [C]la
+{end_of_chorus}
+{new_song}
+{title: Song Two}
+{key: Am}
+[Am]Hello [G]world";
+        let songs = parse_multi(input).unwrap();
+        assert_eq!(songs.len(), 2);
+
+        // First song
+        assert_eq!(songs[0].metadata.title.as_deref(), Some("Song One"));
+        assert_eq!(songs[0].metadata.artists, vec!["Artist One".to_string()]);
+
+        // Second song
+        assert_eq!(songs[1].metadata.title.as_deref(), Some("Song Two"));
+        assert_eq!(songs[1].metadata.key.as_deref(), Some("Am"));
+    }
+
+    #[test]
+    fn is_new_song_line_detection() {
+        assert!(is_new_song_line("{new_song}"));
+        assert!(is_new_song_line("{ns}"));
+        assert!(is_new_song_line("{NEW_SONG}"));
+        assert!(is_new_song_line("{NS}"));
+        assert!(is_new_song_line("{ new_song }"));
+        assert!(is_new_song_line("{ ns }"));
+
+        assert!(!is_new_song_line("{new_song: value}"));
+        assert!(!is_new_song_line("{title}"));
+        assert!(!is_new_song_line("new_song"));
+        assert!(!is_new_song_line(""));
+        assert!(!is_new_song_line("{new_songs}"));
+    }
+
+    #[test]
+    fn single_parse_ignores_new_song() {
+        // The single-song parse() should treat {new_song} as a regular directive
+        // and not fail.
+        let song = parse("{title: Test}\n{new_song}\n[G]Hello").unwrap();
+        assert_eq!(song.metadata.title.as_deref(), Some("Test"));
+        // The {new_song} should appear as a Directive line
+        let has_new_song = song
+            .lines
+            .iter()
+            .any(|l| matches!(l, Line::Directive(d) if d.kind == DirectiveKind::NewSong));
+        assert!(has_new_song);
+    }
+
+    #[test]
+    fn selector_suffix_on_environment_directive() {
+        let result = lines("{start_of_chorus-piano}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "start_of_chorus");
+            assert_eq!(d.kind, DirectiveKind::StartOfChorus);
+            assert_eq!(d.selector.as_deref(), Some("piano"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn selector_suffix_on_end_environment() {
+        let result = lines("{end_of_verse-guitar}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "end_of_verse");
+            assert_eq!(d.kind, DirectiveKind::EndOfVerse);
+            assert_eq!(d.selector.as_deref(), Some("guitar"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn no_selector_on_plain_directive() {
+        let result = lines("{title: My Song}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.selector, None);
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn selector_suffix_case_insensitive() {
+        let result = lines("{Title-PIANO: My Song}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.kind, DirectiveKind::Title);
+            assert_eq!(d.selector.as_deref(), Some("piano"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn selector_with_short_alias() {
+        let result = lines("{t-guitar: My Song}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "title");
+            assert_eq!(d.kind, DirectiveKind::Title);
+            assert_eq!(d.selector.as_deref(), Some("guitar"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn unknown_directive_with_hyphen_no_selector() {
+        // "my-custom" -> "my" is Unknown, so the whole name is Unknown
+        let result = lines("{my-custom: value}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.kind, DirectiveKind::Unknown("my-custom".to_string()));
+            assert_eq!(d.selector, None);
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn custom_section_with_selector() {
+        let result = lines("{start_of_intro-piano}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.kind, DirectiveKind::StartOfSection("intro".to_string()));
+            assert_eq!(d.selector.as_deref(), Some("piano"));
+        } else {
+            panic!("expected directive");
         }
     }
 }

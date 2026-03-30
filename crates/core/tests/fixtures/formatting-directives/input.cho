@@ -1,0 +1,22 @@
+{title: Formatting Test}
+{titlefont: Times New Roman}
+{titlesize: 18}
+{titlecolour: #333333}
+{chorusfont: Helvetica}
+{chorussize: 14}
+{choruscolor: blue}
+{footerfont: Arial}
+{footersize: 10}
+{footercolour: gray}
+{headerfont: Georgia}
+{headersize: 16}
+{headercolor: #000000}
+{labelfont: Verdana}
+{labelsize: 12}
+{labelcolour: #444444}
+{gridfont: Courier}
+{gridsize: 11}
+{gridcolour: #666666}
+{tocfont: Palatino}
+{tocsize: 13}
+{toccolor: navy}

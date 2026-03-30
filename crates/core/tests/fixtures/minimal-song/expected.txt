@@ -29,6 +29,7 @@ Song {
                     "Hello World",
                 ),
                 kind: Title,
+                selector: None,
             },
         ),
         Lyrics(
