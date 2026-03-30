@@ -178,6 +178,9 @@ impl Parser {
             DirectiveKind::Capo => {
                 metadata.capo = Some(value);
             }
+            DirectiveKind::Unknown(ref name) => {
+                metadata.custom.push((name.clone(), value));
+            }
             _ => {}
         }
     }
@@ -1068,6 +1071,44 @@ mod tests {
         assert_eq!(song.metadata.tempo.as_deref(), Some("100"));
         assert_eq!(song.metadata.time.as_deref(), Some("4/4"));
         assert_eq!(song.metadata.capo.as_deref(), Some("3"));
+    }
+
+    #[test]
+    fn metadata_custom_populated_for_unknown_directive() {
+        let song = parse("{x_my_custom: some value}").unwrap();
+        assert_eq!(
+            song.metadata.custom,
+            vec![("x_my_custom".to_string(), "some value".to_string())]
+        );
+    }
+
+    #[test]
+    fn metadata_custom_multiple_unknown_directives() {
+        let song = parse("{x_one: first}\n{x_two: second}").unwrap();
+        assert_eq!(
+            song.metadata.custom,
+            vec![
+                ("x_one".to_string(), "first".to_string()),
+                ("x_two".to_string(), "second".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn metadata_custom_not_populated_without_value() {
+        let song = parse("{x_no_value}").unwrap();
+        assert!(song.metadata.custom.is_empty());
+    }
+
+    #[test]
+    fn metadata_custom_coexists_with_standard_metadata() {
+        let input = "{title: My Song}\n{x_custom: custom value}";
+        let song = parse(input).unwrap();
+        assert_eq!(song.metadata.title.as_deref(), Some("My Song"));
+        assert_eq!(
+            song.metadata.custom,
+            vec![("x_custom".to_string(), "custom value".to_string())]
+        );
     }
 
     // -- Error cases --------------------------------------------------------
