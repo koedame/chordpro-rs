@@ -439,6 +439,8 @@ impl ImageAttributes {
 ///   `artist`, `album`, `year`, `key`, `tempo`, `time`, `capo`, etc.).
 /// - **Formatting** — comment directives (`comment`, `comment_italic`,
 ///   `comment_box`).
+/// - **Font/size/color** — legacy rendering directives (`titlefont`,
+///   `titlesize`, `titlecolour`, `chorusfont`, etc.).
 /// - **Environment** — section start/end directives (`start_of_chorus`,
 ///   `end_of_chorus`, `start_of_verse`, etc.).
 /// - **Unknown** — any directive not recognized as a standard directive.
