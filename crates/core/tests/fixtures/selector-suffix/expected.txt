@@ -1,0 +1,158 @@
+Song {
+    metadata: Metadata {
+        title: Some(
+            "Override Title",
+        ),
+        subtitles: [],
+        artists: [],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: Some(
+            "E",
+        ),
+        tempo: Some(
+            "120",
+        ),
+        time: None,
+        capo: Some(
+            "3",
+        ),
+        sort_title: None,
+        sort_artist: None,
+        arrangers: [],
+        copyright: None,
+        duration: None,
+        tags: [],
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "title",
+                value: Some(
+                    "Selector Test",
+                ),
+                kind: Title,
+                selector: None,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "comment",
+                value: Some(
+                    "Play softly",
+                ),
+                kind: Comment,
+                selector: Some(
+                    "piano",
+                ),
+            },
+        ),
+        Directive(
+            Directive {
+                name: "comment_italic",
+                value: Some(
+                    "Strum gently",
+                ),
+                kind: CommentItalic,
+                selector: Some(
+                    "guitar",
+                ),
+            },
+        ),
+        Directive(
+            Directive {
+                name: "key",
+                value: Some(
+                    "E",
+                ),
+                kind: Key,
+                selector: Some(
+                    "bass",
+                ),
+            },
+        ),
+        Directive(
+            Directive {
+                name: "capo",
+                value: Some(
+                    "3",
+                ),
+                kind: Capo,
+                selector: Some(
+                    "ukulele",
+                ),
+            },
+        ),
+        Directive(
+            Directive {
+                name: "start_of_chorus",
+                value: None,
+                kind: StartOfChorus,
+                selector: Some(
+                    "piano",
+                ),
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "C",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: C,
+                                        root_accidental: None,
+                                        quality: Major,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                            },
+                        ),
+                        text: "La la la",
+                        spans: [],
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "end_of_chorus",
+                value: None,
+                kind: EndOfChorus,
+                selector: Some(
+                    "piano",
+                ),
+            },
+        ),
+        Directive(
+            Directive {
+                name: "title",
+                value: Some(
+                    "Override Title",
+                ),
+                kind: Title,
+                selector: Some(
+                    "band",
+                ),
+            },
+        ),
+        Directive(
+            Directive {
+                name: "tempo",
+                value: Some(
+                    "120",
+                ),
+                kind: Tempo,
+                selector: Some(
+                    "drums",
+                ),
+            },
+        ),
+    ],
+}

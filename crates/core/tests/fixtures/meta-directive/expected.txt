@@ -56,6 +56,7 @@ Song {
                     "Test Song",
                 ),
                 kind: Title,
+                selector: None,
             },
         ),
         Directive(
@@ -67,6 +68,7 @@ Song {
                 kind: Meta(
                     "artist",
                 ),
+                selector: None,
             },
         ),
         Directive(
@@ -78,6 +80,7 @@ Song {
                 kind: Meta(
                     "key",
                 ),
+                selector: None,
             },
         ),
         Directive(
@@ -89,6 +92,7 @@ Song {
                 kind: Meta(
                     "composer",
                 ),
+                selector: None,
             },
         ),
         Directive(
@@ -100,6 +104,7 @@ Song {
                 kind: Meta(
                     "lyricist",
                 ),
+                selector: None,
             },
         ),
         Directive(
@@ -111,6 +116,7 @@ Song {
                 kind: Meta(
                     "album",
                 ),
+                selector: None,
             },
         ),
         Directive(
@@ -122,6 +128,7 @@ Song {
                 kind: Meta(
                     "year",
                 ),
+                selector: None,
             },
         ),
         Directive(
@@ -133,6 +140,7 @@ Song {
                 kind: Meta(
                     "tempo",
                 ),
+                selector: None,
             },
         ),
         Directive(
@@ -144,6 +152,7 @@ Song {
                 kind: Meta(
                     "time",
                 ),
+                selector: None,
             },
         ),
         Directive(
@@ -155,6 +164,7 @@ Song {
                 kind: Meta(
                     "capo",
                 ),
+                selector: None,
             },
         ),
         Directive(
@@ -166,6 +176,7 @@ Song {
                 kind: Meta(
                     "custom_field",
                 ),
+                selector: None,
             },
         ),
         Directive(
@@ -177,6 +188,7 @@ Song {
                 kind: Meta(
                     "mood",
                 ),
+                selector: None,
             },
         ),
         Empty,
@@ -185,6 +197,7 @@ Song {
                 name: "start_of_verse",
                 value: None,
                 kind: StartOfVerse,
+                selector: None,
             },
         ),
         Lyrics(
@@ -234,6 +247,7 @@ Song {
                 name: "end_of_verse",
                 value: None,
                 kind: EndOfVerse,
+                selector: None,
             },
         ),
     ],

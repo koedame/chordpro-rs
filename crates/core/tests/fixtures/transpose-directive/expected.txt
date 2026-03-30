@@ -29,6 +29,7 @@ Song {
                     "Transpose Test",
                 ),
                 kind: Title,
+                selector: None,
             },
         ),
         Directive(
@@ -38,6 +39,7 @@ Song {
                     "2",
                 ),
                 kind: Transpose,
+                selector: None,
             },
         ),
         Lyrics(
@@ -89,6 +91,7 @@ Song {
                     "-3",
                 ),
                 kind: Transpose,
+                selector: None,
             },
         ),
         Lyrics(
@@ -140,6 +143,7 @@ Song {
                     "0",
                 ),
                 kind: Transpose,
+                selector: None,
             },
         ),
         Lyrics(

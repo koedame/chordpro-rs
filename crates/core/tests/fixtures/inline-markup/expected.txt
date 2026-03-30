@@ -29,6 +29,7 @@ Song {
                     "Inline Markup Test",
                 ),
                 kind: Title,
+                selector: None,
             },
         ),
         Empty,

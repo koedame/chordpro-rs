@@ -29,6 +29,7 @@ Song {
                     "Page Control Test",
                 ),
                 kind: Title,
+                selector: None,
             },
         ),
         Directive(
@@ -38,6 +39,7 @@ Song {
                     "2",
                 ),
                 kind: Columns,
+                selector: None,
             },
         ),
         Lyrics(
@@ -69,6 +71,7 @@ Song {
                 name: "column_break",
                 value: None,
                 kind: ColumnBreak,
+                selector: None,
             },
         ),
         Lyrics(
@@ -100,6 +103,7 @@ Song {
                 name: "new_page",
                 value: None,
                 kind: NewPage,
+                selector: None,
             },
         ),
         Lyrics(
@@ -131,6 +135,7 @@ Song {
                 name: "new_physical_page",
                 value: None,
                 kind: NewPhysicalPage,
+                selector: None,
             },
         ),
         Lyrics(
@@ -164,6 +169,7 @@ Song {
                     "3",
                 ),
                 kind: Columns,
+                selector: None,
             },
         ),
         Directive(
@@ -171,6 +177,7 @@ Song {
                 name: "new_page",
                 value: None,
                 kind: NewPage,
+                selector: None,
             },
         ),
         Directive(
@@ -178,6 +185,7 @@ Song {
                 name: "new_physical_page",
                 value: None,
                 kind: NewPhysicalPage,
+                selector: None,
             },
         ),
         Directive(
@@ -185,6 +193,7 @@ Song {
                 name: "column_break",
                 value: None,
                 kind: ColumnBreak,
+                selector: None,
             },
         ),
     ],

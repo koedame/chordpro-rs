@@ -29,6 +29,7 @@ Song {
                     "Formatting Test",
                 ),
                 kind: Title,
+                selector: None,
             },
         ),
         Directive(
@@ -38,6 +39,7 @@ Song {
                     "Times New Roman",
                 ),
                 kind: TitleFont,
+                selector: None,
             },
         ),
         Directive(
@@ -47,6 +49,7 @@ Song {
                     "18",
                 ),
                 kind: TitleSize,
+                selector: None,
             },
         ),
         Directive(
@@ -56,6 +59,7 @@ Song {
                     "#333333",
                 ),
                 kind: TitleColour,
+                selector: None,
             },
         ),
         Directive(
@@ -65,6 +69,7 @@ Song {
                     "Helvetica",
                 ),
                 kind: ChorusFont,
+                selector: None,
             },
         ),
         Directive(
@@ -74,6 +79,7 @@ Song {
                     "14",
                 ),
                 kind: ChorusSize,
+                selector: None,
             },
         ),
         Directive(
@@ -83,6 +89,7 @@ Song {
                     "blue",
                 ),
                 kind: ChorusColour,
+                selector: None,
             },
         ),
         Directive(
@@ -92,6 +99,7 @@ Song {
                     "Arial",
                 ),
                 kind: FooterFont,
+                selector: None,
             },
         ),
         Directive(
@@ -101,6 +109,7 @@ Song {
                     "10",
                 ),
                 kind: FooterSize,
+                selector: None,
             },
         ),
         Directive(
@@ -110,6 +119,7 @@ Song {
                     "gray",
                 ),
                 kind: FooterColour,
+                selector: None,
             },
         ),
         Directive(
@@ -119,6 +129,7 @@ Song {
                     "Georgia",
                 ),
                 kind: HeaderFont,
+                selector: None,
             },
         ),
         Directive(
@@ -128,6 +139,7 @@ Song {
                     "16",
                 ),
                 kind: HeaderSize,
+                selector: None,
             },
         ),
         Directive(
@@ -137,6 +149,7 @@ Song {
                     "#000000",
                 ),
                 kind: HeaderColour,
+                selector: None,
             },
         ),
         Directive(
@@ -146,6 +159,7 @@ Song {
                     "Verdana",
                 ),
                 kind: LabelFont,
+                selector: None,
             },
         ),
         Directive(
@@ -155,6 +169,7 @@ Song {
                     "12",
                 ),
                 kind: LabelSize,
+                selector: None,
             },
         ),
         Directive(
@@ -164,6 +179,7 @@ Song {
                     "#444444",
                 ),
                 kind: LabelColour,
+                selector: None,
             },
         ),
         Directive(
@@ -173,6 +189,7 @@ Song {
                     "Courier",
                 ),
                 kind: GridFont,
+                selector: None,
             },
         ),
         Directive(
@@ -182,6 +199,7 @@ Song {
                     "11",
                 ),
                 kind: GridSize,
+                selector: None,
             },
         ),
         Directive(
@@ -191,6 +209,7 @@ Song {
                     "#666666",
                 ),
                 kind: GridColour,
+                selector: None,
             },
         ),
         Directive(
@@ -200,6 +219,7 @@ Song {
                     "Palatino",
                 ),
                 kind: TocFont,
+                selector: None,
             },
         ),
         Directive(
@@ -209,6 +229,7 @@ Song {
                     "13",
                 ),
                 kind: TocSize,
+                selector: None,
             },
         ),
         Directive(
@@ -218,6 +239,7 @@ Song {
                     "navy",
                 ),
                 kind: TocColour,
+                selector: None,
             },
         ),
     ],

@@ -34,6 +34,7 @@
                         "Amazing Grace",
                     ),
                     kind: Title,
+                    selector: None,
                 },
             ),
             Directive(
@@ -43,6 +44,7 @@
                         "John Newton",
                     ),
                     kind: Artist,
+                    selector: None,
                 },
             ),
             Directive(
@@ -52,6 +54,7 @@
                         "G",
                     ),
                     kind: Key,
+                    selector: None,
                 },
             ),
             Directive(
@@ -59,6 +62,7 @@
                     name: "start_of_verse",
                     value: None,
                     kind: StartOfVerse,
+                    selector: None,
                 },
             ),
             Lyrics(
@@ -146,6 +150,7 @@
                     name: "end_of_verse",
                     value: None,
                     kind: EndOfVerse,
+                    selector: None,
                 },
             ),
         ],
@@ -185,6 +190,7 @@
                         "Danny Boy",
                     ),
                     kind: Title,
+                    selector: None,
                 },
             ),
             Directive(
@@ -194,6 +200,7 @@
                         "Traditional",
                     ),
                     kind: Artist,
+                    selector: None,
                 },
             ),
             Directive(
@@ -203,6 +210,7 @@
                         "C",
                     ),
                     kind: Key,
+                    selector: None,
                 },
             ),
             Directive(
@@ -210,6 +218,7 @@
                     name: "start_of_verse",
                     value: None,
                     kind: StartOfVerse,
+                    selector: None,
                 },
             ),
             Lyrics(
@@ -295,6 +304,7 @@
                     name: "end_of_verse",
                     value: None,
                     kind: EndOfVerse,
+                    selector: None,
                 },
             ),
         ],

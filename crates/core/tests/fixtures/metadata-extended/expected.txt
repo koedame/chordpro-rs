@@ -45,6 +45,7 @@ Song {
                     "Test Song",
                 ),
                 kind: Title,
+                selector: None,
             },
         ),
         Directive(
@@ -54,6 +55,7 @@ Song {
                     "Song, Test",
                 ),
                 kind: SortTitle,
+                selector: None,
             },
         ),
         Directive(
@@ -63,6 +65,7 @@ Song {
                     "Jane Doe",
                 ),
                 kind: Artist,
+                selector: None,
             },
         ),
         Directive(
@@ -72,6 +75,7 @@ Song {
                     "Doe, Jane",
                 ),
                 kind: SortArtist,
+                selector: None,
             },
         ),
         Directive(
@@ -81,6 +85,7 @@ Song {
                     "John Smith",
                 ),
                 kind: Arranger,
+                selector: None,
             },
         ),
         Directive(
@@ -90,6 +95,7 @@ Song {
                     "Bob Jones",
                 ),
                 kind: Arranger,
+                selector: None,
             },
         ),
         Directive(
@@ -99,6 +105,7 @@ Song {
                     "2024 Jane Doe",
                 ),
                 kind: Copyright,
+                selector: None,
             },
         ),
         Directive(
@@ -108,6 +115,7 @@ Song {
                     "3:45",
                 ),
                 kind: Duration,
+                selector: None,
             },
         ),
         Directive(
@@ -117,6 +125,7 @@ Song {
                     "folk",
                 ),
                 kind: Tag,
+                selector: None,
             },
         ),
         Directive(
@@ -126,6 +135,7 @@ Song {
                     "acoustic",
                 ),
                 kind: Tag,
+                selector: None,
             },
         ),
     ],

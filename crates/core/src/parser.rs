@@ -518,11 +518,13 @@ impl Parser {
         let name = name.trim().to_string();
         let value = value.map(|v| v.trim().to_string());
 
-        // Classify the directive.
-        let kind = DirectiveKind::from_name(&name);
+        // Classify the directive, detecting any selector suffix.
+        let (kind, selector) = DirectiveKind::resolve_with_selector(&name);
 
-        // Comment directives → Line::Comment with appropriate style.
-        if kind.is_comment() {
+        // Comment directives without a selector → Line::Comment with appropriate style.
+        // Comment directives WITH a selector are kept as Line::Directive so
+        // the selector information is preserved for downstream filtering.
+        if kind.is_comment() && selector.is_none() {
             let style = match kind {
                 DirectiveKind::Comment => CommentStyle::Normal,
                 DirectiveKind::CommentItalic => CommentStyle::Italic,
@@ -549,6 +551,7 @@ impl Parser {
                             Some(meta_value)
                         },
                         kind,
+                        selector,
                     };
                     return Ok(Line::Directive(directive));
                 } else if !trimmed.is_empty() {
@@ -559,6 +562,7 @@ impl Parser {
                         name: "meta".to_string(),
                         value: None,
                         kind,
+                        selector,
                     };
                     return Ok(Line::Directive(directive));
                 }
@@ -568,6 +572,7 @@ impl Parser {
                 name: "meta".to_string(),
                 value: None,
                 kind: DirectiveKind::Unknown("meta".to_string()),
+                selector,
             };
             return Ok(Line::Directive(directive));
         }
@@ -584,16 +589,18 @@ impl Parser {
                 name: canonical,
                 value,
                 kind,
+                selector,
             };
             return Ok(Line::Directive(directive));
         }
 
-        // Build the directive with canonical name and kind.
+        // Build the directive with canonical name, kind, and optional selector.
         let canonical = kind.full_canonical_name();
         let directive = Directive {
             name: canonical,
             value,
             kind,
+            selector,
         };
 
         Ok(Line::Directive(directive))
@@ -1648,6 +1655,7 @@ mod tests {
                 name: "my_custom".to_string(),
                 value: Some("value".to_string()),
                 kind: DirectiveKind::Unknown("my_custom".to_string()),
+                selector: None,
             })],
         );
     }
@@ -2111,6 +2119,7 @@ mod tests {
                 name: "meta".to_string(),
                 value: None,
                 kind: DirectiveKind::Meta("key:value:extra".to_string()),
+                selector: None,
             })],
         );
 
@@ -2122,6 +2131,7 @@ mod tests {
                 name: "custom_dir".to_string(),
                 value: Some("key:value:extra".to_string()),
                 kind: DirectiveKind::Unknown("custom_dir".to_string()),
+                selector: None,
             })],
         );
     }
@@ -3193,12 +3203,40 @@ mod delegate_tests {
         }
     }
 
+    // -- Selector suffix parsing --------------------------------------------
+
+    #[test]
+    fn selector_suffix_on_metadata_directive() {
+        let result = lines("{title-piano: My Song}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "title");
+            assert_eq!(d.value.as_deref(), Some("My Song"));
+            assert_eq!(d.kind, DirectiveKind::Title);
+            assert_eq!(d.selector.as_deref(), Some("piano"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
     #[test]
     fn textblock_directive_with_label() {
         let result = lines("{start_of_textblock: Notes}");
         if let Line::Directive(ref d) = result[0] {
             assert_eq!(d.kind, DirectiveKind::StartOfTextblock);
             assert_eq!(d.value.as_deref(), Some("Notes"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn selector_suffix_on_key_directive() {
+        let result = lines("{key-bass: E}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "key");
+            assert_eq!(d.value.as_deref(), Some("E"));
+            assert_eq!(d.kind, DirectiveKind::Key);
+            assert_eq!(d.selector.as_deref(), Some("bass"));
         } else {
             panic!("expected directive");
         }
@@ -3261,6 +3299,23 @@ mod delegate_tests {
             assert!(d.value.is_none());
         } else {
             panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn selector_suffix_on_comment_directive() {
+        // Comment directives with selectors are kept as Line::Directive
+        // (not converted to Line::Comment) to preserve the selector.
+        let result = lines("{comment-piano: Play softly}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.kind, DirectiveKind::Comment);
+            assert_eq!(d.value.as_deref(), Some("Play softly"));
+            assert_eq!(d.selector.as_deref(), Some("piano"));
+        } else {
+            panic!(
+                "expected directive for comment with selector, got {:?}",
+                result[0]
+            );
         }
     }
 
@@ -3361,6 +3416,15 @@ mod delegate_tests {
     }
 
     #[test]
+    fn comment_without_selector_still_becomes_line_comment() {
+        let result = lines("{comment: Normal comment}");
+        assert!(
+            matches!(result[0], Line::Comment(CommentStyle::Normal, _)),
+            "comment without selector should still be Line::Comment"
+        );
+    }
+
+    #[test]
     fn parse_multi_songs_helper() {
         let input = "{title: A}\n{new_song}\n{title: B}";
         let result = parse_multi_lenient(input);
@@ -3421,5 +3485,85 @@ mod delegate_tests {
             .iter()
             .any(|l| matches!(l, Line::Directive(d) if d.kind == DirectiveKind::NewSong));
         assert!(has_new_song);
+    }
+
+    #[test]
+    fn selector_suffix_on_environment_directive() {
+        let result = lines("{start_of_chorus-piano}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "start_of_chorus");
+            assert_eq!(d.kind, DirectiveKind::StartOfChorus);
+            assert_eq!(d.selector.as_deref(), Some("piano"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn selector_suffix_on_end_environment() {
+        let result = lines("{end_of_verse-guitar}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "end_of_verse");
+            assert_eq!(d.kind, DirectiveKind::EndOfVerse);
+            assert_eq!(d.selector.as_deref(), Some("guitar"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn no_selector_on_plain_directive() {
+        let result = lines("{title: My Song}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.selector, None);
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn selector_suffix_case_insensitive() {
+        let result = lines("{Title-PIANO: My Song}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.kind, DirectiveKind::Title);
+            assert_eq!(d.selector.as_deref(), Some("piano"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn selector_with_short_alias() {
+        let result = lines("{t-guitar: My Song}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.name, "title");
+            assert_eq!(d.kind, DirectiveKind::Title);
+            assert_eq!(d.selector.as_deref(), Some("guitar"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn unknown_directive_with_hyphen_no_selector() {
+        // "my-custom" -> "my" is Unknown, so the whole name is Unknown
+        let result = lines("{my-custom: value}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.kind, DirectiveKind::Unknown("my-custom".to_string()));
+            assert_eq!(d.selector, None);
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn custom_section_with_selector() {
+        let result = lines("{start_of_intro-piano}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.kind, DirectiveKind::StartOfSection("intro".to_string()));
+            assert_eq!(d.selector.as_deref(), Some("piano"));
+        } else {
+            panic!("expected directive");
+        }
     }
 }

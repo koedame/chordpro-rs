@@ -29,6 +29,7 @@ Song {
                     "Custom Sections Test",
                 ),
                 kind: Title,
+                selector: None,
             },
         ),
         Empty,
@@ -41,6 +42,7 @@ Song {
                 kind: StartOfSection(
                     "intro",
                 ),
+                selector: None,
             },
         ),
         Lyrics(
@@ -92,6 +94,7 @@ Song {
                 kind: EndOfSection(
                     "intro",
                 ),
+                selector: None,
             },
         ),
         Empty,
@@ -102,6 +105,7 @@ Song {
                 kind: StartOfSection(
                     "solo",
                 ),
+                selector: None,
             },
         ),
         Lyrics(
@@ -135,6 +139,7 @@ Song {
                 kind: EndOfSection(
                     "solo",
                 ),
+                selector: None,
             },
         ),
         Empty,
@@ -147,6 +152,7 @@ Song {
                 kind: StartOfSection(
                     "outro",
                 ),
+                selector: None,
             },
         ),
         Lyrics(
@@ -167,6 +173,7 @@ Song {
                 kind: EndOfSection(
                     "outro",
                 ),
+                selector: None,
             },
         ),
     ],

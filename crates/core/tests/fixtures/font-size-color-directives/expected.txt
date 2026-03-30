@@ -29,6 +29,7 @@ Song {
                     "Font Test",
                 ),
                 kind: Title,
+                selector: None,
             },
         ),
         Directive(
@@ -38,6 +39,7 @@ Song {
                     "Times",
                 ),
                 kind: TextFont,
+                selector: None,
             },
         ),
         Directive(
@@ -47,6 +49,7 @@ Song {
                     "12",
                 ),
                 kind: TextSize,
+                selector: None,
             },
         ),
         Directive(
@@ -56,6 +59,7 @@ Song {
                     "black",
                 ),
                 kind: TextColour,
+                selector: None,
             },
         ),
         Directive(
@@ -65,6 +69,7 @@ Song {
                     "Helvetica Bold",
                 ),
                 kind: ChordFont,
+                selector: None,
             },
         ),
         Directive(
@@ -74,6 +79,7 @@ Song {
                     "10",
                 ),
                 kind: ChordSize,
+                selector: None,
             },
         ),
         Directive(
@@ -83,6 +89,7 @@ Song {
                     "#FF0000",
                 ),
                 kind: ChordColour,
+                selector: None,
             },
         ),
         Directive(
@@ -92,6 +99,7 @@ Song {
                     "Courier",
                 ),
                 kind: TabFont,
+                selector: None,
             },
         ),
         Directive(
@@ -101,6 +109,7 @@ Song {
                     "9",
                 ),
                 kind: TabSize,
+                selector: None,
             },
         ),
         Directive(
@@ -110,6 +119,7 @@ Song {
                     "blue",
                 ),
                 kind: TabColour,
+                selector: None,
             },
         ),
     ],
