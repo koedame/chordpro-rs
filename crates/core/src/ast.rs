@@ -500,6 +500,12 @@ pub enum DirectiveKind {
     /// `{tabcolour}` / `{tabcolor}` — sets the color for tab sections.
     TabColour,
 
+    // -- Recall directives ---------------------------------------------------
+    /// `{chorus}` — recalls (repeats) the most recently defined chorus section.
+    ///
+    /// An optional label may override the default "Chorus" heading.
+    Chorus,
+
     // -- Chord definition directives ----------------------------------------
     /// `{define}` — defines a custom chord fingering.
     Define,
@@ -601,6 +607,7 @@ impl DirectiveKind {
             "start_of_grid" | "sog" => Self::StartOfGrid,
             "end_of_grid" | "eog" => Self::EndOfGrid,
 
+
             // Font, size, and color
             "textfont" | "tf" => Self::TextFont,
             "textsize" | "ts" => Self::TextSize,
@@ -621,6 +628,9 @@ impl DirectiveKind {
             "end_of_svg" => Self::EndOfSvg,
             "start_of_textblock" => Self::StartOfTextblock,
             "end_of_textblock" => Self::EndOfTextblock,
+
+            // Recall
+            "chorus" => Self::Chorus,
 
             // Chord definitions
             "define" => Self::Define,
@@ -687,6 +697,7 @@ impl DirectiveKind {
             Self::EndOfTab => "end_of_tab",
             Self::StartOfGrid => "start_of_grid",
             Self::EndOfGrid => "end_of_grid",
+
             Self::TextFont => "textfont",
             Self::TextSize => "textsize",
             Self::TextColour => "textcolour",
@@ -704,6 +715,7 @@ impl DirectiveKind {
             Self::EndOfSvg => "end_of_svg",
             Self::StartOfTextblock => "start_of_textblock",
             Self::EndOfTextblock => "end_of_textblock",
+            Self::Chorus => "chorus",
             Self::Define => "define",
             Self::ChordDirective => "chord",
             Self::Meta(_) => "meta",

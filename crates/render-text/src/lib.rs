@@ -14,6 +14,9 @@ use chordpro_core::transpose::transpose_chord;
 /// - Lyrics with chords produce two lines: chords above, lyrics below.
 /// - Lyrics without chords produce a single lyrics line.
 /// - Comments are rendered with style markers.
+/// - The `{chorus}` directive recalls (re-renders) the most recently defined
+///   chorus section. If no chorus has been defined yet, a `[Chorus]` marker
+///   is emitted instead.
 /// - Metadata directives (artist, key, capo, etc.) are silently consumed
 ///   (they populate [`Song::metadata`] but do not appear in the text body).
 /// - Empty lines are preserved.
@@ -30,31 +33,80 @@ pub fn render_song(song: &Song) -> String {
 pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
     let mut output = Vec::new();
     let mut transpose_offset: i8 = cli_transpose;
+    // Stores the rendered text lines of the most recently defined chorus,
+    // excluding the "[Chorus]" header itself. Used by `{chorus}` recall.
+    let mut chorus_lines: Vec<String> = Vec::new();
+    // Temporary buffer for collecting chorus content while inside a chorus section.
+    let mut chorus_buf: Option<Vec<String>> = None;
 
     render_metadata(&song.metadata, &mut output);
 
     for line in &song.lines {
         match line {
             Line::Lyrics(lyrics_line) => {
-                render_lyrics(lyrics_line, transpose_offset, &mut output);
+                let mut target = Vec::new();
+                render_lyrics(lyrics_line, transpose_offset, &mut target);
+                if let Some(buf) = chorus_buf.as_mut() {
+                    buf.extend(target.iter().cloned());
+                }
+                output.extend(target);
             }
             Line::Directive(directive) => {
+                // Metadata directives are already rendered via song.metadata;
+                // skip them in the body to avoid duplicate output.
+                if directive.kind.is_metadata() {
+                    continue;
+                }
                 if directive.kind == DirectiveKind::Transpose {
                     // {transpose: N} sets the in-file transposition amount.
-                    // A subsequent {transpose} replaces (not adds to) the
-                    // previous in-file value. CLI offset is always added.
                     let file_offset: i8 = directive
                         .value
                         .as_deref()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(0);
                     transpose_offset = file_offset.saturating_add(cli_transpose);
-                } else if !directive.kind.is_metadata() {
-                    render_directive(directive, &mut output);
+                    continue;
+                }
+                match &directive.kind {
+                    DirectiveKind::StartOfChorus => {
+                        render_section_header("Chorus", &directive.value, &mut output);
+                        // Begin collecting chorus content lines.
+                        chorus_buf = Some(Vec::new());
+                    }
+                    DirectiveKind::EndOfChorus => {
+                        // Finish collecting: store the buffered lines as the
+                        // most recent chorus for future recall.
+                        if let Some(buf) = chorus_buf.take() {
+                            chorus_lines = buf;
+                        }
+                    }
+                    DirectiveKind::Chorus => {
+                        render_chorus_recall(&directive.value, &chorus_lines, &mut output);
+                    }
+                    _ => {
+                        let mut target = Vec::new();
+                        render_directive(directive, &mut target);
+                        if let Some(buf) = chorus_buf.as_mut() {
+                            buf.extend(target.iter().cloned());
+                        }
+                        output.extend(target);
+                    }
                 }
             }
-            Line::Comment(style, text) => render_comment(*style, text, &mut output),
-            Line::Empty => output.push(String::new()),
+            Line::Comment(style, text) => {
+                let mut target = Vec::new();
+                render_comment(*style, text, &mut target);
+                if let Some(buf) = chorus_buf.as_mut() {
+                    buf.extend(target.iter().cloned());
+                }
+                output.extend(target);
+            }
+            Line::Empty => {
+                if let Some(buf) = chorus_buf.as_mut() {
+                    buf.push(String::new());
+                }
+                output.push(String::new());
+            }
         }
     }
 
@@ -245,6 +297,16 @@ fn capitalize(s: &str) -> String {
         None => String::new(),
         Some(c) => c.to_uppercase().to_string() + chars.as_str(),
     }
+}
+
+/// Render a `{chorus}` recall directive.
+///
+/// If a chorus has been previously defined (via `{start_of_chorus}`...`{end_of_chorus}`),
+/// its content is replayed with a `[Chorus]` (or custom label) header. If no chorus
+/// has been defined, only the header marker is emitted.
+fn render_chorus_recall(value: &Option<String>, chorus_lines: &[String], output: &mut Vec<String>) {
+    render_section_header("Chorus", value, output);
+    output.extend(chorus_lines.iter().cloned());
 }
 
 /// Render a section header like "Chorus" or "Verse 1".
@@ -629,6 +691,86 @@ mod transpose_tests {
         let output = render_song(&song);
         // No value -> treated as 0
         assert!(output.contains("G\nHello"));
+    }
+
+    // --- Issue #109: {chorus} recall ---
+
+    #[test]
+    fn test_render_chorus_recall_basic() {
+        let input = "\
+{start_of_chorus}
+[G]La la la
+{end_of_chorus}
+
+{start_of_verse}
+Some verse
+{end_of_verse}
+
+{chorus}";
+        let output = render(input);
+        // The chorus content should appear twice: once in the original and once recalled
+        assert_eq!(
+            output,
+            "[Chorus]\nG\nLa la la\n\n[Verse]\nSome verse\n\n[Chorus]\nG\nLa la la\n"
+        );
+    }
+
+    #[test]
+    fn test_render_chorus_recall_with_label() {
+        let input = "\
+{start_of_chorus}
+Sing along
+{end_of_chorus}
+
+{chorus: Repeat}";
+        let output = render(input);
+        assert!(output.contains("[Chorus: Repeat]"));
+        assert_eq!(
+            output,
+            "[Chorus]\nSing along\n\n[Chorus: Repeat]\nSing along\n"
+        );
+    }
+
+    #[test]
+    fn test_render_chorus_recall_no_chorus_defined() {
+        // When {chorus} is used before any chorus is defined, just show the header
+        let input = "{chorus}";
+        let output = render(input);
+        assert_eq!(output, "[Chorus]\n");
+    }
+
+    #[test]
+    fn test_render_chorus_recall_multiple() {
+        let input = "\
+{start_of_chorus}
+Chorus line
+{end_of_chorus}
+{chorus}
+{chorus}";
+        let output = render(input);
+        // Original chorus + two recalls
+        assert_eq!(
+            output,
+            "[Chorus]\nChorus line\n[Chorus]\nChorus line\n[Chorus]\nChorus line\n"
+        );
+    }
+
+    #[test]
+    fn test_render_chorus_recall_uses_latest() {
+        // If there are multiple chorus definitions, recall uses the latest
+        let input = "\
+{start_of_chorus}
+First chorus
+{end_of_chorus}
+
+{start_of_chorus}
+Second chorus
+{end_of_chorus}
+
+{chorus}";
+        let output = render(input);
+        // The recall should use "Second chorus", not "First chorus"
+        assert!(output.ends_with("[Chorus]\nSecond chorus\n"));
     }
 }
 

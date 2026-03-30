@@ -10,6 +10,10 @@ use chordpro_core::transpose::transpose_chord;
 ///
 /// The output is a complete `<!DOCTYPE html>` document with embedded CSS
 /// that positions chords above their corresponding lyrics.
+///
+/// The `{chorus}` directive recalls the most recently defined chorus section.
+/// Recalled chorus content is wrapped in `<div class="chorus-recall">` and
+/// includes the full chorus body.
 #[must_use]
 pub fn render_song(song: &Song) -> String {
     render_song_with_transpose(song, 0)
@@ -35,10 +39,27 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
 
     render_metadata(&song.metadata, &mut html);
 
+    // Stores the rendered HTML of the most recently defined chorus body
+    // (everything between StartOfChorus and EndOfChorus, excluding the
+    // section open/close tags). Used by `{chorus}` recall.
+    let mut chorus_html = String::new();
+    // Temporary buffer for collecting chorus content while inside a chorus section.
+    let mut chorus_buf: Option<String> = None;
+
     for line in &song.lines {
         match line {
-            Line::Lyrics(lyrics_line) => render_lyrics(lyrics_line, transpose_offset, &mut html),
+            Line::Lyrics(lyrics_line) => {
+                let mut target = String::new();
+                render_lyrics(lyrics_line, transpose_offset, &mut target);
+                if let Some(buf) = chorus_buf.as_mut() {
+                    buf.push_str(&target);
+                }
+                html.push_str(&target);
+            }
             Line::Directive(directive) => {
+                if directive.kind.is_metadata() {
+                    continue;
+                }
                 if directive.kind == DirectiveKind::Transpose {
                     let file_offset: i8 = directive
                         .value
@@ -46,12 +67,50 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(0);
                     transpose_offset = file_offset.saturating_add(cli_transpose);
-                } else if !directive.kind.is_metadata() {
-                    render_directive(directive, &mut html);
+                    continue;
+                }
+                match &directive.kind {
+                    DirectiveKind::StartOfChorus => {
+                        render_section_open("chorus", "Chorus", &directive.value, &mut html);
+                        // Begin collecting chorus content.
+                        chorus_buf = Some(String::new());
+                    }
+                    DirectiveKind::EndOfChorus => {
+                        html.push_str("</section>\n");
+                        // Finish collecting: store the buffered HTML as the
+                        // most recent chorus for future recall.
+                        if let Some(buf) = chorus_buf.take() {
+                            chorus_html = buf;
+                        }
+                    }
+                    DirectiveKind::Chorus => {
+                        render_chorus_recall(&directive.value, &chorus_html, &mut html);
+                    }
+                    _ => {
+                        let mut target = String::new();
+                        render_directive_inner(directive, &mut target);
+                        if let Some(buf) = chorus_buf.as_mut() {
+                            buf.push_str(&target);
+                        }
+                        html.push_str(&target);
+                    }
                 }
             }
-            Line::Comment(style, text) => render_comment(*style, text, &mut html),
-            Line::Empty => html.push_str("<div class=\"empty-line\"></div>\n"),
+            Line::Comment(style, text) => {
+                let mut target = String::new();
+                render_comment(*style, text, &mut target);
+                if let Some(buf) = chorus_buf.as_mut() {
+                    buf.push_str(&target);
+                }
+                html.push_str(&target);
+            }
+            Line::Empty => {
+                let empty = "<div class=\"empty-line\"></div>\n";
+                if let Some(buf) = chorus_buf.as_mut() {
+                    buf.push_str(empty);
+                }
+                html.push_str(empty);
+            }
         }
     }
 
@@ -103,6 +162,8 @@ section { margin: 1em 0; }
 section > .section-label { font-weight: bold; font-style: italic; margin-bottom: 0.3em; }
 .comment { font-style: italic; color: #666; margin: 0.3em 0; }
 .comment-box { border: 1px solid #999; padding: 0.2em 0.5em; display: inline-block; margin: 0.3em 0; }
+.chorus-recall { margin: 1em 0; }
+.chorus-recall > .section-label { font-weight: bold; font-style: italic; margin-bottom: 0.3em; }
 ";
 
 // ---------------------------------------------------------------------------
@@ -182,8 +243,11 @@ fn render_lyrics(lyrics_line: &LyricsLine, transpose_offset: i8, html: &mut Stri
 // Directives
 // ---------------------------------------------------------------------------
 
-/// Render a directive as HTML.
-fn render_directive(directive: &chordpro_core::ast::Directive, html: &mut String) {
+/// Render a directive as HTML (dispatches to section open/close/other).
+///
+/// StartOfChorus, EndOfChorus, and Chorus are handled directly in
+/// `render_song` for chorus-recall state tracking.
+fn render_directive_inner(directive: &chordpro_core::ast::Directive, html: &mut String) {
     match &directive.kind {
         DirectiveKind::StartOfChorus => {
             render_section_open("chorus", "Chorus", &directive.value, html);
@@ -252,6 +316,23 @@ fn render_section_open(class: &str, label: &str, value: &Option<String>, html: &
     html.push_str(&format!(
         "<div class=\"section-label\">{display_label}</div>\n"
     ));
+}
+
+/// Render a `{chorus}` recall directive as HTML.
+///
+/// Wraps the recalled chorus content in a `<div class="chorus-recall">` with
+/// a section label. If no chorus has been defined yet, only the label is emitted.
+fn render_chorus_recall(value: &Option<String>, chorus_html: &str, html: &mut String) {
+    html.push_str("<div class=\"chorus-recall\">\n");
+    let display_label = match value {
+        Some(v) if !v.is_empty() => format!("Chorus: {}", escape(v)),
+        _ => "Chorus".to_string(),
+    };
+    html.push_str(&format!(
+        "<div class=\"section-label\">{display_label}</div>\n"
+    ));
+    html.push_str(chorus_html);
+    html.push_str("</div>\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -488,6 +569,42 @@ mod transpose_tests {
         let html = render_song_with_transpose(&song, 3);
         // 2 + 3 = 5, C+5=F
         assert!(html.contains("<span class=\"chord\">F</span>"));
+    }
+
+    // --- Issue #109: {chorus} recall ---
+
+    #[test]
+    fn test_render_chorus_recall_basic() {
+        let html = render("{start_of_chorus}\n[G]La la\n{end_of_chorus}\n\n{chorus}");
+        // Should contain chorus-recall div
+        assert!(html.contains("<div class=\"chorus-recall\">"));
+        // The recalled content should include the chord
+        assert!(html.contains("chorus-recall"));
+        // Check the original section is still there
+        assert!(html.contains("<section class=\"chorus\">"));
+    }
+
+    #[test]
+    fn test_render_chorus_recall_with_label() {
+        let html = render("{start_of_chorus}\nSing\n{end_of_chorus}\n{chorus: Repeat}");
+        assert!(html.contains("Chorus: Repeat"));
+        assert!(html.contains("chorus-recall"));
+    }
+
+    #[test]
+    fn test_render_chorus_recall_no_chorus_defined() {
+        let html = render("{chorus}");
+        // Should still produce a chorus-recall div with just the label
+        assert!(html.contains("<div class=\"chorus-recall\">"));
+        assert!(html.contains("Chorus"));
+    }
+
+    #[test]
+    fn test_render_chorus_recall_content_replayed() {
+        let html = render("{start_of_chorus}\nChorus text\n{end_of_chorus}\n{chorus}");
+        // "Chorus text" should appear twice: once in original, once in recall
+        let count = html.matches("Chorus text").count();
+        assert_eq!(count, 2, "chorus content should appear twice");
     }
 }
 

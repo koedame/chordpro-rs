@@ -1,0 +1,17 @@
+{title: Chorus Recall Test}
+
+{start_of_chorus}
+[G]Sing [C]along
+{end_of_chorus}
+
+{start_of_verse}
+[Am]First verse
+{end_of_verse}
+
+{chorus}
+
+{start_of_verse: Verse 2}
+[Em]Second verse
+{end_of_verse}
+
+{chorus: Final Chorus}

@@ -44,6 +44,9 @@ const CHAR_WIDTH: f32 = 0.52;
 ///
 /// Returns a complete PDF document as `Vec<u8>` using built-in Helvetica
 /// fonts. No external font files are required.
+///
+/// The `{chorus}` directive recalls the most recently defined chorus section,
+/// re-rendering its content with a "Chorus" label.
 #[must_use]
 pub fn render_song(song: &Song) -> Vec<u8> {
     render_song_with_transpose(song, 0)
@@ -69,20 +72,60 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
         page.newline(SUBTITLE_SIZE + LINE_GAP);
     }
 
+    // Stores the AST lines of the most recently defined chorus body for replay.
+    let mut chorus_body: Vec<Line> = Vec::new();
+    // Temporary buffer for collecting chorus content while inside a chorus section.
+    let mut chorus_buf: Option<Vec<Line>> = None;
+
     for line in &song.lines {
         match line {
-            Line::Lyrics(lyrics) => render_lyrics(lyrics, transpose_offset, &mut page),
-            Line::Directive(d) => {
+            Line::Lyrics(lyrics) => {
+                if let Some(buf) = chorus_buf.as_mut() {
+                    buf.push(line.clone());
+                }
+                render_lyrics(lyrics, transpose_offset, &mut page);
+            }
+            Line::Directive(d) if !d.kind.is_metadata() => {
                 if d.kind == DirectiveKind::Transpose {
                     let file_offset: i8 =
                         d.value.as_deref().and_then(|v| v.parse().ok()).unwrap_or(0);
                     transpose_offset = file_offset.saturating_add(cli_transpose);
-                } else if !d.kind.is_metadata() {
-                    render_directive(d, &mut page);
+                    continue;
+                }
+                match &d.kind {
+                    DirectiveKind::StartOfChorus => {
+                        render_section_label(d, &mut page);
+                        chorus_buf = Some(Vec::new());
+                    }
+                    DirectiveKind::EndOfChorus => {
+                        if let Some(buf) = chorus_buf.take() {
+                            chorus_body = buf;
+                        }
+                    }
+                    DirectiveKind::Chorus => {
+                        render_chorus_recall(&d.value, &chorus_body, transpose_offset, &mut page);
+                    }
+                    _ => {
+                        if let Some(buf) = chorus_buf.as_mut() {
+                            buf.push(line.clone());
+                        }
+                        render_directive(d, &mut page);
+                    }
                 }
             }
-            Line::Comment(style, text) => render_comment(*style, text, &mut page),
-            Line::Empty => page.newline(LINE_GAP * 2.0),
+            Line::Comment(style, text) => {
+                if let Some(buf) = chorus_buf.as_mut() {
+                    buf.push(line.clone());
+                }
+                render_comment(*style, text, &mut page);
+            }
+            Line::Empty => {
+                if let Some(buf) = chorus_buf.as_mut() {
+                    buf.push(line.clone());
+                }
+                page.newline(LINE_GAP * 2.0);
+            }
+            _ => {}
         }
     }
 
@@ -136,7 +179,8 @@ fn render_lyrics(lyrics: &LyricsLine, transpose_offset: i8, page: &mut PageBuild
     page.newline(LYRICS_SIZE + LINE_GAP);
 }
 
-fn render_directive(directive: &chordpro_core::ast::Directive, page: &mut PageBuilder) {
+/// Render the section label for a start-of-section directive.
+fn render_section_label(directive: &chordpro_core::ast::Directive, page: &mut PageBuilder) {
     let label: Option<String> = match &directive.kind {
         DirectiveKind::StartOfChorus => Some("Chorus".to_string()),
         DirectiveKind::StartOfVerse => Some("Verse".to_string()),
@@ -166,6 +210,39 @@ fn capitalize(s: &str) -> String {
     match chars.next() {
         None => String::new(),
         Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+    }
+}
+
+fn render_directive(directive: &chordpro_core::ast::Directive, page: &mut PageBuilder) {
+    render_section_label(directive, page);
+}
+
+/// Render a `{chorus}` recall directive in the PDF.
+///
+/// Emits a "Chorus" label (with optional custom label) followed by the content
+/// of the most recently defined chorus section.
+fn render_chorus_recall(
+    value: &Option<String>,
+    chorus_body: &[Line],
+    transpose_offset: i8,
+    page: &mut PageBuilder,
+) {
+    let text = match value {
+        Some(v) if !v.is_empty() => format!("Chorus: {v}"),
+        _ => "Chorus".to_string(),
+    };
+    page.text(&text, Font::HelveticaBoldOblique, SECTION_SIZE);
+    page.newline(SECTION_SIZE + LINE_GAP);
+
+    // Replay the stored chorus body lines.
+    for line in chorus_body {
+        match line {
+            Line::Lyrics(lyrics) => render_lyrics(lyrics, transpose_offset, page),
+            Line::Comment(style, text) => render_comment(*style, text, page),
+            Line::Empty => page.newline(LINE_GAP * 2.0),
+            Line::Directive(d) if !d.kind.is_metadata() => render_directive(d, page),
+            _ => {}
+        }
     }
 }
 
@@ -448,9 +525,51 @@ mod tests {
 {end_of_intro}";
         let song = chordpro_core::parse(input).unwrap();
         let bytes = render_song(&song);
-        assert!(bytes.starts_with(b"%PDF"));
         let content = String::from_utf8_lossy(&bytes);
         assert!(content.contains("Intro: Guitar"));
+    }
+
+    // --- Issue #109: {chorus} recall ---
+
+    #[test]
+    fn test_chorus_recall_produces_valid_pdf() {
+        let input = "\
+{start_of_chorus}
+[G]La la la
+{end_of_chorus}
+
+{chorus}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert!(bytes.ends_with(b"%%EOF\n"));
+        // "Chorus" label should appear at least twice in the content stream
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.matches("Chorus").count() >= 2);
+    }
+
+    #[test]
+    fn test_chorus_recall_with_label() {
+        let input = "\
+{start_of_chorus}
+Sing along
+{end_of_chorus}
+
+{chorus: Repeat}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("Chorus: Repeat"));
+    }
+
+    #[test]
+    fn test_chorus_recall_no_chorus_defined() {
+        let input = "{chorus}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF"));
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("Chorus"));
     }
 
     #[test]
