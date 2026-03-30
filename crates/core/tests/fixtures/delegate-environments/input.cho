@@ -1,0 +1,18 @@
+{start_of_abc}
+X:1
+T:Test
+M:4/4
+K:G
+|:GABc|d2d2:|
+{end_of_abc}
+{start_of_ly}
+\relative c' { c4 d e f | g1 }
+{end_of_ly}
+{start_of_svg}
+<svg><circle cx="50" cy="50" r="40"/></svg>
+{end_of_svg}
+{start_of_textblock}
+This is [verbatim] text with {braces} and [brackets].
+No chord parsing here.
+{end_of_textblock}
+[Am]After delegate sections

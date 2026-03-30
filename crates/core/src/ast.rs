@@ -506,6 +506,28 @@ pub enum DirectiveKind {
     /// `{chord}` — references a custom chord.
     ChordDirective,
 
+    // -- Delegate environment directives -------------------------------------
+    /// `{start_of_abc}` — begins an ABC music notation section.
+    /// Content is treated as verbatim text (no chord parsing).
+    StartOfAbc,
+    /// `{end_of_abc}` — ends an ABC music notation section.
+    EndOfAbc,
+    /// `{start_of_ly}` — begins a Lilypond notation section.
+    /// Content is treated as verbatim text (no chord parsing).
+    StartOfLy,
+    /// `{end_of_ly}` — ends a Lilypond notation section.
+    EndOfLy,
+    /// `{start_of_svg}` — begins an SVG graphics section.
+    /// Content is treated as verbatim text (no chord parsing).
+    StartOfSvg,
+    /// `{end_of_svg}` — ends an SVG graphics section.
+    EndOfSvg,
+    /// `{start_of_textblock}` — begins a preformatted text block section.
+    /// Content is treated as verbatim text (no chord parsing).
+    StartOfTextblock,
+    /// `{end_of_textblock}` — ends a preformatted text block section.
+    EndOfTextblock,
+
     // -- Custom section directives -------------------------------------------
     /// `{start_of_X}` — begins a custom section (e.g., intro, outro, solo).
     /// The contained `String` is the section type name (e.g., `"intro"`).
@@ -590,6 +612,16 @@ impl DirectiveKind {
             "tabsize" => Self::TabSize,
             "tabcolour" | "tabcolor" => Self::TabColour,
 
+            // Delegate environments (verbatim sections)
+            "start_of_abc" => Self::StartOfAbc,
+            "end_of_abc" => Self::EndOfAbc,
+            "start_of_ly" => Self::StartOfLy,
+            "end_of_ly" => Self::EndOfLy,
+            "start_of_svg" => Self::StartOfSvg,
+            "end_of_svg" => Self::EndOfSvg,
+            "start_of_textblock" => Self::StartOfTextblock,
+            "end_of_textblock" => Self::EndOfTextblock,
+
             // Chord definitions
             "define" => Self::Define,
             "chord" => Self::ChordDirective,
@@ -664,6 +696,14 @@ impl DirectiveKind {
             Self::TabFont => "tabfont",
             Self::TabSize => "tabsize",
             Self::TabColour => "tabcolour",
+            Self::StartOfAbc => "start_of_abc",
+            Self::EndOfAbc => "end_of_abc",
+            Self::StartOfLy => "start_of_ly",
+            Self::EndOfLy => "end_of_ly",
+            Self::StartOfSvg => "start_of_svg",
+            Self::EndOfSvg => "end_of_svg",
+            Self::StartOfTextblock => "start_of_textblock",
+            Self::EndOfTextblock => "end_of_textblock",
             Self::Define => "define",
             Self::ChordDirective => "chord",
             Self::Meta(_) => "meta",
@@ -748,6 +788,10 @@ impl DirectiveKind {
                 | Self::StartOfBridge
                 | Self::StartOfTab
                 | Self::StartOfGrid
+                | Self::StartOfAbc
+                | Self::StartOfLy
+                | Self::StartOfSvg
+                | Self::StartOfTextblock
                 | Self::StartOfSection(_)
         )
     }
@@ -762,6 +806,10 @@ impl DirectiveKind {
                 | Self::EndOfBridge
                 | Self::EndOfTab
                 | Self::EndOfGrid
+                | Self::EndOfAbc
+                | Self::EndOfLy
+                | Self::EndOfSvg
+                | Self::EndOfTextblock
                 | Self::EndOfSection(_)
         )
     }
@@ -1648,5 +1696,182 @@ mod tests {
         let eog = Directive::name_only("eog");
         assert!(eog.is_section_end());
         assert_eq!(eog.section_name(), Some("grid"));
+    }
+}
+
+#[cfg(test)]
+mod delegate_tests {
+    use super::*;
+
+    #[test]
+    fn directive_kind_from_name_delegate_abc() {
+        assert_eq!(
+            DirectiveKind::from_name("start_of_abc"),
+            DirectiveKind::StartOfAbc
+        );
+        assert_eq!(
+            DirectiveKind::from_name("end_of_abc"),
+            DirectiveKind::EndOfAbc
+        );
+    }
+
+    #[test]
+    fn directive_kind_from_name_delegate_ly() {
+        assert_eq!(
+            DirectiveKind::from_name("start_of_ly"),
+            DirectiveKind::StartOfLy
+        );
+        assert_eq!(
+            DirectiveKind::from_name("end_of_ly"),
+            DirectiveKind::EndOfLy
+        );
+    }
+
+    #[test]
+    fn directive_kind_from_name_delegate_svg() {
+        assert_eq!(
+            DirectiveKind::from_name("start_of_svg"),
+            DirectiveKind::StartOfSvg
+        );
+        assert_eq!(
+            DirectiveKind::from_name("end_of_svg"),
+            DirectiveKind::EndOfSvg
+        );
+    }
+
+    #[test]
+    fn directive_kind_from_name_delegate_textblock() {
+        assert_eq!(
+            DirectiveKind::from_name("start_of_textblock"),
+            DirectiveKind::StartOfTextblock
+        );
+        assert_eq!(
+            DirectiveKind::from_name("end_of_textblock"),
+            DirectiveKind::EndOfTextblock
+        );
+    }
+
+    #[test]
+    fn delegate_environments_case_insensitive() {
+        assert_eq!(
+            DirectiveKind::from_name("START_OF_ABC"),
+            DirectiveKind::StartOfAbc
+        );
+        assert_eq!(
+            DirectiveKind::from_name("End_Of_Ly"),
+            DirectiveKind::EndOfLy
+        );
+        assert_eq!(
+            DirectiveKind::from_name("START_OF_SVG"),
+            DirectiveKind::StartOfSvg
+        );
+        assert_eq!(
+            DirectiveKind::from_name("End_Of_Textblock"),
+            DirectiveKind::EndOfTextblock
+        );
+    }
+
+    #[test]
+    fn delegate_environments_are_section_start() {
+        assert!(DirectiveKind::StartOfAbc.is_section_start());
+        assert!(DirectiveKind::StartOfLy.is_section_start());
+        assert!(DirectiveKind::StartOfSvg.is_section_start());
+        assert!(DirectiveKind::StartOfTextblock.is_section_start());
+    }
+
+    #[test]
+    fn delegate_environments_are_section_end() {
+        assert!(DirectiveKind::EndOfAbc.is_section_end());
+        assert!(DirectiveKind::EndOfLy.is_section_end());
+        assert!(DirectiveKind::EndOfSvg.is_section_end());
+        assert!(DirectiveKind::EndOfTextblock.is_section_end());
+    }
+
+    #[test]
+    fn delegate_environments_are_environments() {
+        assert!(DirectiveKind::StartOfAbc.is_environment());
+        assert!(DirectiveKind::EndOfAbc.is_environment());
+        assert!(DirectiveKind::StartOfLy.is_environment());
+        assert!(DirectiveKind::EndOfLy.is_environment());
+        assert!(DirectiveKind::StartOfSvg.is_environment());
+        assert!(DirectiveKind::EndOfSvg.is_environment());
+        assert!(DirectiveKind::StartOfTextblock.is_environment());
+        assert!(DirectiveKind::EndOfTextblock.is_environment());
+    }
+
+    #[test]
+    fn delegate_environments_canonical_names() {
+        assert_eq!(DirectiveKind::StartOfAbc.canonical_name(), "start_of_abc");
+        assert_eq!(DirectiveKind::EndOfAbc.canonical_name(), "end_of_abc");
+        assert_eq!(DirectiveKind::StartOfLy.canonical_name(), "start_of_ly");
+        assert_eq!(DirectiveKind::EndOfLy.canonical_name(), "end_of_ly");
+        assert_eq!(DirectiveKind::StartOfSvg.canonical_name(), "start_of_svg");
+        assert_eq!(DirectiveKind::EndOfSvg.canonical_name(), "end_of_svg");
+        assert_eq!(
+            DirectiveKind::StartOfTextblock.canonical_name(),
+            "start_of_textblock"
+        );
+        assert_eq!(
+            DirectiveKind::EndOfTextblock.canonical_name(),
+            "end_of_textblock"
+        );
+    }
+
+    #[test]
+    fn delegate_not_metadata() {
+        assert!(!DirectiveKind::StartOfAbc.is_metadata());
+        assert!(!DirectiveKind::EndOfLy.is_metadata());
+        assert!(!DirectiveKind::StartOfSvg.is_metadata());
+        assert!(!DirectiveKind::EndOfTextblock.is_metadata());
+    }
+
+    #[test]
+    fn delegate_not_comment() {
+        assert!(!DirectiveKind::StartOfAbc.is_comment());
+        assert!(!DirectiveKind::EndOfLy.is_comment());
+    }
+
+    #[test]
+    fn delegate_directive_section_name() {
+        let d = Directive::name_only("start_of_abc");
+        assert_eq!(d.section_name(), Some("abc"));
+
+        let d = Directive::name_only("end_of_ly");
+        assert_eq!(d.section_name(), Some("ly"));
+
+        let d = Directive::name_only("start_of_svg");
+        assert_eq!(d.section_name(), Some("svg"));
+
+        let d = Directive::name_only("end_of_textblock");
+        assert_eq!(d.section_name(), Some("textblock"));
+    }
+
+    #[test]
+    fn delegate_directive_with_label() {
+        let d = Directive::with_value("start_of_abc", "Melody");
+        assert_eq!(d.name, "start_of_abc");
+        assert_eq!(d.value.as_deref(), Some("Melody"));
+        assert_eq!(d.kind, DirectiveKind::StartOfAbc);
+    }
+
+    #[test]
+    fn delegate_sections_not_custom() {
+        // Delegate section names must NOT produce StartOfSection variants
+        assert!(!matches!(
+            DirectiveKind::from_name("start_of_abc"),
+            DirectiveKind::StartOfSection(_)
+        ));
+        assert!(!matches!(
+            DirectiveKind::from_name("start_of_ly"),
+            DirectiveKind::StartOfSection(_)
+        ));
+        assert!(!matches!(
+            DirectiveKind::from_name("start_of_svg"),
+            DirectiveKind::StartOfSection(_)
+        ));
+        assert!(!matches!(
+            DirectiveKind::from_name("start_of_textblock"),
+            DirectiveKind::StartOfSection(_)
+        ));
     }
 }

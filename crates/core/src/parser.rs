@@ -144,12 +144,10 @@ pub struct Parser {
     tokens: Vec<Token>,
     /// Current index into `tokens`.
     pos: usize,
-    /// Whether we are currently inside a `{start_of_tab}`..`{end_of_tab}` block.
-    /// Lines inside tab sections are treated as verbatim text (no chord parsing).
-    in_tab: bool,
-    /// Whether we are currently inside a `{start_of_grid}`..`{end_of_grid}` block.
-    /// Lines inside grid sections are treated as verbatim text (no chord parsing).
-    in_grid: bool,
+    /// When inside a verbatim section (tab, grid, ABC, Lilypond, SVG, textblock),
+    /// this holds the end-directive name that will close the section.
+    /// Lines inside verbatim sections are treated as plain text (no chord parsing).
+    verbatim_end: Option<String>,
 }
 
 impl Parser {
@@ -159,8 +157,7 @@ impl Parser {
         Self {
             tokens,
             pos: 0,
-            in_tab: false,
-            in_grid: false,
+            verbatim_end: None,
         }
     }
 
@@ -354,6 +351,8 @@ impl Parser {
 
     /// Parses a single line (up to and including the next Newline or Eof).
     fn parse_line(&mut self) -> Result<Line, ParseError> {
+        let in_verbatim = self.verbatim_end.is_some();
+
         match self.peek_kind() {
             // An empty line: just a Newline token.
             TokenKind::Newline => {
@@ -362,67 +361,73 @@ impl Parser {
             }
             // A directive line: starts with `{`.
             TokenKind::DirectiveOpen => {
-                // Inside tab/grid: only the matching end directive is parsed;
-                // everything else is verbatim text.
-                if self.in_tab && !self.is_end_of_tab_ahead() {
-                    return self.parse_verbatim_line();
-                }
-                if self.in_grid && !self.is_end_of_grid_ahead() {
+                // Inside a verbatim section: only the matching end directive
+                // is parsed; everything else is verbatim text.
+                if in_verbatim && !self.is_verbatim_end_ahead() {
                     return self.parse_verbatim_line();
                 }
                 let line = self.parse_directive_line()?;
-                // Track tab/grid section state.
+                // Track verbatim section state.
                 if let Line::Directive(ref d) = line {
-                    match d.kind {
-                        DirectiveKind::StartOfTab => self.in_tab = true,
-                        DirectiveKind::EndOfTab => self.in_tab = false,
-                        DirectiveKind::StartOfGrid => self.in_grid = true,
-                        DirectiveKind::EndOfGrid => self.in_grid = false,
-                        _ => {}
+                    if let Some(end_name) = Self::verbatim_end_for(&d.kind) {
+                        self.verbatim_end = Some(end_name);
+                    } else if d.kind.is_section_end() && in_verbatim {
+                        self.verbatim_end = None;
                     }
                 }
                 Ok(line)
             }
-            // Inside a tab or grid section: treat as verbatim text (no chord parsing).
-            _ if self.in_tab || self.in_grid => self.parse_verbatim_line(),
+            // Inside a verbatim section: treat as plain text (no chord parsing).
+            _ if in_verbatim => self.parse_verbatim_line(),
             // Anything else: a lyrics line.
             _ => self.parse_lyrics_line(),
         }
     }
 
-    /// Peeks ahead to check if the current `{` starts an `{end_of_tab}` or
-    /// `{eot}` directive. This allows the parser to exit tab mode.
+    /// Returns the end-directive name for section types that use verbatim
+    /// content (tab, grid, ABC, Lilypond, SVG, textblock). Returns `None` for
+    /// sections that parse chords normally (chorus, verse, bridge, custom).
+    fn verbatim_end_for(kind: &DirectiveKind) -> Option<String> {
+        match kind {
+            DirectiveKind::StartOfTab => Some("end_of_tab".to_string()),
+            DirectiveKind::StartOfGrid => Some("end_of_grid".to_string()),
+            DirectiveKind::StartOfAbc => Some("end_of_abc".to_string()),
+            DirectiveKind::StartOfLy => Some("end_of_ly".to_string()),
+            DirectiveKind::StartOfSvg => Some("end_of_svg".to_string()),
+            DirectiveKind::StartOfTextblock => Some("end_of_textblock".to_string()),
+            _ => None,
+        }
+    }
+
+    /// Peeks ahead to check if the current `{` starts the end directive
+    /// that closes the current verbatim section. This allows the parser
+    /// to exit verbatim mode.
     ///
     /// Only checks the next token after `DirectiveOpen` for the directive
     /// name text; the full directive structure (including `DirectiveClose`)
     /// is validated later by `parse_directive_line`.
-    fn is_end_of_tab_ahead(&self) -> bool {
-        if self.pos + 1 < self.tokens.len() {
-            if let TokenKind::Text(ref text) = self.tokens[self.pos + 1].kind {
-                let trimmed = text.trim().to_ascii_lowercase();
-                return trimmed == "end_of_tab" || trimmed == "eot";
+    fn is_verbatim_end_ahead(&self) -> bool {
+        if let Some(ref end_name) = self.verbatim_end {
+            if self.pos + 1 < self.tokens.len() {
+                if let TokenKind::Text(ref text) = self.tokens[self.pos + 1].kind {
+                    let trimmed = text.trim().to_ascii_lowercase();
+                    // Check full name
+                    if trimmed == *end_name {
+                        return true;
+                    }
+                    // Check short aliases
+                    return match end_name.as_str() {
+                        "end_of_tab" => trimmed == "eot",
+                        "end_of_grid" => trimmed == "eog",
+                        _ => false,
+                    };
+                }
             }
         }
         false
     }
 
-    /// Peeks ahead to check if the current `{` starts an `{end_of_grid}` or
-    /// `{eog}` directive. This allows the parser to exit grid mode.
-    ///
-    /// Only checks the next token after `DirectiveOpen` for the directive
-    /// name text; the full directive structure (including `DirectiveClose`)
-    /// is validated later by `parse_directive_line`.
-    fn is_end_of_grid_ahead(&self) -> bool {
-        if self.pos + 1 < self.tokens.len() {
-            if let TokenKind::Text(ref text) = self.tokens[self.pos + 1].kind {
-                let trimmed = text.trim().to_ascii_lowercase();
-                return trimmed == "end_of_grid" || trimmed == "eog";
-            }
-        }
-        false
-    }
-
-    /// Parses a verbatim text line (used inside tab and grid sections).
+    /// Parses a verbatim text line (used inside tab, grid, and delegate environment sections).
     ///
     /// All tokens until the next Newline/Eof are collected as plain text,
     /// with no chord bracket interpretation. The result is a lyrics line
@@ -2665,5 +2670,169 @@ mod tests {
     fn split_key_value_pairs_empty() {
         let pairs = super::split_key_value_pairs("");
         assert!(pairs.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod delegate_tests {
+    use super::*;
+    use crate::ast::{DirectiveKind, Line};
+
+    fn lines(input: &str) -> Vec<Line> {
+        parse(input).expect("parse failed").lines
+    }
+
+    #[test]
+    fn abc_content_is_verbatim() {
+        let song = parse("{start_of_abc}\nX:1\nK:G\n{end_of_abc}").unwrap();
+        assert_eq!(song.lines.len(), 4);
+        if let Line::Lyrics(ref l) = song.lines[1] {
+            assert_eq!(l.segments.len(), 1);
+            assert!(l.segments[0].chord.is_none());
+            assert_eq!(l.segments[0].text, "X:1");
+        } else {
+            panic!("expected lyrics line for ABC content");
+        }
+    }
+
+    #[test]
+    fn abc_preserves_brackets() {
+        let song = parse("{start_of_abc}\n|:GABc|[1d2d2:|[2d4d4:|\n{end_of_abc}").unwrap();
+        if let Line::Lyrics(ref l) = song.lines[1] {
+            assert_eq!(l.segments[0].text, "|:GABc|[1d2d2:|[2d4d4:|");
+        } else {
+            panic!("expected verbatim lyrics line");
+        }
+    }
+
+    #[test]
+    fn ly_content_is_verbatim() {
+        let song = parse("{start_of_ly}\n\\relative c' { c4 d e f }\n{end_of_ly}").unwrap();
+        assert_eq!(song.lines.len(), 3);
+        if let Line::Lyrics(ref l) = song.lines[1] {
+            assert!(l.segments[0].chord.is_none());
+        } else {
+            panic!("expected lyrics line for Lilypond content");
+        }
+    }
+
+    #[test]
+    fn svg_content_is_verbatim() {
+        let song = parse("{start_of_svg}\n<svg><rect/></svg>\n{end_of_svg}").unwrap();
+        assert_eq!(song.lines.len(), 3);
+        if let Line::Lyrics(ref l) = song.lines[1] {
+            assert!(l.segments[0].chord.is_none());
+        } else {
+            panic!("expected lyrics line for SVG content");
+        }
+    }
+
+    #[test]
+    fn textblock_content_is_verbatim() {
+        let song = parse("{start_of_textblock}\n[Am]Not a chord\n{end_of_textblock}").unwrap();
+        assert_eq!(song.lines.len(), 3);
+        if let Line::Lyrics(ref l) = song.lines[1] {
+            assert_eq!(l.segments.len(), 1);
+            assert!(l.segments[0].chord.is_none());
+            assert_eq!(l.segments[0].text, "[Am]Not a chord");
+        } else {
+            panic!("expected lyrics line for textblock content");
+        }
+    }
+
+    #[test]
+    fn textblock_preserves_braces() {
+        let song = parse("{start_of_textblock}\n{some directive}\n{end_of_textblock}").unwrap();
+        if let Line::Lyrics(ref l) = song.lines[1] {
+            assert_eq!(l.segments[0].text, "{some directive}");
+        } else {
+            panic!("expected verbatim lyrics line");
+        }
+    }
+
+    #[test]
+    fn chords_parsed_after_abc_ends() {
+        let song = parse("{start_of_abc}\nX:1\n{end_of_abc}\n[Am]Hello").unwrap();
+        if let Line::Lyrics(ref l) = song.lines[3] {
+            assert!(l.segments[0].chord.is_some());
+            assert_eq!(l.segments[0].chord.as_ref().unwrap().name, "Am");
+        } else {
+            panic!("expected lyrics line with chord after ABC section");
+        }
+    }
+
+    #[test]
+    fn chords_parsed_after_ly_ends() {
+        let song = parse("{start_of_ly}\nnotes\n{end_of_ly}\n[G]Hello").unwrap();
+        if let Line::Lyrics(ref l) = song.lines[3] {
+            assert!(l.segments[0].chord.is_some());
+            assert_eq!(l.segments[0].chord.as_ref().unwrap().name, "G");
+        } else {
+            panic!("expected lyrics line with chord after Lilypond section");
+        }
+    }
+
+    #[test]
+    fn chords_parsed_after_svg_ends() {
+        let song = parse("{start_of_svg}\n<svg/>\n{end_of_svg}\n[C]Hello").unwrap();
+        if let Line::Lyrics(ref l) = song.lines[3] {
+            assert!(l.segments[0].chord.is_some());
+            assert_eq!(l.segments[0].chord.as_ref().unwrap().name, "C");
+        } else {
+            panic!("expected lyrics line with chord after SVG section");
+        }
+    }
+
+    #[test]
+    fn chords_parsed_after_textblock_ends() {
+        let song = parse("{start_of_textblock}\ntext\n{end_of_textblock}\n[D]Hello").unwrap();
+        if let Line::Lyrics(ref l) = song.lines[3] {
+            assert!(l.segments[0].chord.is_some());
+            assert_eq!(l.segments[0].chord.as_ref().unwrap().name, "D");
+        } else {
+            panic!("expected lyrics line with chord after textblock section");
+        }
+    }
+
+    #[test]
+    fn abc_directive_with_label() {
+        let result = lines("{start_of_abc: My Melody}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.kind, DirectiveKind::StartOfAbc);
+            assert_eq!(d.value.as_deref(), Some("My Melody"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn textblock_directive_with_label() {
+        let result = lines("{start_of_textblock: Notes}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(d.kind, DirectiveKind::StartOfTextblock);
+            assert_eq!(d.value.as_deref(), Some("Notes"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn delegate_sections_not_custom() {
+        assert_eq!(
+            DirectiveKind::from_name("start_of_abc"),
+            DirectiveKind::StartOfAbc
+        );
+        assert_eq!(
+            DirectiveKind::from_name("start_of_ly"),
+            DirectiveKind::StartOfLy
+        );
+        assert_eq!(
+            DirectiveKind::from_name("start_of_svg"),
+            DirectiveKind::StartOfSvg
+        );
+        assert_eq!(
+            DirectiveKind::from_name("start_of_textblock"),
+            DirectiveKind::StartOfTextblock
+        );
     }
 }

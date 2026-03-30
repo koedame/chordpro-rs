@@ -143,6 +143,10 @@ fn render_directive(directive: &chordpro_core::ast::Directive, page: &mut PageBu
         DirectiveKind::StartOfBridge => Some("Bridge".to_string()),
         DirectiveKind::StartOfTab => Some("Tab".to_string()),
         DirectiveKind::StartOfGrid => Some("Grid".to_string()),
+        DirectiveKind::StartOfAbc => Some("ABC".to_string()),
+        DirectiveKind::StartOfLy => Some("Lilypond".to_string()),
+        DirectiveKind::StartOfSvg => Some("SVG".to_string()),
+        DirectiveKind::StartOfTextblock => Some("Textblock".to_string()),
         DirectiveKind::StartOfSection(section_name) => Some(capitalize(section_name)),
         _ => None,
     };
@@ -492,5 +496,47 @@ mod transpose_tests {
         // 2+3=5, C+5=F
         let content = String::from_utf8_lossy(&bytes);
         assert!(content.contains("(F)"));
+    }
+}
+
+#[cfg(test)]
+mod delegate_tests {
+    use super::*;
+
+    #[test]
+    fn test_abc_section_in_pdf() {
+        let input = "{start_of_abc: Melody}\nX:1\n{end_of_abc}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF"));
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("ABC: Melody"));
+    }
+
+    #[test]
+    fn test_ly_section_in_pdf() {
+        let input = "{start_of_ly}\nnotes\n{end_of_ly}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("Lilypond"));
+    }
+
+    #[test]
+    fn test_svg_section_in_pdf() {
+        let input = "{start_of_svg}\n<svg/>\n{end_of_svg}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("SVG"));
+    }
+
+    #[test]
+    fn test_textblock_section_in_pdf() {
+        let input = "{start_of_textblock}\nText\n{end_of_textblock}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("Textblock"));
     }
 }

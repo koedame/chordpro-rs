@@ -216,6 +216,18 @@ fn render_directive(directive: &chordpro_core::ast::Directive, output: &mut Vec<
         DirectiveKind::StartOfGrid => {
             render_section_header("Grid", &directive.value, output);
         }
+        DirectiveKind::StartOfAbc => {
+            render_section_header("ABC", &directive.value, output);
+        }
+        DirectiveKind::StartOfLy => {
+            render_section_header("Lilypond", &directive.value, output);
+        }
+        DirectiveKind::StartOfSvg => {
+            render_section_header("SVG", &directive.value, output);
+        }
+        DirectiveKind::StartOfTextblock => {
+            render_section_header("Textblock", &directive.value, output);
+        }
         DirectiveKind::StartOfSection(section_name) => {
             // Capitalize the first letter of the section name for display.
             let label = capitalize(section_name);
@@ -617,5 +629,54 @@ mod transpose_tests {
         let output = render_song(&song);
         // No value -> treated as 0
         assert!(output.contains("G\nHello"));
+    }
+}
+
+#[cfg(test)]
+mod delegate_tests {
+    use super::*;
+
+    #[test]
+    fn test_render_abc_section() {
+        let input = "{start_of_abc}\nX:1\nK:G\n{end_of_abc}";
+        let output = render(input);
+        assert!(output.contains("[ABC]"));
+        assert!(output.contains("X:1"));
+    }
+
+    #[test]
+    fn test_render_abc_section_with_label() {
+        let input = "{start_of_abc: Melody}\nX:1\n{end_of_abc}";
+        let output = render(input);
+        assert_eq!(output, "[ABC: Melody]\nX:1\n");
+    }
+
+    #[test]
+    fn test_render_ly_section() {
+        let input = "{start_of_ly}\nnotes\n{end_of_ly}";
+        let output = render(input);
+        assert!(output.contains("[Lilypond]"));
+    }
+
+    #[test]
+    fn test_render_svg_section() {
+        let input = "{start_of_svg}\n<svg/>\n{end_of_svg}";
+        let output = render(input);
+        assert!(output.contains("[SVG]"));
+    }
+
+    #[test]
+    fn test_render_textblock_section() {
+        let input = "{start_of_textblock}\nPreformatted text\n{end_of_textblock}";
+        let output = render(input);
+        assert!(output.contains("[Textblock]"));
+        assert!(output.contains("Preformatted text"));
+    }
+
+    #[test]
+    fn test_delegate_verbatim_no_chords() {
+        let input = "{start_of_textblock}\n[Am]Not a chord\n{end_of_textblock}";
+        let output = render(input);
+        assert!(output.contains("[Am]Not a chord"));
     }
 }
