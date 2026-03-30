@@ -210,5 +210,135 @@ Song {
                 ],
             },
         ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "red text",
+                        spans: [
+                            Span(
+                                SpanAttributes {
+                                    font_family: None,
+                                    size: None,
+                                    foreground: Some(
+                                        "red",
+                                    ),
+                                    background: None,
+                                    weight: None,
+                                    style: None,
+                                },
+                                [
+                                    Plain(
+                                        "red text",
+                                    ),
+                                ],
+                            ),
+                        ],
+                    },
+                ],
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "styled",
+                        spans: [
+                            Span(
+                                SpanAttributes {
+                                    font_family: Some(
+                                        "Serif",
+                                    ),
+                                    size: Some(
+                                        "14",
+                                    ),
+                                    foreground: Some(
+                                        "blue",
+                                    ),
+                                    background: None,
+                                    weight: Some(
+                                        "bold",
+                                    ),
+                                    style: None,
+                                },
+                                [
+                                    Plain(
+                                        "styled",
+                                    ),
+                                ],
+                            ),
+                        ],
+                    },
+                ],
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "bold green",
+                        spans: [
+                            Bold(
+                                [
+                                    Span(
+                                        SpanAttributes {
+                                            font_family: None,
+                                            size: None,
+                                            foreground: Some(
+                                                "green",
+                                            ),
+                                            background: None,
+                                            weight: None,
+                                            style: None,
+                                        },
+                                        [
+                                            Plain(
+                                                "bold green",
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                        ],
+                    },
+                ],
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "italic red",
+                        spans: [
+                            Span(
+                                SpanAttributes {
+                                    font_family: None,
+                                    size: None,
+                                    foreground: Some(
+                                        "red",
+                                    ),
+                                    background: None,
+                                    weight: None,
+                                    style: None,
+                                },
+                                [
+                                    Italic(
+                                        [
+                                            Plain(
+                                                "italic red",
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                        ],
+                    },
+                ],
+            },
+        ),
     ],
 }

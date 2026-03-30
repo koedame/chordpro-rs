@@ -6,6 +6,7 @@
 //! - `<italic>text</italic>` or `<i>text</i>` — italic text
 //! - `<highlight>text</highlight>` — highlighted text
 //! - `<comment>text</comment>` — comment-styled text
+//! - `<span font_family="..." size="..." foreground="...">text</span>` — styled text
 //!
 //! Tags may be nested: `<b><i>text</i></b>`.
 //!
@@ -24,6 +25,27 @@
 //! ]);
 //! ```
 
+/// Attributes for a `<span>` inline markup tag.
+///
+/// Each field corresponds to a style attribute that can be specified on the
+/// `<span>` tag. All fields are optional — only attributes present in the
+/// source markup are populated.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SpanAttributes {
+    /// Font family name (e.g., `"Serif"`, `"Monospace"`).
+    pub font_family: Option<String>,
+    /// Font size (e.g., `"12"`, `"120%"`).
+    pub size: Option<String>,
+    /// Foreground (text) color (e.g., `"red"`, `"#FF0000"`).
+    pub foreground: Option<String>,
+    /// Background color (e.g., `"yellow"`, `"#FFFF00"`).
+    pub background: Option<String>,
+    /// Font weight (e.g., `"bold"`, `"normal"`).
+    pub weight: Option<String>,
+    /// Font style (e.g., `"italic"`, `"normal"`).
+    pub style: Option<String>,
+}
+
 /// A segment of text that may contain inline markup formatting.
 ///
 /// `TextSpan` represents a tree structure where each node is either plain text
@@ -41,6 +63,8 @@ pub enum TextSpan {
     Highlight(Vec<TextSpan>),
     /// Comment-styled text (`<comment>`).
     Comment(Vec<TextSpan>),
+    /// Styled text with attributes (`<span ...>`).
+    Span(SpanAttributes, Vec<TextSpan>),
 }
 
 impl TextSpan {
@@ -54,7 +78,8 @@ impl TextSpan {
             TextSpan::Bold(children)
             | TextSpan::Italic(children)
             | TextSpan::Highlight(children)
-            | TextSpan::Comment(children) => children.iter().map(TextSpan::plain_text).collect(),
+            | TextSpan::Comment(children)
+            | TextSpan::Span(_, children) => children.iter().map(TextSpan::plain_text).collect(),
         }
     }
 }
@@ -71,9 +96,17 @@ pub fn has_inline_markup(text: &str) -> bool {
         if tag_name_at_start(after).is_some() {
             return true;
         }
+        // Check for <span with attributes
+        if span_tag_at_start(after).is_some() {
+            return true;
+        }
         // Also check for closing tags: </tagname>
         if let Some(rest) = after.strip_prefix('/') {
             if tag_name_at_start(rest).is_some() {
+                return true;
+            }
+            // Check for </span>
+            if rest.len() >= 5 && rest[..5].eq_ignore_ascii_case("span>") {
                 return true;
             }
         }
@@ -143,18 +176,22 @@ pub fn spans_to_plain_text(spans: &[TextSpan]) -> String {
 // ---------------------------------------------------------------------------
 
 /// The recognized inline markup tag types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum TagType {
     Bold,
     Italic,
     Highlight,
     Comment,
+    Span(SpanAttributes),
 }
 
 /// Attempts to match a known tag name at the start of the string.
 ///
 /// Returns the tag type and the length consumed (including the closing `>`).
 /// The input should start after the `<` (or `</`).
+///
+/// Note: This does NOT match `<span ...>` tags — those are handled by
+/// [`span_tag_at_start`] because they require attribute parsing.
 fn tag_name_at_start(s: &str) -> Option<(TagType, usize)> {
     // Try each tag name (longest first to avoid prefix conflicts)
     let tags: &[(&str, TagType)] = &[
@@ -166,12 +203,12 @@ fn tag_name_at_start(s: &str) -> Option<(TagType, usize)> {
         ("i>", TagType::Italic),
     ];
 
-    for &(name, tag_type) in tags {
+    for (name, tag_type) in tags {
         if s.len() >= name.len() {
             // Case-insensitive comparison
             let candidate = &s[..name.len()];
             if candidate.eq_ignore_ascii_case(name) {
-                return Some((tag_type, name.len()));
+                return Some((tag_type.clone(), name.len()));
             }
         }
     }
@@ -179,16 +216,134 @@ fn tag_name_at_start(s: &str) -> Option<(TagType, usize)> {
     None
 }
 
+/// Attempts to match `<span ...>` or `<span>` at the start of the string.
+///
+/// The input should start after the `<`. Returns `SpanAttributes` and the
+/// length consumed (including the closing `>`).
+fn span_tag_at_start(s: &str) -> Option<(SpanAttributes, usize)> {
+    // Must start with "span" (case-insensitive)
+    if s.len() < 4 {
+        return None;
+    }
+    if !s[..4].eq_ignore_ascii_case("span") {
+        return None;
+    }
+
+    let after_name = &s[4..];
+
+    // <span> with no attributes
+    if after_name.starts_with('>') {
+        return Some((SpanAttributes::default(), 5)); // "span>"
+    }
+
+    // Must be followed by whitespace for attributes
+    if !after_name.starts_with(|c: char| c.is_ascii_whitespace()) {
+        return None;
+    }
+
+    // Find the closing '>'
+    let closing = s.find('>')?;
+
+    // Parse attributes from the region between "span " and ">"
+    let attr_str = &s[4..closing].trim();
+    let attrs = parse_span_attributes(attr_str);
+
+    Some((attrs, closing + 1))
+}
+
+/// Parses key="value" or key='value' attribute pairs from a span tag.
+fn parse_span_attributes(s: &str) -> SpanAttributes {
+    let mut attrs = SpanAttributes::default();
+    let mut remaining = s.trim();
+
+    while !remaining.is_empty() {
+        // Skip whitespace
+        remaining = remaining.trim_start();
+        if remaining.is_empty() {
+            break;
+        }
+
+        // Find '='
+        let eq_pos = match remaining.find('=') {
+            Some(pos) => pos,
+            None => break,
+        };
+
+        let key = remaining[..eq_pos].trim();
+        let after_eq = remaining[eq_pos + 1..].trim_start();
+
+        // Value must be quoted
+        let (quote_char, after_quote) = if let Some(rest) = after_eq.strip_prefix('"') {
+            ('"', rest)
+        } else if let Some(rest) = after_eq.strip_prefix('\'') {
+            ('\'', rest)
+        } else {
+            // No quote — skip to next whitespace or end
+            break;
+        };
+
+        // Find closing quote
+        let end_quote = match after_quote.find(quote_char) {
+            Some(pos) => pos,
+            None => break,
+        };
+
+        let value = &after_quote[..end_quote];
+
+        // Set the attribute (case-insensitive key matching)
+        let key_lower = key.to_ascii_lowercase();
+        match key_lower.as_str() {
+            "font_family" => attrs.font_family = Some(value.to_string()),
+            "size" => attrs.size = Some(value.to_string()),
+            "foreground" | "color" => attrs.foreground = Some(value.to_string()),
+            "background" => attrs.background = Some(value.to_string()),
+            "weight" => attrs.weight = Some(value.to_string()),
+            "style" => attrs.style = Some(value.to_string()),
+            _ => {} // Ignore unknown attributes
+        }
+
+        remaining = &after_quote[end_quote + 1..];
+    }
+
+    attrs
+}
+
 /// Attempts to match a closing tag at the start of the string.
 ///
-/// The input should start after the `</`.
+/// The input should start after the `</`. Matches both simple tags and `</span>`.
 fn closing_tag_at_start(s: &str) -> Option<(TagType, usize)> {
+    // Check for </span> first
+    if s.len() >= 5 && s[..5].eq_ignore_ascii_case("span>") {
+        return Some((TagType::Span(SpanAttributes::default()), 5));
+    }
     tag_name_at_start(s)
 }
 
 // ---------------------------------------------------------------------------
 // Internal parser
 // ---------------------------------------------------------------------------
+
+/// Converts a `TagType` and its children into a `TextSpan`.
+fn tag_type_to_span(tag_type: TagType, children: Vec<TextSpan>) -> TextSpan {
+    match tag_type {
+        TagType::Bold => TextSpan::Bold(children),
+        TagType::Italic => TextSpan::Italic(children),
+        TagType::Highlight => TextSpan::Highlight(children),
+        TagType::Comment => TextSpan::Comment(children),
+        TagType::Span(attrs) => TextSpan::Span(attrs, children),
+    }
+}
+
+/// Checks whether a closing tag matches any of the expected closers.
+///
+/// For `Span` tags, only the tag type matters — attributes are not compared
+/// because `</span>` has no attributes.
+fn closers_contain(closers: &[TagType], tag: &TagType) -> bool {
+    closers.iter().any(|c| match (c, tag) {
+        (TagType::Span(_), TagType::Span(_)) => true,
+        (a, b) => a == b,
+    })
+}
 
 /// Maximum nesting depth for inline markup tags.
 ///
@@ -237,7 +392,7 @@ impl<'a> InlineMarkupParser<'a> {
                     if let Some((tag_type, name_len)) = closing_tag_at_start(after_slash) {
                         // If this closing tag matches one of our expected closers,
                         // flush plain text and return
-                        if expected_closers.contains(&tag_type) {
+                        if closers_contain(expected_closers, &tag_type) {
                             // Flush accumulated plain text
                             if plain_start < self.pos {
                                 spans.push(TextSpan::Plain(
@@ -257,15 +412,37 @@ impl<'a> InlineMarkupParser<'a> {
                     continue;
                 }
 
-                // Check for opening tag
-                if let Some((tag_type, name_len)) = tag_name_at_start(after_lt) {
-                    // Enforce depth limit to prevent stack overflow on adversarial input
-                    if expected_closers.len() >= MAX_NESTING_DEPTH {
-                        // Treat `<` as plain text — don't recurse deeper
-                        self.pos += 1;
-                        continue;
+                // Enforce depth limit to prevent stack overflow on adversarial input
+                if expected_closers.len() >= MAX_NESTING_DEPTH {
+                    // Treat `<` as plain text — don't recurse deeper
+                    self.pos += 1;
+                    continue;
+                }
+
+                // Check for <span ...> opening tag (before simple tags, since
+                // "span" is not in the simple-tag list)
+                if let Some((attrs, tag_len)) = span_tag_at_start(after_lt) {
+                    // Flush accumulated plain text before this tag
+                    if plain_start < self.pos {
+                        spans.push(TextSpan::Plain(
+                            self.input[plain_start..self.pos].to_string(),
+                        ));
                     }
 
+                    // Consume the opening tag: < + tag_len
+                    self.pos += 1 + tag_len;
+
+                    let mut closers = expected_closers.to_vec();
+                    closers.push(TagType::Span(attrs.clone()));
+                    let children = self.parse_spans(&closers);
+                    spans.push(TextSpan::Span(attrs, children));
+
+                    plain_start = self.pos;
+                    continue;
+                }
+
+                // Check for simple opening tag
+                if let Some((tag_type, name_len)) = tag_name_at_start(after_lt) {
                     // Flush accumulated plain text before this tag
                     if plain_start < self.pos {
                         spans.push(TextSpan::Plain(
@@ -280,14 +457,9 @@ impl<'a> InlineMarkupParser<'a> {
                     // Per ChordPro spec, unclosed tags apply to all remaining text,
                     // so we always wrap whatever children were collected.
                     let mut closers = expected_closers.to_vec();
-                    closers.push(tag_type);
+                    closers.push(tag_type.clone());
                     let children = self.parse_spans(&closers);
-                    let span = match tag_type {
-                        TagType::Bold => TextSpan::Bold(children),
-                        TagType::Italic => TextSpan::Italic(children),
-                        TagType::Highlight => TextSpan::Highlight(children),
-                        TagType::Comment => TextSpan::Comment(children),
-                    };
+                    let span = tag_type_to_span(tag_type, children);
                     spans.push(span);
 
                     plain_start = self.pos;
@@ -338,6 +510,9 @@ fn normalize_spans(spans: Vec<TextSpan>) -> Vec<TextSpan> {
             }
             TextSpan::Comment(children) => {
                 result.push(TextSpan::Comment(normalize_spans(children)));
+            }
+            TextSpan::Span(attrs, children) => {
+                result.push(TextSpan::Span(attrs, normalize_spans(children)));
             }
         }
     }
@@ -593,6 +768,197 @@ mod tests {
         assert_eq!(spans, vec![TextSpan::Plain("text </b> more".to_string())]);
     }
 
+    // -- has_inline_markup: span tags -----------------------------------------
+
+    #[test]
+    fn has_span_tag_no_attrs() {
+        assert!(has_inline_markup("<span>text</span>"));
+    }
+
+    #[test]
+    fn has_span_tag_with_attrs() {
+        assert!(has_inline_markup(r#"<span foreground="red">text</span>"#));
+    }
+
+    #[test]
+    fn has_span_closing_tag_only() {
+        assert!(has_inline_markup("text </span> more"));
+    }
+
+    // -- parse_inline_markup: span tags ---------------------------------------
+
+    #[test]
+    fn parse_span_no_attrs() {
+        let spans = parse_inline_markup("<span>styled</span>");
+        assert_eq!(
+            spans,
+            vec![TextSpan::Span(
+                SpanAttributes::default(),
+                vec![TextSpan::Plain("styled".to_string())]
+            )]
+        );
+    }
+
+    #[test]
+    fn parse_span_single_attr() {
+        let spans = parse_inline_markup(r#"<span foreground="red">text</span>"#);
+        assert_eq!(
+            spans,
+            vec![TextSpan::Span(
+                SpanAttributes {
+                    foreground: Some("red".to_string()),
+                    ..Default::default()
+                },
+                vec![TextSpan::Plain("text".to_string())]
+            )]
+        );
+    }
+
+    #[test]
+    fn parse_span_multiple_attrs() {
+        let spans = parse_inline_markup(
+            r#"<span font_family="Serif" size="12" foreground="blue" background="yellow" weight="bold" style="italic">text</span>"#,
+        );
+        assert_eq!(
+            spans,
+            vec![TextSpan::Span(
+                SpanAttributes {
+                    font_family: Some("Serif".to_string()),
+                    size: Some("12".to_string()),
+                    foreground: Some("blue".to_string()),
+                    background: Some("yellow".to_string()),
+                    weight: Some("bold".to_string()),
+                    style: Some("italic".to_string()),
+                },
+                vec![TextSpan::Plain("text".to_string())]
+            )]
+        );
+    }
+
+    #[test]
+    fn parse_span_single_quoted_attrs() {
+        let spans = parse_inline_markup("<span foreground='green'>text</span>");
+        assert_eq!(
+            spans,
+            vec![TextSpan::Span(
+                SpanAttributes {
+                    foreground: Some("green".to_string()),
+                    ..Default::default()
+                },
+                vec![TextSpan::Plain("text".to_string())]
+            )]
+        );
+    }
+
+    #[test]
+    fn parse_span_color_alias() {
+        let spans = parse_inline_markup(r#"<span color="red">text</span>"#);
+        assert_eq!(
+            spans,
+            vec![TextSpan::Span(
+                SpanAttributes {
+                    foreground: Some("red".to_string()),
+                    ..Default::default()
+                },
+                vec![TextSpan::Plain("text".to_string())]
+            )]
+        );
+    }
+
+    #[test]
+    fn parse_span_case_insensitive() {
+        let spans = parse_inline_markup(r#"<SPAN Foreground="red">text</SPAN>"#);
+        assert_eq!(
+            spans,
+            vec![TextSpan::Span(
+                SpanAttributes {
+                    foreground: Some("red".to_string()),
+                    ..Default::default()
+                },
+                vec![TextSpan::Plain("text".to_string())]
+            )]
+        );
+    }
+
+    #[test]
+    fn parse_span_nested_inside_bold() {
+        let spans = parse_inline_markup(r#"<b><span foreground="red">text</span></b>"#);
+        assert_eq!(
+            spans,
+            vec![TextSpan::Bold(vec![TextSpan::Span(
+                SpanAttributes {
+                    foreground: Some("red".to_string()),
+                    ..Default::default()
+                },
+                vec![TextSpan::Plain("text".to_string())]
+            )])]
+        );
+    }
+
+    #[test]
+    fn parse_bold_nested_inside_span() {
+        let spans = parse_inline_markup(r#"<span foreground="red"><b>text</b></span>"#);
+        assert_eq!(
+            spans,
+            vec![TextSpan::Span(
+                SpanAttributes {
+                    foreground: Some("red".to_string()),
+                    ..Default::default()
+                },
+                vec![TextSpan::Bold(vec![TextSpan::Plain("text".to_string())])]
+            )]
+        );
+    }
+
+    #[test]
+    fn parse_span_with_surrounding_text() {
+        let spans = parse_inline_markup(r#"Hello <span foreground="red">world</span> foo"#);
+        assert_eq!(
+            spans,
+            vec![
+                TextSpan::Plain("Hello ".to_string()),
+                TextSpan::Span(
+                    SpanAttributes {
+                        foreground: Some("red".to_string()),
+                        ..Default::default()
+                    },
+                    vec![TextSpan::Plain("world".to_string())]
+                ),
+                TextSpan::Plain(" foo".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_span_unclosed_wraps_remaining() {
+        let spans = parse_inline_markup(r#"<span foreground="red">unclosed"#);
+        assert_eq!(
+            spans,
+            vec![TextSpan::Span(
+                SpanAttributes {
+                    foreground: Some("red".to_string()),
+                    ..Default::default()
+                },
+                vec![TextSpan::Plain("unclosed".to_string())]
+            )]
+        );
+    }
+
+    #[test]
+    fn parse_span_unknown_attrs_ignored() {
+        let spans = parse_inline_markup(r#"<span unknown="val" foreground="red">text</span>"#);
+        assert_eq!(
+            spans,
+            vec![TextSpan::Span(
+                SpanAttributes {
+                    foreground: Some("red".to_string()),
+                    ..Default::default()
+                },
+                vec![TextSpan::Plain("text".to_string())]
+            )]
+        );
+    }
+
     // -- spans_to_plain_text ------------------------------------------------
 
     #[test]
@@ -616,5 +982,17 @@ mod tests {
             TextSpan::Plain("nested".to_string()),
         ])])];
         assert_eq!(spans_to_plain_text(&spans), "nested");
+    }
+
+    #[test]
+    fn plain_text_extraction_span() {
+        let spans = vec![TextSpan::Span(
+            SpanAttributes {
+                foreground: Some("red".to_string()),
+                ..Default::default()
+            },
+            vec![TextSpan::Plain("colored".to_string())],
+        )];
+        assert_eq!(spans_to_plain_text(&spans), "colored");
     }
 }
