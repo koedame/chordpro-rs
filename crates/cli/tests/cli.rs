@@ -152,3 +152,84 @@ fn test_no_args_shows_error() {
         .failure()
         .stderr(predicate::str::contains("Usage"));
 }
+
+// --- HTML format ---
+
+#[test]
+fn test_format_html_stdout() {
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args(["--format", "html", &fixture("simple.cho")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<!DOCTYPE html>"))
+        .stdout(predicate::str::contains("<h1>Simple Song</h1>"))
+        .stdout(predicate::str::contains("chord-block"));
+}
+
+#[test]
+fn test_format_html_output_file() {
+    let output_file = NamedTempFile::new().unwrap();
+    let output_path = output_file.path().to_string_lossy().to_string();
+
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([
+            "--format",
+            "html",
+            "-o",
+            &output_path,
+            &fixture("simple.cho"),
+        ])
+        .assert()
+        .success();
+
+    let content = std::fs::read_to_string(&output_path).unwrap();
+    assert!(content.contains("<!DOCTYPE html>"));
+}
+
+// --- PDF format ---
+
+#[test]
+fn test_format_pdf_output_file() {
+    let output_file = NamedTempFile::new().unwrap();
+    let output_path = output_file.path().to_string_lossy().to_string();
+
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([
+            "--format",
+            "pdf",
+            "-o",
+            &output_path,
+            &fixture("simple.cho"),
+        ])
+        .assert()
+        .success();
+
+    let content = std::fs::read(&output_path).unwrap();
+    assert!(content.starts_with(b"%PDF"));
+}
+
+#[test]
+fn test_format_pdf_with_transpose() {
+    let output_file = NamedTempFile::new().unwrap();
+    let output_path = output_file.path().to_string_lossy().to_string();
+
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([
+            "--format",
+            "pdf",
+            "-t",
+            "2",
+            "-o",
+            &output_path,
+            &fixture("simple.cho"),
+        ])
+        .assert()
+        .success();
+
+    let content = std::fs::read(&output_path).unwrap();
+    assert!(content.starts_with(b"%PDF"));
+}

@@ -1,6 +1,6 @@
 //! ChordPro command-line tool.
 //!
-//! Parses `.cho` / `.chordpro` files and renders them to plain text.
+//! Parses `.cho` / `.chordpro` files and renders them to text, HTML, or PDF.
 
 use std::fs;
 use std::io::{self, Write};
@@ -34,12 +34,18 @@ struct Cli {
 enum Format {
     /// Plain text with chords above lyrics.
     Text,
+    /// Self-contained HTML5 document.
+    Html,
+    /// PDF document (A4, Helvetica).
+    Pdf,
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    let mut combined_output = String::new();
+    let mut combined_text = String::new();
+    let mut combined_bytes: Vec<u8> = Vec::new();
+    let is_binary = matches!(cli.format, Format::Pdf);
     let mut had_error = false;
 
     for path in &cli.files {
@@ -52,26 +58,54 @@ fn main() -> ExitCode {
             }
         };
 
-        match render(&cli.format, &input, cli.transpose) {
-            Ok(text) => {
-                // Separate multiple files with a blank line.
-                if !combined_output.is_empty() {
-                    combined_output.push('\n');
-                }
-                combined_output.push_str(&text);
-            }
+        let song = match chordpro_core::parse(&input) {
+            Ok(song) => song,
             Err(e) => {
-                eprintln!("error: {path}: {e}");
+                eprintln!(
+                    "error: {path}: parse error at line {} column {}: {}",
+                    e.line(),
+                    e.column(),
+                    e.message
+                );
                 had_error = true;
+                continue;
             }
+        };
+
+        let song = if cli.transpose != 0 {
+            chordpro_core::transpose::transpose(&song, cli.transpose)
+        } else {
+            song
+        };
+
+        if is_binary {
+            // PDF: each file produces a separate PDF. For multiple files,
+            // only the last one is written (PDF doesn't support concatenation).
+            combined_bytes = chordpro_render_pdf::render_song(&song);
+        } else {
+            let text = match cli.format {
+                Format::Text => chordpro_render_text::render_song(&song),
+                Format::Html => chordpro_render_html::render_song(&song),
+                Format::Pdf => unreachable!(),
+            };
+            if !combined_text.is_empty() {
+                combined_text.push('\n');
+            }
+            combined_text.push_str(&text);
         }
     }
 
-    if had_error && combined_output.is_empty() {
+    if had_error && combined_text.is_empty() && combined_bytes.is_empty() {
         return ExitCode::FAILURE;
     }
 
-    if let Err(e) = write_output(&cli.output, &combined_output) {
+    let write_result = if is_binary {
+        write_bytes(&cli.output, &combined_bytes)
+    } else {
+        write_text(&cli.output, &combined_text)
+    };
+
+    if let Err(e) = write_result {
         eprintln!("error: {e}");
         return ExitCode::FAILURE;
     }
@@ -83,36 +117,26 @@ fn main() -> ExitCode {
     }
 }
 
-/// Parse, optionally transpose, and render input using the selected format.
-fn render(format: &Format, input: &str, transpose: i8) -> Result<String, String> {
-    let song = chordpro_core::parse(input).map_err(|e| {
-        format!(
-            "parse error at line {} column {}: {}",
-            e.line(),
-            e.column(),
-            e.message
-        )
-    })?;
-
-    let song = if transpose != 0 {
-        chordpro_core::transpose::transpose(&song, transpose)
-    } else {
-        song
-    };
-
-    match format {
-        Format::Text => Ok(chordpro_render_text::render_song(&song)),
-    }
-}
-
-/// Write output to a file or stdout.
-fn write_output(path: &Option<String>, content: &str) -> io::Result<()> {
+/// Write text output to a file or stdout.
+fn write_text(path: &Option<String>, content: &str) -> io::Result<()> {
     match path {
         Some(path) => fs::write(path, content),
         None => {
             let stdout = io::stdout();
             let mut handle = stdout.lock();
             handle.write_all(content.as_bytes())
+        }
+    }
+}
+
+/// Write binary output to a file or stdout.
+fn write_bytes(path: &Option<String>, content: &[u8]) -> io::Result<()> {
+    match path {
+        Some(path) => fs::write(path, content),
+        None => {
+            let stdout = io::stdout();
+            let mut handle = stdout.lock();
+            handle.write_all(content)
         }
     }
 }

@@ -3,6 +3,7 @@ members = [
     "crates/core",
     "crates/render-text",
     "crates/render-html",
+    "crates/render-pdf",
     "crates/cli",
 ]
 resolver = "3"

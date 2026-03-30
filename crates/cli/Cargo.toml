@@ -13,6 +13,8 @@ path = "src/main.rs"
 [dependencies]
 chordpro-core = { path = "../core" }
 chordpro-render-text = { path = "../render-text" }
+chordpro-render-html = { path = "../render-html" }
+chordpro-render-pdf = { path = "../render-pdf" }
 clap = { version = "4", features = ["derive"] }
 
 [dev-dependencies]

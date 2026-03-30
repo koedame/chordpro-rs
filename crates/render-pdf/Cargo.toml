@@ -1,0 +1,10 @@
+[package]
+name = "chordpro-render-pdf"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "PDF renderer for ChordPro documents"
+
+[dependencies]
+chordpro-core = { path = "../core" }
