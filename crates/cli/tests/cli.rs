@@ -107,7 +107,41 @@ fn test_help_flag() {
         .success()
         .stdout(predicate::str::contains("Usage"))
         .stdout(predicate::str::contains("--output"))
-        .stdout(predicate::str::contains("--format"));
+        .stdout(predicate::str::contains("--format"))
+        .stdout(predicate::str::contains("--transpose"));
+}
+
+#[test]
+fn test_transpose_up() {
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([&fixture("simple.cho"), "--transpose", "2"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("A     D"))
+        .stdout(predicate::str::contains("Hello world"));
+}
+
+#[test]
+fn test_transpose_down() {
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([&fixture("simple.cho"), "--transpose=-2"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("F     A#"))
+        .stdout(predicate::str::contains("Hello world"));
+}
+
+#[test]
+fn test_transpose_zero_is_noop() {
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([&fixture("simple.cho"), "--transpose", "0"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("G     C"))
+        .stdout(predicate::str::contains("Hello world"));
 }
 
 #[test]
