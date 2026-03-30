@@ -122,6 +122,9 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
 
     render_metadata(&song.metadata, &mut html);
 
+    // Tracks whether a multi-column div is currently open.
+    let mut columns_open = false;
+
     // Stores the rendered HTML of the most recently defined chorus body
     // (everything between StartOfChorus and EndOfChorus, excluding the
     // section open/close tags). Used by `{chorus}` recall.
@@ -173,6 +176,30 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
                     DirectiveKind::Chorus => {
                         render_chorus_recall(&directive.value, &chorus_html, &mut html);
                     }
+                    DirectiveKind::Columns => {
+                        let n: u32 = directive
+                            .value
+                            .as_deref()
+                            .and_then(|v| v.trim().parse().ok())
+                            .unwrap_or(1);
+                        if columns_open {
+                            html.push_str("</div>\n");
+                            columns_open = false;
+                        }
+                        if n > 1 {
+                            html.push_str(&format!(
+                                "<div style=\"column-count: {};column-gap: 2em;\">\n",
+                                n
+                            ));
+                            columns_open = true;
+                        }
+                    }
+                    DirectiveKind::ColumnBreak => {
+                        html.push_str("<div style=\"break-before: column;\"></div>\n");
+                    }
+                    DirectiveKind::NewPage | DirectiveKind::NewPhysicalPage => {
+                        html.push_str("<div style=\"break-before: page;\"></div>\n");
+                    }
                     _ => {
                         let mut target = String::new();
                         render_directive_inner(directive, &mut target);
@@ -199,6 +226,11 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
                 html.push_str(empty);
             }
         }
+    }
+
+    // Close any open multi-column div.
+    if columns_open {
+        html.push_str("</div>\n");
     }
 
     html.push_str("</div>\n</body>\n</html>\n");
@@ -926,6 +958,35 @@ mod transpose_tests {
         let html = render("Plain text");
         // lyrics span should not have a style attribute
         assert!(!html.contains("<span class=\"lyrics\" style="));
+    }
+
+    // -- column layout tests --------------------------------------------------
+
+    #[test]
+    fn test_columns_directive_generates_css() {
+        let html = render("{columns: 2}\nLine one\nLine two");
+        assert!(html.contains("column-count: 2"));
+    }
+
+    #[test]
+    fn test_columns_reset_to_one() {
+        let html = render("{columns: 2}\nTwo cols\n{columns: 1}\nOne col");
+        // Should open and then close the multi-column div
+        let count = html.matches("column-count: 2").count();
+        assert_eq!(count, 1);
+        assert!(html.contains("One col"));
+    }
+
+    #[test]
+    fn test_column_break_generates_css() {
+        let html = render("{columns: 2}\nCol 1\n{column_break}\nCol 2");
+        assert!(html.contains("break-before: column;"));
+    }
+
+    #[test]
+    fn test_new_page_generates_page_break() {
+        let html = render("Page 1\n{new_page}\nPage 2");
+        assert!(html.contains("break-before: page;"));
     }
 }
 

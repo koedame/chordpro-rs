@@ -171,6 +171,17 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
                     DirectiveKind::NewPage | DirectiveKind::NewPhysicalPage => {
                         doc.new_page();
                     }
+                    DirectiveKind::Columns => {
+                        let n: u32 = d
+                            .value
+                            .as_deref()
+                            .and_then(|v| v.trim().parse().ok())
+                            .unwrap_or(1);
+                        doc.set_columns(n);
+                    }
+                    DirectiveKind::ColumnBreak => {
+                        doc.column_break();
+                    }
                     _ => {
                         if let Some(buf) = chorus_buf.as_mut() {
                             buf.push(line.clone());
@@ -233,7 +244,7 @@ fn render_lyrics(
     doc.ensure_space(chord_size + 2.0 + lyrics_size + LINE_GAP);
 
     // Chord row
-    let mut x = MARGIN_LEFT;
+    let mut x = doc.margin_left();
     let start_y = doc.y();
     for seg in &lyrics.segments {
         if let Some(chord) = &seg.chord {
@@ -271,7 +282,7 @@ fn render_lyrics(
 /// Walks the span tree for each segment, switching between Helvetica,
 /// HelveticaBold, HelveticaOblique, and HelveticaBoldOblique as needed.
 fn render_lyrics_spans(lyrics: &LyricsLine, font_size: f32, doc: &mut PdfDocument) {
-    let mut x = MARGIN_LEFT;
+    let mut x = doc.margin_left();
     let y = doc.y();
     for seg in &lyrics.segments {
         if seg.has_markup() {
@@ -418,15 +429,25 @@ fn render_comment(_style: CommentStyle, text: &str, doc: &mut PdfDocument) {
 // Multi-page PDF document builder
 // ---------------------------------------------------------------------------
 
+/// Right margin in points.
+const MARGIN_RIGHT: f32 = 56.0;
+/// Gap between columns in points.
+const COLUMN_GAP: f32 = 20.0;
+
 /// Accumulates content across multiple pages and builds the final PDF.
 ///
 /// Each page has its own content stream. When the Y cursor drops below the
-/// bottom margin, a new page is automatically started.
+/// bottom margin, content flows to the next column (if multi-column) or a
+/// new page is started.
 struct PdfDocument {
     /// Content-stream operations for each page.
     pages: Vec<Vec<String>>,
     /// Current Y position on the current page.
     y: f32,
+    /// Number of columns (1 = single-column layout).
+    num_columns: u32,
+    /// Current column index (0-based).
+    current_column: u32,
 }
 
 impl PdfDocument {
@@ -435,6 +456,8 @@ impl PdfDocument {
         Self {
             pages: vec![Vec::new()],
             y: PAGE_H - MARGIN_TOP,
+            num_columns: 1,
+            current_column: 0,
         }
     }
 
@@ -449,23 +472,67 @@ impl PdfDocument {
         self.pages.len()
     }
 
-    /// Ensure there is at least `needed` points of vertical space remaining.
-    /// If not, start a new page.
-    fn ensure_space(&mut self, needed: f32) {
-        if self.y - needed < MARGIN_BOTTOM {
+    /// Returns the left margin for the current column.
+    fn margin_left(&self) -> f32 {
+        if self.num_columns <= 1 {
+            return MARGIN_LEFT;
+        }
+        let usable_width = PAGE_W - MARGIN_LEFT - MARGIN_RIGHT;
+        let total_gaps = (self.num_columns - 1) as f32 * COLUMN_GAP;
+        let col_width = (usable_width - total_gaps) / self.num_columns as f32;
+        MARGIN_LEFT + self.current_column as f32 * (col_width + COLUMN_GAP)
+    }
+
+    /// Set the number of columns. Resets to column 0.
+    fn set_columns(&mut self, n: u32) {
+        self.num_columns = n.max(1);
+        self.current_column = 0;
+    }
+
+    /// Force a column break. Advances to the next column, or to a new page
+    /// if already in the last column.
+    fn column_break(&mut self) {
+        if self.num_columns <= 1 {
+            self.new_page();
+            return;
+        }
+        if self.current_column + 1 < self.num_columns {
+            self.current_column += 1;
+            self.y = PAGE_H - MARGIN_TOP;
+        } else {
             self.new_page();
         }
     }
 
-    /// Start a new page, resetting the Y cursor.
+    /// Ensure there is at least `needed` points of vertical space remaining.
+    /// If not, advance to next column or start a new page.
+    fn ensure_space(&mut self, needed: f32) {
+        if self.y - needed < MARGIN_BOTTOM {
+            self.next_column_or_page();
+        }
+    }
+
+    /// Advance to the next column, or to a new page if in the last column.
+    fn next_column_or_page(&mut self) {
+        if self.num_columns > 1 && self.current_column + 1 < self.num_columns {
+            self.current_column += 1;
+            self.y = PAGE_H - MARGIN_TOP;
+        } else {
+            self.new_page();
+        }
+    }
+
+    /// Start a new page, resetting the Y cursor and column index.
     fn new_page(&mut self) {
         self.pages.push(Vec::new());
         self.y = PAGE_H - MARGIN_TOP;
+        self.current_column = 0;
     }
 
-    /// Emit text at the current left margin and Y position.
+    /// Emit text at the current column margin and Y position.
     fn text(&mut self, text: &str, font: Font, size: f32) {
-        self.text_at(text, font, size, MARGIN_LEFT, self.y);
+        let x = self.margin_left();
+        self.text_at(text, font, size, x, self.y);
     }
 
     /// Emit text at an explicit (x, y) position.
@@ -478,11 +545,11 @@ impl PdfDocument {
         ops.push("ET".to_string());
     }
 
-    /// Move the Y cursor down. May trigger a new page if past bottom margin.
+    /// Move the Y cursor down. May trigger a column/page break if past bottom margin.
     fn newline(&mut self, amount: f32) {
         self.y -= amount;
         if self.y < MARGIN_BOTTOM {
-            self.new_page();
+            self.next_column_or_page();
         }
     }
 
@@ -1062,5 +1129,78 @@ mod multipage_tests {
         assert_eq!(doc.page_count(), 2);
         doc.new_page();
         assert_eq!(doc.page_count(), 3);
+    }
+}
+
+#[cfg(test)]
+mod column_tests {
+    use super::*;
+
+    #[test]
+    fn test_columns_directive_produces_valid_pdf() {
+        let input = "{columns: 2}\nColumn one\n{column_break}\nColumn two";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF"));
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("Column one"));
+        assert!(content.contains("Column two"));
+    }
+
+    #[test]
+    fn test_column_break_in_single_column_creates_new_page() {
+        let input = "Page one\n{column_break}\nPage two";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("/Count 2"));
+    }
+
+    #[test]
+    fn test_columns_reset_to_one() {
+        let input = "{columns: 2}\nTwo cols\n{columns: 1}\nOne col";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF"));
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("Two cols"));
+        assert!(content.contains("One col"));
+    }
+
+    #[test]
+    fn test_margin_left_single_column() {
+        let doc = PdfDocument::new();
+        assert!((doc.margin_left() - MARGIN_LEFT).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_margin_left_multi_column() {
+        let mut doc = PdfDocument::new();
+        doc.set_columns(2);
+        // First column should start at MARGIN_LEFT
+        assert!((doc.margin_left() - MARGIN_LEFT).abs() < 0.01);
+        // Second column should be offset
+        doc.current_column = 1;
+        assert!(doc.margin_left() > MARGIN_LEFT);
+    }
+
+    #[test]
+    fn test_column_break_advances_column() {
+        let mut doc = PdfDocument::new();
+        doc.set_columns(2);
+        assert_eq!(doc.current_column, 0);
+        doc.column_break();
+        assert_eq!(doc.current_column, 1);
+    }
+
+    #[test]
+    fn test_column_break_last_column_new_page() {
+        let mut doc = PdfDocument::new();
+        doc.set_columns(2);
+        doc.column_break(); // → column 1
+        assert_eq!(doc.page_count(), 1);
+        doc.column_break(); // → new page, column 0
+        assert_eq!(doc.page_count(), 2);
+        assert_eq!(doc.current_column, 0);
     }
 }
