@@ -1,6 +1,8 @@
 Song {
     metadata: Metadata {
-        title: None,
+        title: Some(
+            "Hello World",
+        ),
         subtitles: [],
         artists: [],
         composers: [],
@@ -9,6 +11,7 @@ Song {
         year: None,
         key: None,
         tempo: None,
+        time: None,
         capo: None,
         custom: [],
     },
@@ -19,6 +22,7 @@ Song {
                 value: Some(
                     "Hello World",
                 ),
+                kind: Title,
             },
         ),
         Lyrics(

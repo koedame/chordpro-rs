@@ -1,7 +1,11 @@
 Song {
     metadata: Metadata {
-        title: None,
-        subtitles: [],
+        title: Some(
+            "Amazing Grace",
+        ),
+        subtitles: [
+            "A Hymn",
+        ],
         artists: [],
         composers: [],
         lyricists: [],
@@ -9,6 +13,7 @@ Song {
         year: None,
         key: None,
         tempo: None,
+        time: None,
         capo: None,
         custom: [],
     },
@@ -19,6 +24,7 @@ Song {
                 value: Some(
                     "Amazing Grace",
                 ),
+                kind: Title,
             },
         ),
         Directive(
@@ -27,9 +33,11 @@ Song {
                 value: Some(
                     "A Hymn",
                 ),
+                kind: Subtitle,
             },
         ),
         Comment(
+            Normal,
             "Traditional",
         ),
     ],
