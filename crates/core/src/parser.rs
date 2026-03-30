@@ -258,8 +258,11 @@ impl Parser {
 
     /// Peeks ahead to check if the current `{` starts an `{end_of_tab}` or
     /// `{eot}` directive. This allows the parser to exit tab mode.
+    ///
+    /// Only checks the next token after `DirectiveOpen` for the directive
+    /// name text; the full directive structure (including `DirectiveClose`)
+    /// is validated later by `parse_directive_line`.
     fn is_end_of_tab_ahead(&self) -> bool {
-        // Look for pattern: DirectiveOpen, Text("end_of_tab" | "eot"), DirectiveClose
         if self.pos + 1 < self.tokens.len() {
             if let TokenKind::Text(ref text) = self.tokens[self.pos + 1].kind {
                 let trimmed = text.trim().to_ascii_lowercase();
