@@ -82,7 +82,9 @@ fn main() -> ExitCode {
             // PDF: each file produces a separate PDF. For multiple files,
             // only the last one is written (PDF doesn't support concatenation).
             if !combined_bytes.is_empty() {
-                eprintln!("warning: PDF output supports one file at a time; previous output discarded");
+                eprintln!(
+                    "warning: PDF output supports one file at a time; previous output discarded"
+                );
             }
             combined_bytes = chordpro_render_pdf::render_song(&song);
         } else {
