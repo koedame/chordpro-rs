@@ -1019,7 +1019,13 @@ impl PdfDocument {
     }
 
     /// Append a pre-built page to this document.
+    ///
+    /// Silently drops the page when [`MAX_PAGES`] has been reached, consistent
+    /// with [`new_page`](Self::new_page).
     fn push_page(&mut self, ops: Vec<String>) {
+        if self.pages.len() >= MAX_PAGES {
+            return;
+        }
         self.pages.push(ops);
     }
 
@@ -1656,6 +1662,44 @@ mod multipage_tests {
         let _ = doc.take_pages();
         doc.new_page();
         assert_eq!(doc.page_count(), 2);
+    }
+
+    #[test]
+    fn test_push_page_respects_max_limit() {
+        let mut doc = PdfDocument::new();
+        // Fill to MAX_PAGES via new_page.
+        for _ in 1..MAX_PAGES {
+            doc.new_page();
+        }
+        assert_eq!(doc.page_count(), MAX_PAGES);
+
+        // push_page should be silently dropped.
+        doc.push_page(vec!["BT (overflow) Tj ET".to_string()]);
+        assert_eq!(doc.page_count(), MAX_PAGES);
+    }
+
+    #[test]
+    fn test_combined_toc_and_body_respects_max_limit() {
+        let mut toc_doc = PdfDocument::new();
+        // Simulate ToC with a few pages.
+        for _ in 1..5 {
+            toc_doc.new_page();
+        }
+        assert_eq!(toc_doc.page_count(), 5);
+
+        let mut body_doc = PdfDocument::new();
+        // Fill body to MAX_PAGES.
+        for _ in 1..MAX_PAGES {
+            body_doc.new_page();
+        }
+        assert_eq!(body_doc.page_count(), MAX_PAGES);
+
+        // Combine: push body pages into toc_doc.
+        for page_ops in body_doc.take_pages() {
+            toc_doc.push_page(page_ops);
+        }
+        // Combined must not exceed MAX_PAGES.
+        assert_eq!(toc_doc.page_count(), MAX_PAGES);
     }
 }
 
