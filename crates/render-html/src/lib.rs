@@ -153,7 +153,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
                 if in_svg_section {
                     // Inside SVG section: emit lyrics text as raw, unescaped content.
                     //
-                    // SAFETY NOTE: This is intentional per the ChordPro specification.
+                    // NOTE: This is intentional per the ChordPro specification.
                     // Delegate sections (SVG, ABC, Lilypond, textblock) contain
                     // verbatim markup that must pass through without escaping.
                     // Consumers rendering untrusted ChordPro input should apply
