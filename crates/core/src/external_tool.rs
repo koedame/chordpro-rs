@@ -106,6 +106,60 @@ fn extract_body_content(html: &str) -> Option<String> {
     Some(html[content_start..content_end].trim().to_string())
 }
 
+/// Invoke `lilypond` on Lilypond notation content and return the rendered SVG.
+///
+/// Creates a temporary directory, writes `ly_content` to a `.ly` file, runs
+/// `lilypond --svg -o <prefix> <file>`, and reads the resulting SVG file.
+/// The returned string is a complete SVG document suitable for inline embedding.
+///
+/// # Errors
+///
+/// Returns an error string if:
+/// - The temporary directory or file cannot be created
+/// - `lilypond` is not available or fails to execute
+/// - The output SVG file cannot be read
+pub fn invoke_lilypond(ly_content: &str) -> Result<String, String> {
+    let tmp_dir = std::env::temp_dir().join(format!("chordpro_ly_{}", std::process::id()));
+
+    std::fs::create_dir_all(&tmp_dir)
+        .map_err(|e| format!("failed to create temp directory: {e}"))?;
+
+    let ly_path = tmp_dir.join("input.ly");
+    let output_prefix = tmp_dir.join("output");
+
+    std::fs::write(&ly_path, ly_content).map_err(|e| {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        format!("failed to write temp file: {e}")
+    })?;
+
+    let result = Command::new("lilypond")
+        .arg("--svg")
+        .arg(format!("-o{}", output_prefix.display()))
+        .arg(&ly_path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            format!("failed to invoke lilypond: {e}")
+        })?;
+
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(format!("lilypond exited with error: {stderr}"));
+    }
+
+    let svg_path = tmp_dir.join("output.svg");
+    let svg = std::fs::read_to_string(&svg_path).map_err(|e| {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        format!("failed to read lilypond SVG output: {e}")
+    })?;
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    Ok(svg)
+}
+
 /// Returns `true` if the Perl `chordpro` reference implementation is available.
 #[must_use]
 pub fn has_perl_chordpro() -> bool {
@@ -173,6 +227,25 @@ mod tests {
     #[ignore]
     fn lilypond_detection() {
         assert!(has_lilypond(), "lilypond not found in PATH");
+    }
+
+    #[test]
+    #[ignore]
+    fn invoke_lilypond_produces_svg() {
+        let ly = "\\relative c' { c4 d e f | g2 g | }\n";
+        let result = invoke_lilypond(ly);
+        assert!(result.is_ok(), "invoke_lilypond failed: {:?}", result.err());
+        let svg = result.unwrap();
+        assert!(svg.contains("<svg"), "output should contain SVG element");
+    }
+
+    #[test]
+    fn invoke_lilypond_fails_gracefully_without_tool() {
+        if has_lilypond() {
+            return;
+        }
+        let result = invoke_lilypond("{ c4 }\n");
+        assert!(result.is_err());
     }
 
     #[test]

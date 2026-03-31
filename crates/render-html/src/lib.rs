@@ -152,6 +152,13 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
         .unwrap_or(false);
     let mut abc_buf: Option<String> = None;
     let mut abc_label: Option<String> = None;
+    // Buffer for collecting Lilypond notation content when lilypond rendering is enabled.
+    let lilypond_enabled = config
+        .get_path("delegates.lilypond")
+        .as_bool()
+        .unwrap_or(false);
+    let mut ly_buf: Option<String> = None;
+    let mut ly_label: Option<String> = None;
 
     // Stores the rendered HTML of the most recently defined chorus body
     // (everything between StartOfChorus and EndOfChorus, excluding the
@@ -177,6 +184,11 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                     html.push('\n');
                 } else if let Some(ref mut buf) = abc_buf {
                     // Inside ABC section with abc2svg enabled: collect content.
+                    let raw = lyrics_line.text();
+                    buf.push_str(&raw);
+                    buf.push('\n');
+                } else if let Some(ref mut buf) = ly_buf {
+                    // Inside Lilypond section with lilypond enabled: collect content.
                     let raw = lyrics_line.text();
                     buf.push_str(&raw);
                     buf.push('\n');
@@ -274,6 +286,16 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                         if let Some(abc_content) = abc_buf.take() {
                             render_abc_with_fallback(&abc_content, &abc_label, &mut html);
                             abc_label = None;
+                        }
+                    }
+                    DirectiveKind::StartOfLy if lilypond_enabled => {
+                        ly_buf = Some(String::new());
+                        ly_label = directive.value.clone();
+                    }
+                    DirectiveKind::EndOfLy if ly_buf.is_some() => {
+                        if let Some(ly_content) = ly_buf.take() {
+                            render_ly_with_fallback(&ly_content, &ly_label, &mut html);
+                            ly_label = None;
                         }
                     }
                     DirectiveKind::StartOfSvg => {
@@ -751,6 +773,29 @@ fn is_safe_image_src(src: &str) -> bool {
     }
 
     true
+}
+
+/// Render Lilypond notation content using lilypond, falling back to preformatted text.
+///
+/// When lilypond is available and produces valid output, the SVG is embedded
+/// inside a `<section class="ly">` element. When lilypond is unavailable or
+/// fails, the raw notation is rendered as preformatted text.
+fn render_ly_with_fallback(ly_content: &str, label: &Option<String>, html: &mut String) {
+    match chordpro_core::external_tool::invoke_lilypond(ly_content) {
+        Ok(svg) => {
+            render_section_open("ly", "Lilypond", label, html);
+            html.push_str(&svg);
+            html.push('\n');
+            html.push_str("</section>\n");
+        }
+        Err(_) => {
+            render_section_open("ly", "Lilypond", label, html);
+            html.push_str("<pre>");
+            html.push_str(&escape(ly_content));
+            html.push_str("</pre>\n");
+            html.push_str("</section>\n");
+        }
+    }
 }
 
 /// Render an `{image}` directive as an HTML `<img>` element.
@@ -1547,6 +1592,49 @@ Verse text\n\
         assert!(
             html.contains("<svg"),
             "should contain rendered SVG from abc2svg"
+        );
+        assert!(html.contains("</section>"));
+    }
+
+    // -- lilypond delegate rendering tests ----------------------------------------
+
+    #[test]
+    fn test_ly_section_without_delegate_config() {
+        // Default config has delegates.lilypond=false, so Ly renders as text
+        let html = render("{start_of_ly}\n\\relative c' { c4 }\n{end_of_ly}");
+        assert!(html.contains("<section class=\"ly\">"));
+        assert!(html.contains("Lilypond"));
+        assert!(html.contains("</section>"));
+    }
+
+    #[test]
+    fn test_ly_section_fallback_preformatted() {
+        if chordpro_core::external_tool::has_lilypond() {
+            return;
+        }
+        let input = "{start_of_ly}\n\\relative c' { c4 }\n{end_of_ly}";
+        let song = chordpro_core::parse(input).unwrap();
+        let config =
+            chordpro_core::config::Config::defaults().with_define("delegates.lilypond=true");
+        let html = render_song_with_transpose(&song, 0, &config);
+        assert!(html.contains("<section class=\"ly\">"));
+        assert!(html.contains("<pre>"));
+        assert!(html.contains("</pre>"));
+    }
+
+    #[test]
+    #[ignore]
+    fn test_ly_section_renders_svg_with_lilypond() {
+        // Requires lilypond installed. Run with: cargo test -- --ignored
+        let input = "{start_of_ly}\n\\relative c' { c4 d e f | g2 g | }\n{end_of_ly}";
+        let song = chordpro_core::parse(input).unwrap();
+        let config =
+            chordpro_core::config::Config::defaults().with_define("delegates.lilypond=true");
+        let html = render_song_with_transpose(&song, 0, &config);
+        assert!(html.contains("<section class=\"ly\">"));
+        assert!(
+            html.contains("<svg"),
+            "should contain rendered SVG from lilypond"
         );
         assert!(html.contains("</section>"));
     }
