@@ -535,7 +535,9 @@ fn render_spans(spans: &[TextSpan], html: &mut String) {
                 if css.is_empty() {
                     html.push_str("<span>");
                 } else {
-                    html.push_str(&format!("<span style=\"{}\">", escape(&css)));
+                    // CSS values are already sanitized by sanitize_css_value();
+                    // applying escape() would double-encode (e.g., & → &amp;).
+                    html.push_str(&format!("<span style=\"{css}\">"));
                 }
                 render_spans(children, html);
                 html.push_str("</span>");
