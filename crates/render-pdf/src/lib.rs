@@ -2439,7 +2439,7 @@ mod jpeg_tests {
     #[test]
     fn test_fmt_f32_normal_values() {
         assert_eq!(fmt_f32(1.0), "1");
-        assert_eq!(fmt_f32(3.14), "3.14");
+        assert_eq!(fmt_f32(3.25), "3.25");
         assert_eq!(fmt_f32(0.0), "0");
         assert_eq!(fmt_f32(-5.5), "-5.5");
     }
