@@ -619,9 +619,15 @@ fn read_image_file(path: &str) -> Option<Vec<u8>> {
 
 /// Render an `{image}` directive by embedding a JPEG file into the PDF.
 ///
-/// Only JPEG files (`.jpg` / `.jpeg` extension) are supported. If the file
-/// cannot be read, has no recognisable JPEG header, or is not a JPEG
-/// extension, the directive is silently skipped.
+/// Only JPEG files (`.jpg` / `.jpeg` extension) are currently supported.
+/// The image is read from disk, validated, and embedded as a DCTDecode
+/// XObject.  If the file cannot be read, has no recognisable JPEG header,
+/// is not a JPEG extension, is a symlink, or exceeds [`MAX_IMAGE_FILE_SIZE`],
+/// the directive is silently skipped.
+///
+/// The `anchor` attribute controls horizontal alignment: `"line"` (default)
+/// places the image at the column margin, `"column"` centres it within the
+/// column, and `"paper"` centres it on the full page.
 fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
     if attrs.src.is_empty() {
         return;

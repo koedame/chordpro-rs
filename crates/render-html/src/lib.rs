@@ -1028,6 +1028,13 @@ fn render_ly_with_fallback(ly_content: &str, label: &Option<String>, html: &mut 
 }
 
 /// Render an `{image}` directive as an HTML `<img>` element.
+///
+/// Generates a `<div>` wrapper (with optional alignment from the `anchor`
+/// attribute) containing an `<img>` tag.  The `src`, `width`, `height`, and
+/// `title` (as `alt`) attributes are forwarded.  A `scale` value is applied
+/// via a CSS `transform: scale(…)` style.
+///
+/// Paths that fail [`is_safe_image_src`] are silently skipped.
 fn render_image(attrs: &chordpro_core::ast::ImageAttributes, html: &mut String) {
     if !is_safe_image_src(&attrs.src) {
         return;
@@ -1070,6 +1077,11 @@ fn render_image(attrs: &chordpro_core::ast::ImageAttributes, html: &mut String) 
 
     html.push_str(&format!("<img {}", img_attrs));
     if !style.is_empty() {
+        // The style string is first sanitised (sanitize_css_value removes
+        // dangerous characters) and then HTML-escaped here.  The double
+        // processing is intentional: sanitisation makes the CSS value safe,
+        // while escape() ensures the surrounding attribute context is safe
+        // (e.g. a `"` in the style cannot break out of the attribute).
         html.push_str(&format!(" style=\"{}\"", escape(&style)));
     }
     html.push_str("></div>\n");

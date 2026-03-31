@@ -2,3 +2,4 @@
 {image: src=photo.jpg}
 {image: src=logo.png width=200 height=100}
 {image: src=cover.jpg scale=0.5 title="Album Cover"}
+{image: src=banner.jpg anchor=paper width=50%}

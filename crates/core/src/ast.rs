@@ -402,6 +402,10 @@ impl core::fmt::Display for Chord {
 /// The `{image}` directive embeds an image in the song. The `src` attribute
 /// is required; all other attributes are optional.
 ///
+/// Format support is renderer-specific: the PDF renderer supports JPEG only
+/// (`.jpg` / `.jpeg`), while the HTML renderer delegates to the browser and
+/// can display any web-supported format.
+///
 /// # Examples
 ///
 /// ```

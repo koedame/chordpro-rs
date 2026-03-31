@@ -97,5 +97,28 @@ Song {
                 selector: None,
             },
         ),
+        Directive(
+            Directive {
+                name: "image",
+                value: Some(
+                    "src=banner.jpg anchor=paper width=50%",
+                ),
+                kind: Image(
+                    ImageAttributes {
+                        src: "banner.jpg",
+                        width: Some(
+                            "50%",
+                        ),
+                        height: None,
+                        scale: None,
+                        title: None,
+                        anchor: Some(
+                            "paper",
+                        ),
+                    },
+                ),
+                selector: None,
+            },
+        ),
     ],
 }
