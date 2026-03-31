@@ -557,7 +557,7 @@ fn is_safe_image_path(path: &str) -> bool {
     // Reject Windows-style absolute paths on all platforms.  On Unix,
     // `Path::is_absolute()` does not flag `C:\…` or `\\…` as absolute,
     // so we perform string-level checks for drive letters and UNC paths.
-    if is_windows_absolute(path) {
+    if chordpro_core::image_path::is_windows_absolute(path) {
         return false;
     }
 
@@ -570,35 +570,16 @@ fn is_safe_image_path(path: &str) -> bool {
         return false;
     }
 
-    // Reject any path component that is `..`.
-    for component in p.components() {
-        if matches!(component, std::path::Component::ParentDir) {
-            return false;
-        }
+    // Reject directory traversal (`..` path components).
+    // Uses the shared helper that splits on both `/` and `\`, so
+    // backslash-separated traversal like `images\..\..\etc\passwd` is
+    // also caught on Unix (where `Path::components()` treats `\` as a
+    // literal character).
+    if chordpro_core::image_path::has_traversal(path) {
+        return false;
     }
 
     true
-}
-
-/// Check whether a path string looks like a Windows absolute path.
-///
-/// Detects drive-letter paths (`C:\…`, `C:/…`) and UNC paths (`\\…`)
-/// using string-level checks so the result is consistent across platforms.
-fn is_windows_absolute(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    // Drive letter: e.g. `C:\` or `C:/`
-    if bytes.len() >= 3
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && (bytes[2] == b'\\' || bytes[2] == b'/')
-    {
-        return true;
-    }
-    // UNC path: `\\server\share`
-    if bytes.len() >= 2 && bytes[0] == b'\\' && bytes[1] == b'\\' {
-        return true;
-    }
-    false
 }
 
 /// Read an image file, rejecting symlinks and files exceeding
@@ -3249,9 +3230,10 @@ mod jpeg_tests {
         assert!(!is_safe_image_path("C:/photo.jpg"));
     }
 
-    #[cfg(windows)]
     #[test]
-    fn test_safe_image_path_windows_traversal_rejected() {
+    fn test_safe_image_path_backslash_traversal_rejected() {
+        // The shared `has_traversal` helper splits on both `/` and `\`,
+        // so backslash-based traversal is now detected on all platforms.
         assert!(!is_safe_image_path(r"..\photo.jpg"));
         assert!(!is_safe_image_path(r"images\..\..\photo.jpg"));
     }

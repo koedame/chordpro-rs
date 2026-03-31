@@ -1031,34 +1031,8 @@ fn is_safe_image_src(src: &str) -> bool {
     true
 }
 
-/// Check whether a path string looks like a Windows absolute path.
-///
-/// Detects drive-letter paths (`C:\…`, `C:/…`) and UNC paths (`\\…`)
-/// using string-level checks so the result is consistent across platforms.
-fn is_windows_absolute(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    // Drive letter: e.g. `C:\` or `C:/`
-    if bytes.len() >= 3
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && (bytes[2] == b'\\' || bytes[2] == b'/')
-    {
-        return true;
-    }
-    // UNC path: `\\server\share`
-    if bytes.len() >= 2 && bytes[0] == b'\\' && bytes[1] == b'\\' {
-        return true;
-    }
-    false
-}
-
-/// Check whether a path contains `..` directory-traversal components.
-///
-/// Splits on both `/` and `\` so the check works for both Unix and
-/// Windows-style separators.
-fn has_traversal(path: &str) -> bool {
-    path.split(['/', '\\']).any(|seg| seg == "..")
-}
+/// Re-export shared path-validation helpers from `chordpro-core`.
+use chordpro_core::image_path::{has_traversal, is_windows_absolute};
 
 /// Render Lilypond notation content using lilypond, falling back to preformatted text.
 ///
