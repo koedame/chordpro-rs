@@ -836,4 +836,10 @@ mod tests {
         // After stripping 'm', rest is "add9"
         assert_eq!(detail.extension.as_deref(), Some("add9"));
     }
+
+    #[test]
+    fn empty_bass_string_is_invalid() {
+        // A trailing slash with no bass note should be rejected.
+        assert!(parse_chord("G/").is_none());
+    }
 }
