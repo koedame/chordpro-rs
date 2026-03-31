@@ -132,7 +132,10 @@ pub fn invoke_lilypond(ly_content: &str) -> Result<String, String> {
         format!("failed to write temp file: {e}")
     })?;
 
+    // Use -dsafe to disable Lilypond's embedded Scheme interpreter,
+    // preventing arbitrary code execution from untrusted .cho files.
     let result = Command::new("lilypond")
+        .arg("-dsafe")
         .arg("--svg")
         .arg(format!("-o{}", output_prefix.display()))
         .arg(&ly_path)
@@ -246,6 +249,24 @@ mod tests {
         }
         let result = invoke_lilypond("{ c4 }\n");
         assert!(result.is_err());
+    }
+
+    #[test]
+    #[ignore]
+    fn invoke_lilypond_blocks_scheme_code() {
+        if !has_lilypond() {
+            return;
+        }
+        // Embedded Scheme that tries to execute a system command.
+        // With -dsafe this should fail (lilypond exits with error).
+        let ly = r#"#(system "echo pwned")
+\relative c' { c4 d e f | }
+"#;
+        let result = invoke_lilypond(ly);
+        assert!(
+            result.is_err(),
+            "Lilypond should reject Scheme system calls with -dsafe"
+        );
     }
 
     #[test]
