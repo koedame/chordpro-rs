@@ -640,9 +640,8 @@ fn render_directive_inner(directive: &chordpro_core::ast::Directive, html: &mut 
         DirectiveKind::StartOfLy => {
             render_section_open("ly", "Lilypond", &directive.value, html);
         }
-        DirectiveKind::StartOfSvg => {
-            render_section_open("svg", "SVG", &directive.value, html);
-        }
+        // StartOfSvg is handled in the main rendering loop with raw HTML
+        // embedding (<div class="svg-section">), not via render_section_open.
         DirectiveKind::StartOfTextblock => {
             render_section_open("textblock", "Textblock", &directive.value, html);
         }
