@@ -1,0 +1,18 @@
+{title: Markup with Chords}
+
+{start_of_verse: Verse 1}
+[Am]Hello <b>bold</b> world and [G]goodbye <i>italic</i> moon
+[F]<b>Bold [C]with chord inside</b> the markup
+[Dm]Chord then <b>[G]bold with chord</b> then normal
+[Am]<i>Italic [Em]with [Am]multiple chords</i> inside
+{end_of_verse}
+
+{start_of_chorus}
+[F]<b>[C]Bold</b> start with [G]chord and <i>[Am]italic</i> end
+[F]<b>Bold</b>[C] chord right [G]after <i>italic [Am]end</i>
+{end_of_chorus}
+
+{start_of_verse: Verse 2}
+[G]<span foreground="red">[C]Red text with chords [D]inside span</span>
+[Em]Normal [C]text with <highlight>[G]highlighted chord</highlight> text
+{end_of_verse}

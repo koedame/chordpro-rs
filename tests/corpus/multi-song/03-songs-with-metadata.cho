@@ -1,0 +1,57 @@
+{title: Sunrise}
+{subtitle: Morning Movement}
+{artist: The Dawn Chorus}
+{key: G}
+{tempo: 100}
+{time: 4/4}
+{capo: 0}
+
+{start_of_verse}
+[G]Golden light is [C]breaking through
+[D]Morning dew on [G]everything
+{end_of_verse}
+
+{start_of_chorus}
+[C]Rise, [G]rise with the [D]sun
+[Em]A new day has [C]be[D]gun
+{end_of_chorus}
+
+{new_song}
+
+{title: Sunset}
+{subtitle: Evening Movement}
+{artist: The Twilight Band}
+{key: Am}
+{tempo: 72}
+{time: 3/4}
+{capo: 3}
+
+{start_of_verse}
+[Am]Orange sky is [Dm]fading fast
+[E]Another day has [Am]passed
+{end_of_verse}
+
+{start_of_chorus}
+[Dm]Rest, [Am]rest with the [E]moon
+[F]Night is [E]coming [Am]soon
+{end_of_chorus}
+
+{new_song}
+
+{title: Midnight}
+{subtitle: Nocturne}
+{artist: The Night Owls}
+{key: Em}
+{tempo: 60}
+{time: 6/8}
+{capo: 5}
+
+{start_of_verse}
+[Em]Darkness wraps the [Am]world in [B]sleep
+[Em]Silence running [Am]wide and [B]deep
+{end_of_verse}
+
+{start_of_chorus}
+[Am]Dream, [Em]dream through the [B]night
+[C]Stars are [B]burning [Em]bright
+{end_of_chorus}

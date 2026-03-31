@@ -1,0 +1,26 @@
+{title: Unknown Directives}
+
+{unknown_directive: some value}
+{made_up_thing}
+{custom_setting: 42}
+{x_proprietary: vendor-specific data}
+{not_a_real_directive: but has a value}
+
+{start_of_verse}
+[G]Songs might contain [C]directives
+[D]That the parser does not [G]know
+[Em]It should handle them [C]gracefully
+[D]Not crash or [G]throw
+{end_of_verse}
+
+{another_unknown}
+{start_of_whatever}
+This is in an unknown section type
+{end_of_whatever}
+
+{start_of_chorus}
+[C]Even with [G]unknowns
+[D]The song goes [G]on
+{end_of_chorus}
+
+{final_unknown_directive: at the end}

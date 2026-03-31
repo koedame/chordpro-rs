@@ -1,0 +1,33 @@
+{title: Textblock Section}
+
+{start_of_verse}
+[G]Some songs need a [C]block of text
+[D]That is not lyrics [G]or chords
+{end_of_verse}
+
+{start_of_textblock}
+This is a textblock section. It contains free-form text
+that is not treated as lyrics. No chord parsing happens
+inside a textblock.
+
+It might contain stage directions, performance notes,
+or other supplementary information that should be
+rendered verbatim without chord processing.
+
+    Indentation is preserved as-is.
+    Multiple lines with consistent indentation.
+        Even deeper indentation works.
+{end_of_textblock}
+
+{start_of_chorus}
+[C]After the text [G]block
+[D]The song continues [G]on
+{end_of_chorus}
+
+{start_of_textblock}
+Performance Notes:
+- Start with soft picking on verse 1
+- Build intensity through the chorus
+- Full strumming on verse 2
+- Gentle ending with arpeggiated chords
+{end_of_textblock}

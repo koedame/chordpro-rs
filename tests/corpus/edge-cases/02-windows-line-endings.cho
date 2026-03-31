@@ -1,0 +1,15 @@
+{title: Windows Line Endings}
+
+{start_of_verse: Verse 1}
+[G]This file uses [C]CRLF line [D]endings
+[G]Like files from [C]Windows [D]machines
+[Em]Carriage return [C]before each [D]newline
+[G]In all of these [C]lines and [D]scenes
+{end_of_verse}
+
+{start_of_chorus}
+[C]Windows [G]style
+[D]Line [Em]breaks
+[C]Backslash [G]r
+[D]Backslash [G]n
+{end_of_chorus}

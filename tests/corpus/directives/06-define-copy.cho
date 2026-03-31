@@ -1,0 +1,14 @@
+{title: Chord Definition Copy}
+
+{define: Am base-fret 1 frets x 0 2 2 1 0}
+{define: Amin copy Am}
+{define: A- copy Am}
+{define: Cmaj7 base-fret 1 frets x 3 2 0 0 0}
+{define: CM7 copy Cmaj7}
+
+{start_of_verse}
+[Am]Sometimes we use [Amin]different names
+[A-]For the very [Am]same chord
+[Cmaj7]Copy lets us [CM7]reuse definitions
+[Am]Without repeating [Cmaj7]every fret
+{end_of_verse}

@@ -1,0 +1,30 @@
+{title: Page Break Demo}
+
+{start_of_verse: Verse 1}
+[G]This verse is on [C]page [D]one
+[G]Along with the [C]chorus be[D]low
+{end_of_verse}
+
+{start_of_chorus}
+[C]Singing on [G]page one
+[D]Before we turn the [G]page
+{end_of_chorus}
+
+{new_page}
+
+{start_of_verse: Verse 2}
+[G]Now we are on [C]page [D]two
+[G]After the page [C]break came [D]through
+{end_of_verse}
+
+{start_of_chorus}
+[C]Singing on [G]page two
+[D]A brand new [G]stage
+{end_of_chorus}
+
+{new_physical_page}
+
+{start_of_verse: Verse 3}
+[G]Physical page [C]break [D]here
+[G]Guaranteed new [C]sheet of [D]paper
+{end_of_verse}

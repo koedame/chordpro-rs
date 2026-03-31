@@ -1,0 +1,19 @@
+{title: Meta Directives}
+{meta: artist The Drifters}
+{meta: composer Ray Charles}
+{meta: lyricist Bob Dylan}
+{meta: album Greatest Hits}
+{meta: year 1965}
+{meta: key Am}
+{meta: tempo 96}
+{meta: time 3/4}
+{meta: capo 0}
+{meta: copyright Public Domain}
+{meta: duration 3:22}
+{meta: sorttitle Drifters Song}
+{meta: custom_field some custom value}
+
+{start_of_verse}
+[Am]Using meta [Dm]directives for [E]all meta[Am]data
+[Am]Each one takes a [Dm]key and [E]value [Am]pair
+{end_of_verse}

@@ -1,0 +1,20 @@
+{title: Case Insensitive Tags}
+
+{start_of_verse: Verse 1}
+[G]<B>Uppercase bold</B> on this line
+[C]<I>Uppercase italic</I> on this line
+[D]<BOLD>Another way</BOLD> to write bold
+{end_of_verse}
+
+{start_of_verse: Verse 2}
+[G]<b>Lowercase bold</b> for comparison
+[C]<i>Lowercase italic</i> for comparison
+[D]Mixed <B>upper</B> and <b>lower</b> on one [G]line
+{end_of_verse}
+
+{start_of_chorus}
+[C]<B><I>Upper bold italic</I></B>
+[G]<b><i>Lower bold italic</i></b>
+[D]<B><i>Mixed case nesting</i></B>
+[G]Plain text at the [C]end
+{end_of_chorus}

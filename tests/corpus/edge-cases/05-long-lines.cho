@@ -1,0 +1,16 @@
+{title: Long Lines}
+
+{start_of_verse: Verse 1}
+[G]This is a very long line of lyrics that goes on and on and on without stopping because sometimes songwriters write really long lines that extend well beyond what would normally fit on a single line of a typical song sheet and the renderer needs to handle wrapping gracefully
+[C]Another extremely long line follows right behind the first one, continuing with even more words than before, stretching across the page like a river flowing endlessly through the countryside on a warm summer afternoon
+{end_of_verse}
+
+{start_of_verse: Verse 2}
+[Am]Short line for contrast
+[Em]This line is moderately long but nothing compared to the earlier ones that stretched on for what seemed like forever and ever
+{end_of_verse}
+
+{start_of_chorus}
+[F]The chorus also has a long line that tests how the renderer handles text wrapping in chorus sections which might have different formatting rules than regular verse sections depending on the configuration
+[C]Short [G]end
+{end_of_chorus}

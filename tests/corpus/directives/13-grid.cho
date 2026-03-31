@@ -1,0 +1,29 @@
+{title: Grid Section}
+{key: G}
+{tempo: 120}
+
+{start_of_verse: Verse 1}
+[G]Playing through the [C]grid
+[D]Rhythm pattern [G]here
+{end_of_verse}
+
+{start_of_grid}
+| G  . . . | C  . . . | D  . . . | G  . . . |
+| G  . . . | C  . . . | D  . . . | G  . . . |
+| Em . . . | C  . . . | D  . . . | G  . . . |
+| Em . . . | C  . . . | D  . D . | G  . . . |
+{end_of_grid}
+
+{comment: Play grid pattern twice}
+
+{start_of_chorus}
+[C]Follow the [G]grid
+[D]Feel the [G]beat
+[C]Every [G]measure
+[D]Nice and [G]neat
+{end_of_chorus}
+
+{start_of_grid: Outro}
+| G  . . . | C  . . . |
+| D  . . . | G  . . . |
+{end_of_grid}

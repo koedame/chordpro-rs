@@ -1,0 +1,19 @@
+{title: Image Directives}
+
+{image: src=album-cover.jpg width=200 height=200}
+
+{start_of_verse: Verse 1}
+[C]Picture worth a [F]thousand [G]words
+[Am]Hanging on the [F]wall
+[C]Memories of [F]singing [G]birds
+[Am]Echo through the [G]hall
+{end_of_verse}
+
+{image: src=photo.png width=400 anchor=float}
+
+{start_of_chorus}
+[F]Frame it, [C]save it, [G]hold it [Am]tight
+[F]Every [G]picture [C]tells a story
+{end_of_chorus}
+
+{image: src=chord-diagram.svg width=100 height=120 scale=0.5}

@@ -1,0 +1,33 @@
+{title: Empty Lines}
+
+
+
+{start_of_verse: Verse 1}
+[G]First line of the [C]verse
+
+
+
+[D]After three blank [G]lines
+
+
+[Em]After two blank [C]lines
+
+[D]After one blank [G]line
+{end_of_verse}
+
+
+
+
+{start_of_chorus}
+
+
+[C]Chorus after [G]blank lines
+
+
+[D]More blank lines [G]above
+
+{end_of_chorus}
+
+
+
+

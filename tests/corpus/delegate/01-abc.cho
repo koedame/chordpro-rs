@@ -1,0 +1,31 @@
+{title: ABC Notation Section}
+
+{start_of_verse: Verse 1}
+[G]Music written [C]in the sheet
+[D]Notes and rests in [G]time
+{end_of_verse}
+
+{start_of_abc}
+X:1
+T:Melody Line
+M:4/4
+L:1/8
+K:G
+|: G2 AB c2 BA | G2 AB c2 c2 |
+| d2 cB A2 GA | B2 A2 G4 :|
+{end_of_abc}
+
+{start_of_chorus}
+[C]Read the notes up[G]on the page
+[D]Play the melody [G]through
+{end_of_chorus}
+
+{start_of_abc}
+X:2
+T:Harmony Part
+M:4/4
+L:1/4
+K:G
+| B d B G | A c A F |
+| G B d B | A2 G2 |
+{end_of_abc}

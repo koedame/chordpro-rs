@@ -1,0 +1,39 @@
+{title: Song One}
+
+{start_of_verse}
+[C]First song in the [G]set
+[Am]Starting off [F]strong
+{end_of_verse}
+
+{start_of_chorus}
+[F]One, [C]two, [G]three
+[Am]Sing with [F]me
+{end_of_chorus}
+
+{new_song}
+
+{title: Song Two}
+
+{start_of_verse}
+[Am]Second song be[Em]gins
+[F]Middle of the [G]show
+{end_of_verse}
+
+{start_of_chorus}
+[F]Four, [C]five, [G]six
+[Am]In the [F]mix
+{end_of_chorus}
+
+{new_song}
+
+{title: Song Three}
+
+{start_of_verse}
+[G]Third and final [C]tune
+[D]Closing out the [G]night
+{end_of_verse}
+
+{start_of_chorus}
+[C]Seven, [G]eight, [D]nine
+[Em]Doing [C]fine
+{end_of_chorus}

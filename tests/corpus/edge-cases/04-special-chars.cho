@@ -1,0 +1,22 @@
+{title: Special Characters}
+
+{start_of_verse: Verse 1}
+[G]Rock & roll is [C]here to stay
+[D]Less than < and [G]greater than >
+[Am]Quotes both "double" and [Em]'single' too
+[F]Ampersands & angle brackets [G]in the queue
+{end_of_verse}
+
+{start_of_verse: Verse 2}
+[G]Backslash \ and [C]forward slash /
+[D]Parentheses (like [G]these)
+[Am]Square brackets are [Em]for chords
+[F]But curly braces [G]are for directives please
+{end_of_verse}
+
+{start_of_chorus}
+[C]Hash # at @ dollar $
+[G]Percent % caret ^
+[D]Tilde ~ asterisk * plus +
+[G]Equals = and the [C]rest of it
+{end_of_chorus}

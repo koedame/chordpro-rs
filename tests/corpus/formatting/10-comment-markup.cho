@@ -1,0 +1,18 @@
+{title: Comment Markup}
+
+{start_of_verse: Verse 1}
+[G]Singing through the [C]morning light
+[D]Everything is [G]right
+{end_of_verse}
+
+{comment: Note the <b>key change</b> here}
+{comment_italic: Play <b>softly</b> with <i>feeling</i>}
+{comment_box: <b>Important:</b> Repeat this section <i>three</i> times}
+
+{start_of_chorus}
+[C]Comments can have [G]markup too
+[D]Bold and italic [G]shine right through
+{end_of_chorus}
+
+{comment: <span foreground="red">Red warning</span> - watch the tempo}
+{comment_italic: <highlight>Highlighted note</highlight> for the band}

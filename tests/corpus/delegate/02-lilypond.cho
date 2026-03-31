@@ -1,0 +1,23 @@
+{title: Lilypond Section}
+
+{start_of_verse}
+[Am]Classical meets [Dm]modern style
+[E]Engraved notation [Am]on the page
+{end_of_verse}
+
+{start_of_ly}
+\relative c' {
+  \time 4/4
+  \key a \minor
+  a4 c e a |
+  g4 f e d |
+  c4 b a2 |
+  e'4 d c b |
+  a1 |
+}
+{end_of_ly}
+
+{start_of_chorus}
+[Dm]Sheet music [Am]rendered clean
+[E]The finest score you've [Am]seen
+{end_of_chorus}

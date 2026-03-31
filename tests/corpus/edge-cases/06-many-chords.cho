@@ -1,0 +1,15 @@
+{title: Many Chords Per Line}
+
+{start_of_verse: Verse 1}
+[Am]One [C]two [G]three [F]four [Dm]five [Em]six [Bb]seven [A]eight [D]nine [E]ten [Fm]eleven [Ab]twelve
+[G]Still [Am]more [C]chords [F]packed [Dm]into [Em]every [G7]single [Cmaj7]line [Fmaj7]of [Dm7]this [Em7]song
+{end_of_verse}
+
+{start_of_chorus}
+[C][G][Am][F][Dm][Em][G7][C7][F7][Bb][Eb][Ab]
+[Am7][Dm7][G7][Cmaj7][Fmaj7][Bm7b5][E7b9][Am9][Dm11][G13][Cmaj9][F6]
+{end_of_chorus}
+
+{start_of_verse: Verse 2}
+[A]Rapid [B]chord [C#m]changes [D]test [E]the [F#m]parser [G#dim]limit [A]
+{end_of_verse}

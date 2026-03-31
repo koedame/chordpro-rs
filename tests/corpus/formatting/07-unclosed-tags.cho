@@ -1,0 +1,24 @@
+{title: Unclosed Tags}
+
+{start_of_verse: Verse 1}
+[G]This has an <b>unclosed bold tag
+[C]Does the bold continue here?
+[D]Or does it stop at end of [G]line?
+{end_of_verse}
+
+{start_of_verse: Verse 2}
+[G]Unclosed <i>italic starts here
+[C]What happens to this line?
+[D]And this one [G]too?
+{end_of_verse}
+
+{start_of_chorus}
+[C]<b>Bold that never closes
+[G]Keeps on going
+[D]Through the whole [G]chorus
+{end_of_chorus}
+
+{start_of_verse: Verse 3}
+[G]Nested unclosed: <b>bold <i>and italic
+[C]Both unclosed at the same [D]time
+{end_of_verse}

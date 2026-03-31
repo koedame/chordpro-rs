@@ -1,0 +1,44 @@
+{title: Original Key}
+{key: C}
+
+{start_of_verse}
+[C]Playing in the [F]key of [G]C
+[Am]Natural and [F]easy as can [G]be
+{end_of_verse}
+
+{start_of_chorus}
+[F]Simple [C]chords, [G]simple [Am]song
+[F]In the key of [G]C where I be[C]long
+{end_of_chorus}
+
+{new_song}
+
+{title: Transposed Up}
+{key: C}
+{transpose: 3}
+
+{start_of_verse}
+[C]Same song but [F]transposed up [G]three
+[Am]Now in the [F]key of [G]Eb
+{end_of_verse}
+
+{start_of_chorus}
+[F]Simple [C]chords, [G]simple [Am]song
+[F]Transposed up [G]three where they be[C]long
+{end_of_chorus}
+
+{new_song}
+
+{title: Transposed Down}
+{key: C}
+{transpose: -2}
+
+{start_of_verse}
+[C]Same song but [F]transposed down [G]two
+[Am]Now in the [F]key of [G]Bb
+{end_of_verse}
+
+{start_of_chorus}
+[F]Simple [C]chords, [G]simple [Am]song
+[F]Transposed down [G]two all along [C]
+{end_of_chorus}

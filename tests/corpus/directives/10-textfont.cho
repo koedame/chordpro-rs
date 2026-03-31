@@ -1,0 +1,28 @@
+{title: Text Font Directives}
+
+{textfont: Times New Roman}
+{textsize: 12}
+{textcolour: black}
+
+{start_of_verse: Verse 1}
+[G]Standard text in [C]Times New [D]Roman
+[G]Twelve point size in [C]basic [D]black
+{end_of_verse}
+
+{textfont: Courier}
+{textsize: 10}
+{textcolour: #333333}
+
+{start_of_verse: Verse 2}
+[G]Now in Courier [C]ten point [D]grey
+[G]Monospaced and [C]on dis[D]play
+{end_of_verse}
+
+{textfont: Helvetica}
+{textsize: 14}
+{textcolour: blue}
+
+{start_of_verse: Verse 3}
+[G]Helvetica in [C]fourteen [D]blue
+[G]Clean and modern [C]through and [D]through
+{end_of_verse}

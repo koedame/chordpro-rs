@@ -1,0 +1,16 @@
+{title: Bold Markup}
+
+{start_of_verse: Verse 1}
+[G]This line has <b>bold text</b> in [C]it
+[D]And <b>another bold phrase</b> [G]here
+{end_of_verse}
+
+{start_of_chorus}
+[C]<b>The whole chorus line is bold</b>
+[G]But this [D]one is [G]not
+{end_of_chorus}
+
+{start_of_verse: Verse 2}
+[G]A single <b>word</b> can be bold
+[C]Or <b>multiple words in a row</b> can [G]too
+{end_of_verse}

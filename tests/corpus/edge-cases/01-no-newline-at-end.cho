@@ -1,0 +1,6 @@
+{title: No Trailing Newline}
+
+{start_of_verse}
+[G]This file does not [C]end with a newline
+[D]The last character is the [G]closing brace
+{end_of_verse}

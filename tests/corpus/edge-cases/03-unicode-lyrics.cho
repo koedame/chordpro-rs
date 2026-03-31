@@ -1,0 +1,37 @@
+{title: Unicode Lyrics}
+
+{comment: Japanese}
+{start_of_verse: Verse 1}
+[Am]Sakura [Dm]sakura
+[E]Yayoi no [Am]sora wa
+[Am]Miwatasu [Dm]kagiri
+[E]Kasumi ka [Am]kumo ka
+{end_of_verse}
+
+{comment: Chinese}
+{start_of_verse: Verse 2}
+[C]Yue liang [F]dai biao [G]wo de xin
+[Am]Ni wen wo [F]ai ni [G]you duo shen
+{end_of_verse}
+
+{comment: Korean}
+{start_of_verse: Verse 3}
+[G]Arirang [C]arirang
+[D]Arari[G]yo
+[Em]Arirang [C]gogaero
+[D]Neomeo[G]ganda
+{end_of_verse}
+
+{comment: Accented characters}
+{start_of_verse: Verse 4}
+[Am]Frere Jacques [Dm]Frere Jacques
+[Am]Dormez-vous [Dm]dormez-vous
+[Am]Sonnez les [Dm]matines [E]sonnez les [Am]matines
+[Dm]Ding dang [E]dong [Am]ding dang dong
+{end_of_verse}
+
+{comment: Symbols and diacritics}
+{start_of_verse: Verse 5}
+[C]Noel, Noel [G]the angels did say
+[Am]Uber den [F]Wolken muss die [G]Freiheit wohl [C]grenzenlos sein
+{end_of_verse}

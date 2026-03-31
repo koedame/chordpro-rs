@@ -1,0 +1,17 @@
+{title: Mixed Markup}
+
+{start_of_verse: Verse 1}
+[G]This has <b>bold</b> and <i>italic</i> on the same line
+[C]Here is <b><i>bold italic</i></b> nested together
+[D]And <i><b>italic bold</b></i> in reverse order
+{end_of_verse}
+
+{start_of_chorus}
+[C]<b>Bold chorus</b> with <i>italic words</i> [G]mixed in
+[D]<b><i>Everything bold and italic</i></b> at [G]once
+{end_of_chorus}
+
+{start_of_verse: Verse 2}
+[G]Plain then <b>bold then <i>bold italic</i> back to bold</b> then plain
+[C]Multiple <i>italic</i> and <b>bold</b> segments on one [D]line
+{end_of_verse}

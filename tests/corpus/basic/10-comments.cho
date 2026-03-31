@@ -1,0 +1,35 @@
+{title: Comments Demo}
+
+{comment: This is a plain comment}
+
+{start_of_verse: Verse 1}
+[G]Take me to the [C]river
+[D]Wash my soul [G]clean
+{end_of_verse}
+
+{comment_italic: Play softly here}
+
+{start_of_chorus}
+[C]River of [G]life
+[D]Flowing through the [Em]night
+[C]Carry me [G]home
+[D]Everything's al[G]right
+{end_of_chorus}
+
+{comment_box: Instrumental break - 8 bars}
+
+{start_of_verse: Verse 2}
+[G]Standing on the [C]shoreline
+[D]Watching stars [G]fall
+{end_of_verse}
+
+{comment: Repeat chorus twice}
+
+{start_of_chorus}
+[C]River of [G]life
+[D]Flowing through the [Em]night
+[C]Carry me [G]home
+[D]Everything's al[G]right
+{end_of_chorus}
+
+{comment_italic: Fade out}

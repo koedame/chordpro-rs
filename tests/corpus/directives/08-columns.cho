@@ -1,0 +1,30 @@
+{title: Column Layout}
+{columns: 2}
+
+{start_of_verse: Verse 1}
+[Am]Left column [Dm]starts here
+[E]First verse on the [Am]left
+[Am]Short and sweet and [Dm]clear
+[E]Nothing [Am]left
+{end_of_verse}
+
+{start_of_chorus}
+[F]Chorus spans the [C]page
+[G]Wide and [Am]bold
+{end_of_chorus}
+
+{column_break}
+
+{start_of_verse: Verse 2}
+[Am]Right column [Dm]begins now
+[E]Second verse on the [Am]right
+[Am]Balanced layout [Dm]somehow
+[E]Looking [Am]tight
+{end_of_verse}
+
+{start_of_verse: Verse 3}
+[Am]Still in the [Dm]right column
+[E]Third verse flowing [Am]on
+[Am]Column break was [Dm]solemn
+[E]Nearly [Am]done
+{end_of_verse}

@@ -1,0 +1,14 @@
+{title: Highlight Markup}
+
+{start_of_verse: Verse 1}
+[Am]Pay attention to the <highlight>highlighted part</highlight> here
+[Em]This is normal but <highlight>this stands out</highlight>
+[Dm]<highlight>Entire line highlighted for emphasis</highlight>
+[Am]Back to normal [Em]text
+{end_of_verse}
+
+{start_of_chorus}
+[F]<highlight>Remember this line</highlight>
+[C]<highlight>And this one too</highlight>
+[G]Not this one [Am]though
+{end_of_chorus}

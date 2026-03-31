@@ -1,0 +1,15 @@
+{title: Span Multiple Attributes}
+
+{start_of_verse: Verse 1}
+[Am]<span foreground="red" background="yellow">Warning text</span> in the song
+[Em]<span font="Courier" size="large">Monospaced large</span> and clear
+[Dm]<span foreground="blue" style="italic" weight="bold">Blue bold italic</span> words
+[Am]<span foreground="#FF5733" background="#C0C0C0">Hex colored</span> text here
+{end_of_verse}
+
+{start_of_chorus}
+[F]<span size="x-large" weight="bold">Big and bold</span> chorus
+[C]<span size="small" foreground="grey">Small grey whisper</span>
+[G]<span font="Georgia" foreground="navy" size="medium">Georgia navy</span>
+[Am]Back to [F]normal
+{end_of_chorus}

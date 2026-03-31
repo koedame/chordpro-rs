@@ -1,0 +1,23 @@
+{title: Chord Font Directives}
+
+{chordfont: Helvetica Bold}
+{chordsize: 11}
+{chordcolour: darkblue}
+
+{start_of_verse: Verse 1}
+[Am]Chords in Helvetica [Em]Bold
+[F]Dark blue and [G]eleven point
+[Am]Standing out a[Em]bove the text
+[F]At every [G]chord point
+{end_of_verse}
+
+{chordfont: Arial}
+{chordsize: 14}
+{chordcolour: #FF0000}
+
+{start_of_chorus}
+[C]Now chords in [G]Arial
+[Am]Fourteen point [F]red
+[C]Big and [G]bright
+[Am]Overhead [F]spread
+{end_of_chorus}

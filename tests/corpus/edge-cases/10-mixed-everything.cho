@@ -1,0 +1,91 @@
+{title: The Kitchen Sink}
+{subtitle: Everything But the Kitchen Sink}
+{artist: The Testers}
+{composer: Unit Test}
+{lyricist: Integration Test}
+{copyright: 2024 Test Records}
+{album: Full Coverage}
+{year: 2024}
+{key: Am}
+{tempo: 110}
+{time: 4/4}
+{capo: 3}
+{duration: 5:30}
+{meta: genre Rock}
+{meta: difficulty Advanced}
+
+{define: Am7sus4 base-fret 1 frets x 0 0 0 1 0}
+
+{textfont: Georgia}
+{textsize: 12}
+{chordfont: Helvetica Bold}
+{chordsize: 10}
+
+{comment: This song tests many features at once}
+
+{start_of_intro}
+[Am] [F] [C] [G]
+[Am] [F] [C] [G]
+{end_of_intro}
+
+{start_of_verse: Verse 1}
+[Am]Starting with a <b>bold</b> state[F]ment
+[C]Adding <i>italic</i> for [G]flair
+[Am]<span foreground="red">Red warning</span> in the [F]middle
+[C]<highlight>Highlighted</highlight> text every[G]where
+{end_of_verse}
+
+{comment_italic: Bridge coming up - slow down}
+
+{start_of_bridge}
+[Dm]Bridging the [Am]gap between
+[F]What was and [G]what will be
+[Dm]<b><i>Bold italic</i></b> [Am]in the bridge
+[F]Setting the [G]song free
+{end_of_bridge}
+
+{start_of_chorus}
+[F]Come on [C]everybody [G]sing a[Am]long
+[F]This is the [C]chorus of our [G]song
+[F]<b>Loud</b> and [C]<b>proud</b> from [G]dusk till [Am]dawn
+[F]Sing it [G]till the night is [Am]gone
+{end_of_chorus}
+
+{start_of_tab}
+e|---0---0---0---0---|
+B|-----1---1---1---1-|
+G|---2---2---2---2---|
+D|-2---2---2---2-----|
+A|-------------------|
+E|-------------------|
+{end_of_tab}
+
+{start_of_verse: Verse 2}
+[Am]Second verse keeps [F]going strong
+[C]Mixing features [G]all along
+[Am7sus4]Custom chord de[F]fined above
+[C]Testing every[G]thing we love
+{end_of_verse}
+
+{chorus}
+
+{comment_box: Instrumental solo - 16 bars}
+
+{start_of_grid}
+| Am . . . | F  . . . | C  . . . | G  . . . |
+| Am . . . | F  . . . | C  . . . | G  . . . |
+{end_of_grid}
+
+{start_of_verse: Verse 3}
+[Am]Final verse to [F]wrap it up
+[C]Every feature [G]in the cup
+[Am]Directives and [F]markup too
+[C]This song tested [G]through and through
+{end_of_verse}
+
+{chorus}
+
+{start_of_outro}
+[Am] [F] [C] [G]
+[Am]
+{end_of_outro}

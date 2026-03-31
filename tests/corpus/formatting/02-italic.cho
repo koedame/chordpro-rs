@@ -1,0 +1,14 @@
+{title: Italic Markup}
+
+{start_of_verse: Verse 1}
+[Am]Whispered words in <i>italic style</i>
+[Em]Gentle like a [Am]breeze
+[Dm]Leaning letters <i>soft and mild</i>
+[Am]Rustling through the [Em]trees
+{end_of_verse}
+
+{start_of_chorus}
+[F]<i>Every word in italics here</i>
+[C]<i>Slanted, flowing, crystal clear</i>
+[G]Normal text is [Am]back again
+{end_of_chorus}

@@ -1,0 +1,18 @@
+{title: Title Font Directives}
+{subtitle: A Subtitle in Style}
+
+{titlefont: Georgia Bold}
+{titlesize: 24}
+{titlecolour: #2C3E50}
+
+{start_of_verse}
+[D]The title up a[G]bove
+[A]Should be Georgia [D]Bold
+[D]Twenty-four point [G]size
+[A]Dark blue and [D]bold
+{end_of_verse}
+
+{start_of_chorus}
+[G]Font directives [D]style the [A]page
+[Bm]Making every [G]song a [A]stage
+{end_of_chorus}

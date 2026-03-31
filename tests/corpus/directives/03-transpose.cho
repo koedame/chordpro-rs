@@ -1,0 +1,17 @@
+{title: Transpose Demo}
+{key: C}
+{transpose: 2}
+
+{comment: Original key C, transposed up 2 to D}
+
+{start_of_verse: Verse 1}
+[C]Morning light on [F]fields of [G]gold
+[Am]Stories waiting [F]to be [G]told
+[C]Sing me something [F]warm and [G]true
+[Am]Like the [F]sky is [G]always [C]blue
+{end_of_verse}
+
+{start_of_chorus}
+[F]La la [C]la, [G]la la [Am]la
+[F]La la [G]la la [C]la
+{end_of_chorus}

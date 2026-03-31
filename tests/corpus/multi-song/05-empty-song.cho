@@ -1,0 +1,24 @@
+{title: First Song}
+
+{start_of_verse}
+[G]This is the [C]first song
+[D]It has some [G]content
+{end_of_verse}
+
+{start_of_chorus}
+[C]La la [G]la
+[D]La la [G]la
+{end_of_chorus}
+
+{new_song}
+
+{title: Empty Second Song}
+
+{new_song}
+
+{title: Third Song Has Content}
+
+{start_of_verse}
+[Am]Third song is [Dm]back
+[E]With some real [Am]content
+{end_of_verse}

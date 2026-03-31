@@ -1,0 +1,53 @@
+{title: Multiple Delegate Sections}
+
+{start_of_verse: Verse 1}
+[G]This song has [C]multiple
+[D]Delegate sections [G]embedded
+{end_of_verse}
+
+{comment: ABC notation for the melody}
+{start_of_abc}
+X:1
+T:Main Theme
+M:4/4
+L:1/8
+K:G
+| G2 B2 d2 B2 | A2 c2 e2 c2 |
+| d2 B2 G2 B2 | A4 G4 |
+{end_of_abc}
+
+{start_of_chorus}
+[C]Multiple [G]formats
+[D]In one [G]song
+{end_of_chorus}
+
+{comment: Lilypond for the harmony}
+{start_of_ly}
+\relative c' {
+  \time 4/4
+  \key g \major
+  g4 b d g |
+  fis4 a c fis |
+  e4 d b g |
+  a2 g2 |
+}
+{end_of_ly}
+
+{start_of_verse: Verse 2}
+[G]Mixing delegate [C]types freely
+[D]Each rendered by its [G]own engine
+{end_of_verse}
+
+{comment: SVG decoration}
+{start_of_svg}
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="20">
+  <line x1="0" y1="10" x2="100" y2="10" stroke="black" stroke-width="1"/>
+</svg>
+{end_of_svg}
+
+{start_of_textblock}
+Final Notes:
+This song demonstrates that multiple delegate
+environments can coexist in a single ChordPro file.
+Each is processed by its respective handler.
+{end_of_textblock}

@@ -1,0 +1,23 @@
+{title: Keyboard Chord Definitions}
+
+{define: Am keys 0 3 7}
+{define: C keys 0 4 7}
+{define: Dm keys 2 5 9}
+{define: Em keys 4 7 11}
+{define: F keys 5 9 0}
+{define: G keys 7 11 2}
+{define: Bdim keys 11 2 5}
+
+{start_of_verse}
+[Am]Playing on the [C]piano
+[Dm]Fingers on the [Em]keys
+[F]Melodies are [G]flowing
+[Am]Gentle as the [Bdim]breeze
+{end_of_verse}
+
+{start_of_chorus}
+[C]Ivory and [F]ebony
+[G]Harmony in [Am]time
+[C]Every chord a [F]memory
+[G]Every note [C]divine
+{end_of_chorus}

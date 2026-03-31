@@ -1,0 +1,21 @@
+{title: Chord Definitions}
+
+{define: Am base-fret 1 frets x 0 2 2 1 0}
+{define: Am7 base-fret 1 frets x 0 2 0 1 0}
+{define: Dsus4 base-fret 1 frets x x 0 2 3 3}
+{define: G/B base-fret 1 frets x 2 0 0 0 3}
+{define: Cadd9 base-fret 1 frets x 3 2 0 3 0}
+{define: Em7 base-fret 1 frets 0 2 2 0 3 0}
+{define: Fmaj7 base-fret 1 frets 1 x 2 2 1 0}
+
+{start_of_verse: Verse 1}
+[Am]Sitting in the [Am7]garden
+[Dsus4]Watching clouds drift [G/B]by
+[Cadd9]Flowers in the [Em7]meadow
+[Fmaj7]Underneath a [G]painted sky
+{end_of_verse}
+
+{start_of_chorus}
+[Cadd9]Open up the [Em7]window
+[Fmaj7]Let the [G]breeze come [Am]in
+{end_of_chorus}

@@ -1,0 +1,27 @@
+{title: The Long Road Home}
+{subtitle: A Journey Song}
+{artist: The Wanderers}
+{composer: John Smith}
+{lyricist: Jane Doe}
+{copyright: 2024 Wanderer Records}
+{album: Distant Horizons}
+{year: 2024}
+{key: G}
+{tempo: 120}
+{time: 4/4}
+{capo: 2}
+{duration: 4:35}
+
+{start_of_verse: Verse 1}
+[G]Down the long road [C]home I [D]go
+[G]Through the rain and [C]through the [D]snow
+[Em]Miles and miles of [C]open [D]land
+[G]Nothing but the [C]road and [D]sand
+{end_of_verse}
+
+{start_of_chorus}
+[C]Take me [G]home, take me [D]home
+[Em]I've been [C]gone too [D]long
+[C]Take me [G]home, take me [D]home
+[Em]Where my [C]heart be[G]longs
+{end_of_chorus}

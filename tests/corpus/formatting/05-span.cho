@@ -1,0 +1,15 @@
+{title: Span Markup}
+
+{start_of_verse: Verse 1}
+[G]Roses are <span foreground="red">red</span>
+[C]Violets are <span foreground="blue">blue</span>
+[D]Sugar is <span foreground="white">white</span>
+[G]And so are [C]you
+{end_of_verse}
+
+{start_of_chorus}
+[C]<span foreground="green">Green with envy</span>
+[G]<span foreground="gold">Golden memories</span>
+[D]<span foreground="purple">Purple mountains</span>
+[G]<span foreground="orange">Orange skies</span>
+{end_of_chorus}

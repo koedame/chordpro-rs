@@ -1,0 +1,29 @@
+{title: Directive Selectors}
+
+{textfont-guitar: Courier}
+{textfont-piano: Helvetica}
+{textsize-guitar: 10}
+{textsize-piano: 12}
+{chordcolour-guitar: darkblue}
+{chordcolour-piano: darkgreen}
+
+{comment: Selectors allow instrument-specific or user-specific formatting}
+
+{chordfont-user-beginner: Arial Bold}
+{chordsize-user-beginner: 16}
+{textfont-user-advanced: Times}
+{textsize-user-advanced: 9}
+
+{start_of_verse}
+[G]Selectors let you [C]customize
+[D]Per instrument or [G]user
+[Em]Guitar sees [C]Courier
+[D]Piano sees Helve[G]tica
+{end_of_verse}
+
+{start_of_chorus}
+[C]Different [G]views
+[D]Same [Em]song
+[C]Everyone [G]gets
+[D]What they want [G]along
+{end_of_chorus}
