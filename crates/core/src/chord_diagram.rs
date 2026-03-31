@@ -162,7 +162,7 @@ pub fn render_svg(data: &DiagramData) -> String {
     svg.push_str(&format!(
         "<text x=\"{name_x}\" y=\"15\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"14\" font-weight=\"bold\">{}</text>\n",
-        escape_xml(data.title())
+        crate::escape::escape_xml(data.title())
     ));
 
     // Nut or base-fret indicator
@@ -234,14 +234,6 @@ pub fn render_svg(data: &DiagramData) -> String {
 
     svg.push_str("</svg>");
     svg
-}
-
-/// Escape XML special characters.
-fn escape_xml(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
 }
 
 // ===========================================================================
@@ -351,12 +343,6 @@ mod tests {
         let data = DiagramData::from_raw_infer("G", "frets 0 0 0 0 0").unwrap();
         assert_eq!(data.strings, 5);
         assert_eq!(data.frets, vec![0, 0, 0, 0, 0]);
-    }
-
-    #[test]
-    fn test_escape_xml() {
-        assert_eq!(escape_xml("A&B"), "A&amp;B");
-        assert_eq!(escape_xml("A<B>C"), "A&lt;B&gt;C");
     }
 
     #[test]

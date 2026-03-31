@@ -17,6 +17,7 @@
 
 use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
 use chordpro_core::config::Config;
+use chordpro_core::escape::escape_xml as escape;
 use chordpro_core::inline_markup::{SpanAttributes, TextSpan};
 use chordpro_core::transpose::transpose_chord;
 
@@ -446,22 +447,6 @@ img { max-width: 100%; height: auto; }
 // ---------------------------------------------------------------------------
 // Escape
 // ---------------------------------------------------------------------------
-
-/// Escape HTML special characters.
-fn escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#39;"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
 
 // ---------------------------------------------------------------------------
 // Metadata
@@ -1367,9 +1352,9 @@ mod tests {
     #[test]
     fn test_custom_section_name_single_quotes_escaped() {
         let html = render("{start_of_x' onclick='alert(1)}\ntext\n{end_of_x' onclick='alert(1)}");
-        // The `'` must be escaped to `&#39;` so single-quote attribute boundaries
-        // cannot be broken.
-        assert!(html.contains("&#39;"));
+        // The `'` must be escaped so single-quote attribute boundaries
+        // cannot be broken. Both `&#39;` and `&apos;` are acceptable.
+        assert!(html.contains("&apos;") || html.contains("&#39;"));
         assert!(!html.contains("onclick='alert"));
     }
 
