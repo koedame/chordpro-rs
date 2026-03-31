@@ -1233,13 +1233,13 @@ pub fn parse_image_attributes(input: &str) -> ImageAttributes {
 /// (`key="value with spaces"`). Tokens without an `=` sign are ignored.
 fn split_key_value_pairs(input: &str) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
-    let chars: Vec<char> = input.chars().collect();
-    let len = chars.len();
+    let bytes = input.as_bytes();
+    let len = bytes.len();
     let mut i = 0;
 
     while i < len {
         // Skip whitespace.
-        while i < len && chars[i].is_whitespace() {
+        while i < len && bytes[i].is_ascii_whitespace() {
             i += 1;
         }
         if i >= len {
@@ -1248,15 +1248,15 @@ fn split_key_value_pairs(input: &str) -> Vec<(String, String)> {
 
         // Read key (up to '=' or whitespace).
         let key_start = i;
-        while i < len && chars[i] != '=' && !chars[i].is_whitespace() {
+        while i < len && bytes[i] != b'=' && !bytes[i].is_ascii_whitespace() {
             i += 1;
         }
-        let key: String = chars[key_start..i].iter().collect();
+        let key = &input[key_start..i];
 
-        if i >= len || chars[i] != '=' {
+        if i >= len || bytes[i] != b'=' {
             // No '=' found — skip this token.
             // Advance past any non-whitespace to avoid infinite loop.
-            while i < len && !chars[i].is_whitespace() {
+            while i < len && !bytes[i].is_ascii_whitespace() {
                 i += 1;
             }
             continue;
@@ -1266,14 +1266,14 @@ fn split_key_value_pairs(input: &str) -> Vec<(String, String)> {
         i += 1;
 
         // Read value (possibly quoted).
-        let value = if i < len && chars[i] == '"' {
+        let value = if i < len && bytes[i] == b'"' {
             // Quoted value: read until closing '"'.
             i += 1; // skip opening quote
             let val_start = i;
-            while i < len && chars[i] != '"' {
+            while i < len && bytes[i] != b'"' {
                 i += 1;
             }
-            let val: String = chars[val_start..i].iter().collect();
+            let val = &input[val_start..i];
             if i < len {
                 i += 1; // skip closing quote
             }
@@ -1281,14 +1281,14 @@ fn split_key_value_pairs(input: &str) -> Vec<(String, String)> {
         } else {
             // Unquoted value: read until whitespace.
             let val_start = i;
-            while i < len && !chars[i].is_whitespace() {
+            while i < len && !bytes[i].is_ascii_whitespace() {
                 i += 1;
             }
-            chars[val_start..i].iter().collect()
+            &input[val_start..i]
         };
 
         if !key.is_empty() {
-            pairs.push((key, value));
+            pairs.push((key.to_string(), value.to_string()));
         }
     }
 
