@@ -132,7 +132,7 @@ pub fn invoke_lilypond(ly_content: &str) -> Result<String, String> {
         format!("failed to write temp file: {e}")
     })?;
 
-    // Use -dsafe to disable Lilypond's embedded Scheme interpreter,
+    // Use -dsafe to sandbox Lilypond's embedded Scheme interpreter,
     // preventing arbitrary code execution from untrusted .cho files.
     let result = Command::new("lilypond")
         .arg("-dsafe")
