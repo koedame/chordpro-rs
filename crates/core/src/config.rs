@@ -337,8 +337,35 @@ fn build_nested_value(key: &str, value: Value) -> Option<Value> {
     Some(result)
 }
 
+/// Maximum config file size (10 MB). Files larger than this are rejected
+/// to prevent accidental OOM from device files or very large inputs.
+const MAX_CONFIG_FILE_SIZE: u64 = 10 * 1024 * 1024;
+
 /// Read a file to a String, returning None if it doesn't exist or can't be read.
+///
+/// Rejects files that are symlinks or exceed [`MAX_CONFIG_FILE_SIZE`], emitting
+/// a warning to stderr in either case.
 fn read_file_if_exists(path: &Path) -> Option<String> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(_) => return None,
+    };
+
+    if metadata.file_type().is_symlink() {
+        eprintln!("warning: skipping config file {} (symlink)", path.display());
+        return None;
+    }
+
+    if metadata.len() > MAX_CONFIG_FILE_SIZE {
+        eprintln!(
+            "warning: skipping config file {} (size {} exceeds {} byte limit)",
+            path.display(),
+            metadata.len(),
+            MAX_CONFIG_FILE_SIZE
+        );
+        return None;
+    }
+
     std::fs::read_to_string(path).ok()
 }
 
@@ -861,6 +888,46 @@ mod tests {
 
         let config = Config::resolve(file_path.to_str().unwrap()).unwrap();
         assert_eq!(config.get("custom"), &Value::Bool(true));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // -- File size / symlink guard tests --------------------------------------
+
+    #[test]
+    fn test_read_file_if_exists_normal_file() {
+        let dir = std::env::temp_dir().join("chordpro_test_read_normal");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file_path = dir.join("config.json");
+        std::fs::write(&file_path, r#"{"key": "value"}"#).unwrap();
+
+        let result = read_file_if_exists(&file_path);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("key"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_read_file_if_exists_nonexistent() {
+        let result = read_file_if_exists(Path::new("/nonexistent/path/config.json"));
+        assert!(result.is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_read_file_if_exists_rejects_symlink() {
+        let dir = std::env::temp_dir().join("chordpro_test_symlink");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let real_file = dir.join("real.json");
+        let link_path = dir.join("link.json");
+        std::fs::write(&real_file, r#"{"key": "value"}"#).unwrap();
+        std::os::unix::fs::symlink(&real_file, &link_path).unwrap();
+
+        let result = read_file_if_exists(&link_path);
+        assert!(result.is_none(), "symlink should be rejected");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
