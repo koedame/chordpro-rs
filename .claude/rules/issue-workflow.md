@@ -53,6 +53,23 @@ Before closing a phase tracking issue, perform the following review against
 5. Only when both `/review` and `/security-review` pass with no new sub-issues
    may the phase tracking issue be closed.
 
+### Review Finding Accountability
+
+All review findings — regardless of severity (Major, Minor, Nit, Low,
+Informational) — must be:
+
+1. **Individually documented** in the review comment on the tracking issue or PR,
+   with a clear description of each finding.
+2. **Resolved or tracked** before the phase or PR is closed:
+   - **Fixed** in the current cycle, or
+   - **Issue created** for deferred items (with a link in the review comment).
+3. **Never silently dropped.** Aggregate counts like "14 Low findings" without
+   enumeration are not acceptable. Every finding must be enumerable and
+   traceable.
+
+Non-blocking findings (Nit, Low) may be deferred to future work, but a GitHub
+Issue must exist for each deferred finding so it is not lost.
+
 ### Creating Sub-Issue Relationships
 
 ```bash
