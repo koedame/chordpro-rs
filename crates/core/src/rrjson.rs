@@ -312,6 +312,10 @@ impl<'a> Parser<'a> {
             }
 
             let value = self.parse_value()?;
+            let dot_segments = key.chars().filter(|&c| c == '.').count();
+            if dot_segments >= MAX_NESTING_DEPTH {
+                return Err(self.error("dotted key exceeds maximum nesting depth"));
+            }
             self.insert_dotted_key(&mut entries, &key, value);
 
             self.skip_ws_and_comments();
@@ -542,6 +546,10 @@ impl<'a> Parser<'a> {
             }
 
             let value = self.parse_value()?;
+            let dot_segments = key.chars().filter(|&c| c == '.').count();
+            if dot_segments >= MAX_NESTING_DEPTH {
+                return Err(self.error("dotted key exceeds maximum nesting depth"));
+            }
             self.insert_dotted_key(&mut entries, &key, value);
 
             // Optional separator (comma, semicolon, or newline-separated)
@@ -895,5 +903,31 @@ mod tests {
         }
         let result = parse_rrjson(&input);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dotted_key_exceeding_depth_is_rejected() {
+        // Build a dotted key with MAX_NESTING_DEPTH dots (= MAX_NESTING_DEPTH + 1 segments).
+        let segments: Vec<String> = (0..=MAX_NESTING_DEPTH).map(|i| format!("k{i}")).collect();
+        let deep_key = segments.join(".");
+        let input = format!("{deep_key} = 1");
+        let result = parse_rrjson(&input);
+        assert!(
+            result.is_err(),
+            "dotted key exceeding depth limit should fail"
+        );
+    }
+
+    #[test]
+    fn test_dotted_key_at_limit_is_accepted() {
+        // MAX_NESTING_DEPTH - 1 dots = MAX_NESTING_DEPTH segments — should be accepted.
+        let segments: Vec<String> = (0..MAX_NESTING_DEPTH).map(|i| format!("k{i}")).collect();
+        let deep_key = segments.join(".");
+        let input = format!("{deep_key} = 1");
+        let result = parse_rrjson(&input);
+        assert!(
+            result.is_ok(),
+            "dotted key at depth limit should be accepted"
+        );
     }
 }
