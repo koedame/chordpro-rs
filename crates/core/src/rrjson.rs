@@ -446,9 +446,71 @@ impl<'a> Parser<'a> {
             Some('t') => Ok('\t'),
             Some('b') => Ok('\u{08}'),
             Some('f') => Ok('\u{0C}'),
+            Some('u') => self.parse_unicode_escape(),
             Some(c) => Err(self.error(&format!("invalid escape character '{c}'"))),
             None => Err(self.error("unterminated escape sequence")),
         }
+    }
+
+    /// Parses a `\uXXXX` Unicode escape sequence. Handles surrogate pairs
+    /// (`\uD800`–`\uDBFF` followed by `\uDC00`–`\uDFFF`).
+    fn parse_unicode_escape(&mut self) -> Result<char, ParseError> {
+        let high = self.parse_hex4()?;
+
+        // Check for high surrogate (U+D800..U+DBFF)
+        if (0xD800..=0xDBFF).contains(&high) {
+            // Expect a low surrogate: \uDC00..\uDFFF
+            if self.peek() != Some('\\') {
+                return Err(self.error("expected low surrogate pair after high surrogate"));
+            }
+            self.advance(); // consume '\'
+            if self.peek() != Some('u') {
+                return Err(self.error("expected low surrogate pair after high surrogate"));
+            }
+            self.advance(); // consume 'u'
+
+            let low = self.parse_hex4()?;
+            if !(0xDC00..=0xDFFF).contains(&low) {
+                return Err(self.error(&format!(
+                    "invalid low surrogate U+{low:04X}, expected U+DC00..U+DFFF"
+                )));
+            }
+
+            let code_point = 0x10000 + ((high as u32 - 0xD800) << 10) + (low as u32 - 0xDC00);
+            char::from_u32(code_point).ok_or_else(|| {
+                self.error(&format!("invalid Unicode code point U+{code_point:04X}"))
+            })
+        } else if (0xDC00..=0xDFFF).contains(&high) {
+            Err(self.error(&format!(
+                "unexpected low surrogate U+{high:04X} without preceding high surrogate"
+            )))
+        } else {
+            char::from_u32(high as u32)
+                .ok_or_else(|| self.error(&format!("invalid Unicode code point U+{high:04X}")))
+        }
+    }
+
+    /// Reads exactly 4 hex digits and returns the value as a `u16`.
+    fn parse_hex4(&mut self) -> Result<u16, ParseError> {
+        let mut value: u16 = 0;
+        for i in 0..4 {
+            match self.advance() {
+                Some(c) if c.is_ascii_hexdigit() => {
+                    let digit = c.to_digit(16).expect("validated by is_ascii_hexdigit") as u16;
+                    value = value << 4 | digit;
+                }
+                Some(c) => {
+                    return Err(self.error(&format!(
+                        "invalid hex digit '{c}' in Unicode escape (digit {}/4)",
+                        i + 1
+                    )));
+                }
+                None => {
+                    return Err(self.error("unterminated Unicode escape sequence"));
+                }
+            }
+        }
+        Ok(value)
     }
 
     fn parse_number(&mut self) -> Result<Value, ParseError> {
@@ -724,6 +786,136 @@ mod tests {
     fn test_escape_sequences() {
         let v = parse_rrjson(r#"{"s": "a\nb\tc"}"#).unwrap();
         assert_eq!(v["s"], Value::String("a\nb\tc".to_string()));
+    }
+
+    // -- Unicode escape sequences (\uXXXX) ------------------------------------
+
+    #[test]
+    fn test_unicode_escape_basic_bmp() {
+        // \u00E9 = é (Latin Small Letter E with Acute)
+        let v = parse_rrjson(r#"{"s": "\u00E9"}"#).unwrap();
+        assert_eq!(v["s"], Value::String("é".to_string()));
+    }
+
+    #[test]
+    fn test_unicode_escape_lowercase_hex() {
+        let v = parse_rrjson(r#"{"s": "\u00e9"}"#).unwrap();
+        assert_eq!(v["s"], Value::String("é".to_string()));
+    }
+
+    #[test]
+    fn test_unicode_escape_ascii_range() {
+        // \u0041 = 'A'
+        let v = parse_rrjson(r#"{"s": "\u0041\u0042\u0043"}"#).unwrap();
+        assert_eq!(v["s"], Value::String("ABC".to_string()));
+    }
+
+    #[test]
+    fn test_unicode_escape_cjk() {
+        // \u4E16 = 世, \u754C = 界
+        let v = parse_rrjson(r#"{"s": "\u4E16\u754C"}"#).unwrap();
+        assert_eq!(v["s"], Value::String("世界".to_string()));
+    }
+
+    #[test]
+    fn test_unicode_escape_surrogate_pair() {
+        // U+1F600 (😀) encoded as surrogate pair: \uD83D\uDE00
+        let v = parse_rrjson(r#"{"s": "\uD83D\uDE00"}"#).unwrap();
+        assert_eq!(v["s"], Value::String("😀".to_string()));
+    }
+
+    #[test]
+    fn test_unicode_escape_surrogate_pair_musical_symbol() {
+        // U+1D11E (𝄞 Musical Symbol G Clef) = \uD834\uDD1E
+        let v = parse_rrjson(r#"{"s": "\uD834\uDD1E"}"#).unwrap();
+        assert_eq!(v["s"], Value::String("𝄞".to_string()));
+    }
+
+    #[test]
+    fn test_unicode_escape_mixed_with_text() {
+        let v = parse_rrjson(r#"{"s": "caf\u00E9 \u2603 snow"}"#).unwrap();
+        assert_eq!(v["s"], Value::String("café ☃ snow".to_string()));
+    }
+
+    #[test]
+    fn test_unicode_escape_null_char() {
+        // \u0000 is a valid Unicode escape
+        let v = parse_rrjson(r#"{"s": "\u0000"}"#).unwrap();
+        assert_eq!(v["s"], Value::String("\0".to_string()));
+    }
+
+    #[test]
+    fn test_unicode_escape_in_single_quoted_string() {
+        let v = parse_rrjson(r"{'s': '\u00E9'}").unwrap();
+        assert_eq!(v["s"], Value::String("é".to_string()));
+    }
+
+    #[test]
+    fn test_unicode_escape_incomplete_hex() {
+        let result = parse_rrjson(r#"{"s": "\u00E"}"#);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("hex digit"),
+            "expected hex digit error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_unicode_escape_non_hex_chars() {
+        let result = parse_rrjson(r#"{"s": "\u00GG"}"#);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("hex digit"),
+            "expected hex digit error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_unicode_escape_truncated() {
+        let result = parse_rrjson(r#"{"s": "\u00"#);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("unterminated"),
+            "expected unterminated error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_unicode_escape_lone_high_surrogate() {
+        // \uD83D without a following \uDExx
+        let result = parse_rrjson(r#"{"s": "\uD83D"}"#);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("surrogate"),
+            "expected surrogate error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_unicode_escape_lone_low_surrogate() {
+        let result = parse_rrjson(r#"{"s": "\uDE00"}"#);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("surrogate"),
+            "expected surrogate error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_unicode_escape_invalid_low_surrogate() {
+        // High surrogate followed by non-surrogate \u
+        let result = parse_rrjson(r#"{"s": "\uD83D\u0041"}"#);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("surrogate"),
+            "expected surrogate error, got: {err}"
+        );
     }
 
     // -- Relaxed JSON ---------------------------------------------------------
