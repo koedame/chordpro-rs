@@ -926,4 +926,17 @@ mod delegate_tests {
         // "test" = 4, "G" = 1 → pad chord by 3
         assert_eq!(output, "Am        G\nhello世界 test\n");
     }
+
+    #[test]
+    fn test_render_decomposed_diacritics_alignment() {
+        // "e\u{0301}" is a decomposed e-acute (U+0065 + U+0301 combining acute).
+        // The combining character has zero display width, so the word "cafe\u{0301}"
+        // should have the same display width (4 columns) as "cafe".
+        // This should produce identical alignment to composed "café".
+        let input = "[Em]cafe\u{0301} [D]world";
+        let output = render(input);
+        // "cafe\u{0301} " = 5 display columns (4 + 0 + 1), "Em" = 2 → pad chord by 3
+        // Matches composed form: "[Em]café [D]résumé" → "Em   D"
+        assert_eq!(output, "Em   D\ncafe\u{0301} world\n");
+    }
 }
