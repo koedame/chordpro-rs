@@ -536,13 +536,21 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            // Skip "include" directives (just consume the line)
+            // Skip "include" directives (not yet supported — warn and consume the line)
             if self.input[self.pos..].starts_with("include") {
-                if let Some(end) = self.input[self.pos..].find('\n') {
+                let (line, col) = self.line_col();
+                let directive_line = if let Some(end) = self.input[self.pos..].find('\n') {
+                    let line_text = self.input[self.pos..self.pos + end].trim();
                     self.pos += end + 1;
+                    line_text.to_string()
                 } else {
+                    let line_text = self.input[self.pos..].trim().to_string();
                     self.pos = self.input.len();
-                }
+                    line_text
+                };
+                eprintln!(
+                    "warning: RRJSON include directives are not supported (line {line} column {col}): {directive_line}"
+                );
                 continue;
             }
 
