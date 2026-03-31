@@ -745,7 +745,12 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
 fn clamp_to_printable_area(w: f32, h: f32, max_w: f32, max_h: f32, aspect: f32) -> (f32, f32) {
     if w > max_w {
         let clamped_h = max_w / aspect;
-        (max_w, clamped_h.min(max_h))
+        if clamped_h > max_h {
+            let clamped_w = (max_h * aspect).min(max_w);
+            (clamped_w, max_h)
+        } else {
+            (max_w, clamped_h)
+        }
     } else if h > max_h {
         let clamped_w = (max_h * aspect).min(max_w);
         (clamped_w, clamped_w / aspect)
@@ -3172,6 +3177,17 @@ mod jpeg_tests {
         assert!(w <= 500.0, "width {} must not exceed max_w 500", w);
         assert!((w - 500.0).abs() < 0.01);
         assert!((h - 125.0).abs() < 0.01); // 500 / 4.0
+    }
+
+    #[test]
+    fn test_clamp_to_printable_width_exceeds_then_height_reclamps() {
+        // Square image (aspect=1.0) in a very short printable area.
+        // Width-clamping branch fires first (2000 > 500), computing
+        // clamped_h = 500/1.0 = 500, but max_h is only 50.
+        // Height must be clamped to 50, then width re-adjusted to 50.
+        let (w, h) = clamp_to_printable_area(2000.0, 2000.0, 500.0, 50.0, 1.0);
+        assert!((w - 50.0).abs() < 0.01, "width {} should be 50.0", w);
+        assert!((h - 50.0).abs() < 0.01, "height {} should be 50.0", h);
     }
 
     #[test]
