@@ -399,6 +399,7 @@ fn escape(s: &str) -> String {
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
             _ => out.push(c),
         }
     }
@@ -945,6 +946,15 @@ mod tests {
         // The `"` must be escaped to `&quot;` so the attribute boundary is not broken.
         assert!(html.contains("&quot;"));
         assert!(!html.contains("class=\"section-x\""));
+    }
+
+    #[test]
+    fn test_custom_section_name_single_quotes_escaped() {
+        let html = render("{start_of_x' onclick='alert(1)}\ntext\n{end_of_x' onclick='alert(1)}");
+        // The `'` must be escaped to `&#39;` so single-quote attribute boundaries
+        // cannot be broken.
+        assert!(html.contains("&#39;"));
+        assert!(!html.contains("onclick='alert"));
     }
 }
 
