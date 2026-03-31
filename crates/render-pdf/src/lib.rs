@@ -2669,6 +2669,38 @@ mod jpeg_tests {
         assert!(!is_safe_image_path("sub/../../../photo.jpg"));
     }
 
+    #[test]
+    fn test_safe_image_path_windows_style_strings() {
+        // Platform-agnostic string checks for Windows-style paths.
+        // On Unix, `Path::is_absolute()` doesn't flag `C:\` as absolute,
+        // but `C:\` starts with a prefix that std::path::Component::Prefix
+        // detects on Windows. We test the string patterns here to ensure
+        // coverage regardless of platform.
+
+        // Backslash-separated relative paths: allowed (treated as a single
+        // filename component on Unix, or valid relative on Windows).
+        assert!(is_safe_image_path(r"images\photo.jpg"));
+
+        // Unix-style absolute path with leading slash: always rejected.
+        assert!(!is_safe_image_path("/images/photo.jpg"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_safe_image_path_windows_absolute_rejected() {
+        // These are absolute on Windows and should be rejected there.
+        assert!(!is_safe_image_path(r"C:\photo.jpg"));
+        assert!(!is_safe_image_path(r"D:\Users\photo.jpg"));
+        assert!(!is_safe_image_path(r"\\server\share\photo.jpg"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_safe_image_path_windows_traversal_rejected() {
+        assert!(!is_safe_image_path(r"..\photo.jpg"));
+        assert!(!is_safe_image_path(r"images\..\..\photo.jpg"));
+    }
+
     #[cfg(unix)]
     #[test]
     fn test_symlink_image_is_rejected() {

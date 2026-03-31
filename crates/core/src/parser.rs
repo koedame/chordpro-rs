@@ -3201,6 +3201,32 @@ mod tests {
         let pairs = super::split_key_value_pairs("");
         assert!(pairs.is_empty());
     }
+
+    #[test]
+    fn split_key_value_pairs_unterminated_quote() {
+        // Unterminated quote: value should be everything after the opening quote.
+        let pairs = super::split_key_value_pairs(r#"key="hello world"#);
+        assert_eq!(pairs, vec![("key".to_string(), "hello world".to_string())]);
+    }
+
+    #[test]
+    fn parse_image_attributes_unterminated_quoted_title() {
+        // From issue #288 (M5): unterminated quoted value should be accepted
+        // gracefully — the value is everything from the opening quote to EOI.
+        let attrs = super::parse_image_attributes(r#"src=photo.jpg title="My Album"#);
+        assert_eq!(attrs.src, "photo.jpg");
+        assert_eq!(attrs.title.as_deref(), Some("My Album"));
+    }
+
+    #[test]
+    fn parse_image_attributes_unterminated_quote_with_trailing_attrs() {
+        // When a quote is not terminated, all remaining text becomes the value.
+        let attrs = super::parse_image_attributes(r#"src=photo.jpg title="My Album width=100"#);
+        assert_eq!(attrs.src, "photo.jpg");
+        assert_eq!(attrs.title.as_deref(), Some("My Album width=100"));
+        // width should NOT be parsed since it was consumed as part of the title.
+        assert!(attrs.width.is_none());
+    }
 }
 
 #[cfg(test)]
