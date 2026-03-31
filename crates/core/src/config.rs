@@ -189,8 +189,11 @@ impl Config {
             })
             .unwrap_or_else(|| Value::String(raw_value.to_string()));
 
-        // Build a nested object from the dot-separated key
-        let overlay = build_nested_value(key, value);
+        // Build a nested object from the dot-separated key.
+        // If the key exceeds the nesting depth limit, ignore the define.
+        let Some(overlay) = build_nested_value(key, value) else {
+            return self;
+        };
         Config {
             root: deep_merge(self.root, overlay),
         }
@@ -248,17 +251,27 @@ impl Config {
     }
 }
 
+/// Maximum nesting depth for dotted keys in `--define` flags.
+///
+/// Matches the limit used by the RRJSON parser for structural nesting.
+const MAX_DEFINE_DEPTH: usize = 64;
+
 /// Build a nested `Value::Object` from a dot-separated key and a leaf value.
 ///
 /// For example, `build_nested_value("a.b.c", Number(42))` produces:
 /// `{"a": {"b": {"c": 42}}}`
-fn build_nested_value(key: &str, value: Value) -> Value {
+///
+/// Returns `None` if the key has more than [`MAX_DEFINE_DEPTH`] segments.
+fn build_nested_value(key: &str, value: Value) -> Option<Value> {
     let segments: Vec<&str> = key.split('.').collect();
+    if segments.len() > MAX_DEFINE_DEPTH {
+        return None;
+    }
     let mut result = value;
     for segment in segments.into_iter().rev() {
         result = Value::Object(vec![(segment.to_string(), result)]);
     }
-    result
+    Some(result)
 }
 
 /// Read a file to a String, returning None if it doesn't exist or can't be read.
@@ -574,6 +587,25 @@ mod tests {
             .with_define("a=3");
         assert_eq!(config.get("a"), &Value::Number(3.0));
         assert_eq!(config.get("b"), &Value::Number(2.0));
+    }
+
+    #[test]
+    fn test_define_excessive_depth_rejected() {
+        // A dotted key with more than MAX_DEFINE_DEPTH segments should be ignored.
+        let segments: Vec<String> = (0..=MAX_DEFINE_DEPTH).map(|i| format!("k{i}")).collect();
+        let deep_key = segments.join(".");
+        let config = Config::empty().with_define(&format!("{deep_key}=1"));
+        // The define should have been silently ignored
+        assert!(config.get("k0").is_null());
+    }
+
+    #[test]
+    fn test_define_at_max_depth_accepted() {
+        // Exactly MAX_DEFINE_DEPTH segments should be accepted.
+        let segments: Vec<String> = (0..MAX_DEFINE_DEPTH).map(|i| format!("k{i}")).collect();
+        let key = segments.join(".");
+        let config = Config::empty().with_define(&format!("{key}=42"));
+        assert!(!config.get("k0").is_null());
     }
 
     // -- Preset tests ---------------------------------------------------------
