@@ -1213,6 +1213,12 @@ mod transpose_tests {
         assert!(html.contains("break-before: page;"));
     }
 
+    #[test]
+    fn test_new_physical_page_generates_page_break() {
+        let html = render("Page 1\n{new_physical_page}\nPage 2");
+        assert!(html.contains("break-before: page;"));
+    }
+
     // -- image directive tests ------------------------------------------------
 
     #[test]
