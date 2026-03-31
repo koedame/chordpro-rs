@@ -470,7 +470,7 @@ fn render_lyrics(
             } else {
                 html.push_str(&format!(
                     "<span class=\"chord\" style=\"{}\">{}</span>",
-                    escape(&chord_css),
+                    chord_css,
                     escape(&display_name)
                 ));
             }
@@ -483,10 +483,7 @@ fn render_lyrics(
         if text_css.is_empty() {
             html.push_str("<span class=\"lyrics\">");
         } else {
-            html.push_str(&format!(
-                "<span class=\"lyrics\" style=\"{}\">",
-                escape(&text_css)
-            ));
+            html.push_str(&format!("<span class=\"lyrics\" style=\"{}\">", text_css));
         }
         if segment.has_markup() {
             render_spans(&segment.spans, html);
