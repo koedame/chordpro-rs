@@ -92,6 +92,30 @@ impl SelectorContext {
     pub fn matches_directive(&self, directive: &crate::ast::Directive) -> bool {
         self.matches(directive.selector.as_deref())
     }
+
+    /// Filter a song's lines, removing directives whose selectors don't match.
+    ///
+    /// Non-directive lines (lyrics, comments, empty) are always kept.
+    /// Directives without selectors are always kept.
+    /// Directives with non-matching selectors are removed.
+    ///
+    /// Returns a new [`Song`](crate::ast::Song) with filtered lines.
+    #[must_use]
+    pub fn filter_song(&self, song: &crate::ast::Song) -> crate::ast::Song {
+        let filtered_lines = song
+            .lines
+            .iter()
+            .filter(|line| match line {
+                crate::ast::Line::Directive(d) => self.matches_directive(d),
+                _ => true,
+            })
+            .cloned()
+            .collect();
+        crate::ast::Song {
+            metadata: song.metadata.clone(),
+            lines: filtered_lines,
+        }
+    }
 }
 
 // ===========================================================================
@@ -207,5 +231,72 @@ mod tests {
             selector: Some("piano".to_string()),
         };
         assert!(!ctx.matches_directive(&directive));
+    }
+
+    // -- filter_song tests ----------------------------------------------------
+
+    #[test]
+    fn test_filter_song_keeps_matching_directives() {
+        let song = crate::parse("{textfont-guitar: Courier}\nLyrics").unwrap();
+        let ctx = SelectorContext::new(Some("guitar"), None);
+        let filtered = ctx.filter_song(&song);
+        // The directive should be kept
+        let has_directive = filtered
+            .lines
+            .iter()
+            .any(|l| matches!(l, crate::ast::Line::Directive(_)));
+        assert!(has_directive);
+    }
+
+    #[test]
+    fn test_filter_song_removes_non_matching_directives() {
+        let song = crate::parse("{textfont-piano: Courier}\nLyrics").unwrap();
+        let ctx = SelectorContext::new(Some("guitar"), None);
+        let filtered = ctx.filter_song(&song);
+        // The piano directive should be removed
+        let has_directive = filtered
+            .lines
+            .iter()
+            .any(|l| matches!(l, crate::ast::Line::Directive(_)));
+        assert!(!has_directive);
+    }
+
+    #[test]
+    fn test_filter_song_keeps_unselectored_directives() {
+        let song = crate::parse("{textfont: Courier}\nLyrics").unwrap();
+        let ctx = SelectorContext::new(Some("guitar"), None);
+        let filtered = ctx.filter_song(&song);
+        let has_directive = filtered
+            .lines
+            .iter()
+            .any(|l| matches!(l, crate::ast::Line::Directive(_)));
+        assert!(has_directive);
+    }
+
+    #[test]
+    fn test_filter_song_keeps_lyrics_and_comments() {
+        let song = crate::parse("{textfont-piano: Courier}\nLyrics\n{comment: Note}").unwrap();
+        let ctx = SelectorContext::new(Some("guitar"), None);
+        let filtered = ctx.filter_song(&song);
+        let has_lyrics = filtered
+            .lines
+            .iter()
+            .any(|l| matches!(l, crate::ast::Line::Lyrics(_)));
+        assert!(has_lyrics);
+    }
+
+    #[test]
+    fn test_filter_song_mixed_selectors() {
+        let input = "{textfont-guitar: Courier}\n{textfont-piano: Times}\n[Am]Hello";
+        let song = crate::parse(input).unwrap();
+        let ctx = SelectorContext::new(Some("guitar"), None);
+        let filtered = ctx.filter_song(&song);
+        // Should have guitar directive but not piano
+        let directive_count = filtered
+            .lines
+            .iter()
+            .filter(|l| matches!(l, crate::ast::Line::Directive(_)))
+            .count();
+        assert_eq!(directive_count, 1);
     }
 }
