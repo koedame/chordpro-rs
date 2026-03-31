@@ -559,6 +559,64 @@ fn is_safe_image_path(path: &str) -> bool {
     true
 }
 
+/// Read an image file, rejecting symlinks and files exceeding
+/// [`MAX_IMAGE_FILE_SIZE`].
+///
+/// On Unix the file is opened with `O_NOFOLLOW` so that opening a symlink
+/// fails with `ELOOP`, and the size is checked via `fstat` on the open file
+/// descriptor.  This eliminates the TOCTOU window that would exist if
+/// `symlink_metadata` and `read` were separate operations on the path.
+///
+/// On non-Unix platforms, the function falls back to `symlink_metadata`
+/// followed by `std::fs::read`, which has a theoretical race window but is
+/// the best available option.
+fn read_image_file(path: &str) -> Option<Vec<u8>> {
+    #[cfg(unix)]
+    {
+        use std::io::Read;
+        use std::os::unix::fs::OpenOptionsExt;
+
+        // O_NOFOLLOW: the open call itself fails if path is a symlink.
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)
+            .ok()?;
+
+        // fstat on the fd — no TOCTOU with the open above.
+        let meta = file.metadata().ok()?;
+        if meta.len() > MAX_IMAGE_FILE_SIZE {
+            return None;
+        }
+
+        let mut buf = Vec::with_capacity(meta.len() as usize);
+        file.read_to_end(&mut buf).ok()?;
+
+        // Belt-and-suspenders: verify actual bytes read.
+        if buf.len() as u64 > MAX_IMAGE_FILE_SIZE {
+            return None;
+        }
+        Some(buf)
+    }
+
+    #[cfg(not(unix))]
+    {
+        // Fallback: symlink_metadata + read (has a theoretical TOCTOU gap).
+        let meta = std::fs::symlink_metadata(path).ok()?;
+        if meta.file_type().is_symlink() {
+            return None;
+        }
+        if meta.len() > MAX_IMAGE_FILE_SIZE {
+            return None;
+        }
+        let data = std::fs::read(path).ok()?;
+        if data.len() as u64 > MAX_IMAGE_FILE_SIZE {
+            return None;
+        }
+        Some(data)
+    }
+}
+
 /// Render an `{image}` directive by embedding a JPEG file into the PDF.
 ///
 /// Only JPEG files (`.jpg` / `.jpeg` extension) are supported. If the file
@@ -580,32 +638,14 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
         return;
     }
 
-    // Reject symbolic links to prevent symlink-based path traversal.
-    // Use symlink_metadata (lstat) so we inspect the link itself, not its
-    // target.
-    let meta = match std::fs::symlink_metadata(&attrs.src) {
-        Ok(m) => m,
-        Err(_) => return,
+    // Read the image file, rejecting symlinks and oversized files.
+    // On Unix, we use O_NOFOLLOW to atomically prevent symlink traversal,
+    // then fstat the fd for size — eliminating the TOCTOU window between
+    // the symlink check and the read.
+    let data = match read_image_file(&attrs.src) {
+        Some(d) => d,
+        None => return,
     };
-    if meta.file_type().is_symlink() {
-        return;
-    }
-
-    // Check file size before reading to avoid excessive memory allocation.
-    if meta.len() > MAX_IMAGE_FILE_SIZE {
-        return;
-    }
-
-    let data = match std::fs::read(&attrs.src) {
-        Ok(d) => d,
-        Err(_) => return,
-    };
-
-    // Re-check the actual data length after reading to close the TOCTOU gap
-    // between the metadata size check and the read.
-    if data.len() as u64 > MAX_IMAGE_FILE_SIZE {
-        return;
-    }
 
     let (pixel_w, pixel_h) = match parse_jpeg_dimensions(&data) {
         Some(dims) => dims,
