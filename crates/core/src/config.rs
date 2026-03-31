@@ -759,4 +759,109 @@ mod tests {
             _ => panic!("tuning should be an array"),
         }
     }
+
+    #[test]
+    fn test_define_empty_value() {
+        let config = Config::empty().with_define("key=");
+        assert_eq!(config.get("key"), &Value::String(String::new()));
+    }
+
+    // -- Integration tests for Config::load() with actual files ---------------
+
+    #[test]
+    fn test_load_project_config() {
+        let dir = std::env::temp_dir().join("chordpro_test_load_project");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("chordpro.json"),
+            r#"{ "settings": { "columns": 3 } }"#,
+        )
+        .unwrap();
+
+        let config = Config::load(Some(dir.to_str().unwrap()), None);
+        assert_eq!(config.get_path("settings.columns"), &Value::Number(3.0));
+        // Defaults should still be present for non-overridden keys
+        assert_eq!(config.get_path("pdf.margins.top"), &Value::Number(56.0));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_load_song_config() {
+        let dir = std::env::temp_dir().join("chordpro_test_load_song");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let song_path = dir.join("song.json");
+        std::fs::write(&song_path, r#"{ "pdf": { "papersize": "letter" } }"#).unwrap();
+
+        let config = Config::load(None, Some(song_path.to_str().unwrap()));
+        assert_eq!(
+            config.get_path("pdf.papersize"),
+            &Value::String("letter".to_string())
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_load_project_and_song_merge_precedence() {
+        let project_dir = std::env::temp_dir().join("chordpro_test_merge_prec_proj");
+        let song_dir = std::env::temp_dir().join("chordpro_test_merge_prec_song");
+        let _ = std::fs::remove_dir_all(&project_dir);
+        let _ = std::fs::remove_dir_all(&song_dir);
+        std::fs::create_dir_all(&project_dir).unwrap();
+        std::fs::create_dir_all(&song_dir).unwrap();
+
+        // Project sets columns=2 and transpose=5
+        std::fs::write(
+            project_dir.join("chordpro.json"),
+            r#"{ "settings": { "columns": 2, "transpose": 5 } }"#,
+        )
+        .unwrap();
+
+        // Song overrides columns=4
+        let song_path = song_dir.join("song.json");
+        std::fs::write(&song_path, r#"{ "settings": { "columns": 4 } }"#).unwrap();
+
+        let config = Config::load(
+            Some(project_dir.to_str().unwrap()),
+            Some(song_path.to_str().unwrap()),
+        );
+        // Song overrides project
+        assert_eq!(config.get_path("settings.columns"), &Value::Number(4.0));
+        // Project setting not overridden by song
+        assert_eq!(config.get_path("settings.transpose"), &Value::Number(5.0));
+
+        let _ = std::fs::remove_dir_all(&project_dir);
+        let _ = std::fs::remove_dir_all(&song_dir);
+    }
+
+    #[test]
+    fn test_load_invalid_project_config_continues() {
+        let dir = std::env::temp_dir().join("chordpro_test_invalid_config");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("chordpro.json"), "{ invalid json !!!").unwrap();
+
+        // Should not panic; defaults are still loaded
+        let config = Config::load(Some(dir.to_str().unwrap()), None);
+        assert!(!config.get("pdf").is_null());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_resolve_from_temp_file() {
+        let dir = std::env::temp_dir().join("chordpro_test_resolve_file");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file_path = dir.join("custom.json");
+        std::fs::write(&file_path, r#"{ "custom": true }"#).unwrap();
+
+        let config = Config::resolve(file_path.to_str().unwrap()).unwrap();
+        assert_eq!(config.get("custom"), &Value::Bool(true));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
