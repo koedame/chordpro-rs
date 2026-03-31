@@ -62,29 +62,31 @@ impl Song {
         }
     }
 
-    /// Resolves `{define}` display attributes and applies them to matching chords.
+    /// Resolves `{define}` display and format attributes to matching chords.
     ///
-    /// Scans all `{define}` directives in the song, collecting any `display`
-    /// overrides. Then walks every chord in the song and sets `Chord::display`
-    /// for chords whose name matches a definition with a display attribute.
+    /// Scans all `{define}` directives in the song, collecting `display` and
+    /// `format` overrides. Then walks every chord in the song and sets
+    /// `Chord::display`:
+    /// - `display` takes precedence (used as-is).
+    /// - `format` is expanded using the chord's parsed components.
     ///
     /// Later definitions override earlier ones for the same chord name.
     pub fn apply_define_displays(&mut self) {
-        // First pass: collect chord name -> display mappings from {define} directives.
-        let mut display_map: Vec<(String, String)> = Vec::new();
+        // First pass: collect chord name -> (display, format) mappings.
+        let mut define_map: Vec<(String, Option<String>, Option<String>)> = Vec::new();
         for line in &self.lines {
             if let Line::Directive(directive) = line {
                 if directive.kind == DirectiveKind::Define {
                     if let Some(ref value) = directive.value {
                         let def = ChordDefinition::parse_value(value);
-                        if let Some(display) = def.display {
-                            // Later definitions override earlier ones.
+                        if def.display.is_some() || def.format.is_some() {
                             if let Some(entry) =
-                                display_map.iter_mut().find(|(n, _)| *n == def.name)
+                                define_map.iter_mut().find(|(n, _, _)| *n == def.name)
                             {
-                                entry.1 = display;
+                                entry.1 = def.display;
+                                entry.2 = def.format;
                             } else {
-                                display_map.push((def.name, display));
+                                define_map.push((def.name, def.display, def.format));
                             }
                         }
                     }
@@ -92,20 +94,28 @@ impl Song {
             }
         }
 
-        if display_map.is_empty() {
+        if define_map.is_empty() {
             return;
         }
 
-        // Second pass: apply display overrides to matching chords.
+        // Second pass: apply display/format overrides to matching chords.
         for line in &mut self.lines {
             if let Line::Lyrics(lyrics_line) = line {
                 for segment in &mut lyrics_line.segments {
                     if let Some(ref mut chord) = segment.chord {
                         if chord.display.is_none() {
-                            if let Some((_, display)) =
-                                display_map.iter().find(|(n, _)| *n == chord.name)
+                            if let Some((_, display, format)) =
+                                define_map.iter().find(|(n, _, _)| *n == chord.name)
                             {
-                                chord.display = Some(display.clone());
+                                if let Some(d) = display {
+                                    // display= takes precedence over format=
+                                    chord.display = Some(d.clone());
+                                } else if let Some(f) = format {
+                                    // Expand format pattern using chord components
+                                    if let Some(expanded) = chord.expand_format(f) {
+                                        chord.display = Some(expanded);
+                                    }
+                                }
                             }
                         }
                     }
@@ -437,6 +447,48 @@ impl Chord {
     pub fn display_name(&self) -> &str {
         self.display.as_deref().unwrap_or(&self.name)
     }
+
+    /// Expand a format pattern using this chord's parsed components.
+    ///
+    /// Replaces placeholders in the pattern string with chord detail fields:
+    /// - `%{root}` — root note with accidental (e.g., `"A"`, `"Bb"`, `"F#"`)
+    /// - `%{quality}` — quality string (e.g., `""`, `"m"`, `"dim"`, `"aug"`)
+    /// - `%{ext}` — extension (e.g., `"7"`, `"maj7"`, `"sus4"`)
+    /// - `%{bass}` — bass note for slash chords (e.g., `"B"`, `"Eb"`)
+    ///
+    /// Returns `None` if the chord has no parsed `detail`.
+    #[must_use]
+    pub fn expand_format(&self, pattern: &str) -> Option<String> {
+        let detail = self.detail.as_ref()?;
+
+        let root = {
+            let mut s = detail.root.to_string();
+            if let Some(ref acc) = detail.root_accidental {
+                s.push_str(&acc.to_string());
+            }
+            s
+        };
+        let quality = detail.quality.to_string();
+        let ext = detail.extension.as_deref().unwrap_or("");
+        let bass = detail
+            .bass_note
+            .as_ref()
+            .map_or(String::new(), |(note, acc)| {
+                let mut s = note.to_string();
+                if let Some(a) = acc {
+                    s.push_str(&a.to_string());
+                }
+                s
+            });
+
+        let result = pattern
+            .replace("%{root}", &root)
+            .replace("%{quality}", &quality)
+            .replace("%{ext}", ext)
+            .replace("%{bass}", &bass);
+
+        Some(result)
+    }
 }
 
 impl core::fmt::Display for Chord {
@@ -508,6 +560,47 @@ impl ImageAttributes {
 // ChordDefinition
 // ---------------------------------------------------------------------------
 
+/// Extract a `key=value` attribute from a string, removing it in-place.
+///
+/// Matches `key=` at word boundaries (preceded by whitespace or at start of
+/// string). Handles both quoted values (`key="value with spaces"`) and
+/// unquoted values (`key=value`).
+///
+/// Returns `Some(value)` if found (and mutates `s` to remove the attribute),
+/// or `None` if not found.
+fn extract_attribute(s: &mut String, key: &str) -> Option<String> {
+    let needle = format!("{key}=");
+    let match_pos = s
+        .match_indices(&needle)
+        .find(|&(pos, _)| pos == 0 || s.as_bytes()[pos - 1].is_ascii_whitespace());
+
+    let (pos, _) = match_pos?;
+    let after = &s[pos + needle.len()..];
+
+    let (val, token_end) = if let Some(stripped) = after.strip_prefix('"') {
+        let v = stripped.split('"').next().map(|t| t.to_string());
+        let len = v.as_ref().map_or(0, |t| t.len());
+        (v, pos + needle.len() + 1 + len + 1)
+    } else {
+        let v = after.split_whitespace().next().map(|t| t.to_string());
+        let len = v.as_ref().map_or(0, |t| t.len());
+        (v, pos + needle.len() + len)
+    };
+
+    // Remove the attribute token from the string.
+    let before = s[..pos].trim_end();
+    let after_token = s[token_end..].trim_start();
+    *s = if before.is_empty() {
+        after_token.to_string()
+    } else if after_token.is_empty() {
+        before.to_string()
+    } else {
+        format!("{before} {after_token}")
+    };
+
+    val
+}
+
 /// A parsed chord definition from `{define}` directives.
 ///
 /// Supports three types:
@@ -536,6 +629,12 @@ pub struct ChordDefinition {
     pub copyall: Option<String>,
     /// Display name override.
     pub display: Option<String>,
+    /// Format pattern for chord name rendering (e.g., `"%{root}%{qual}"`).
+    ///
+    /// When present, the pattern is expanded using the chord's parsed
+    /// components. Supported placeholders: `%{root}`, `%{quality}`,
+    /// `%{ext}`, `%{bass}`.
+    pub format: Option<String>,
     /// The raw definition value (for fretted definitions not yet parsed).
     pub raw: Option<String>,
 }
@@ -558,6 +657,7 @@ impl ChordDefinition {
             copy: None,
             copyall: None,
             display: None,
+            format: None,
             raw: None,
         };
 
@@ -592,46 +692,19 @@ impl ChordDefinition {
             return def;
         }
 
-        // Check for "display" attribute in the raw value.
-        // Match only at a word boundary (preceded by whitespace or at start).
-        let display_match = rest
-            .match_indices("display=")
-            .find(|&(pos, _)| pos == 0 || rest.as_bytes()[pos - 1].is_ascii_whitespace());
+        // Extract known attributes (display=, format=) from the raw value,
+        // stripping them so they are not passed to DiagramData.
+        let mut remaining = rest.to_string();
 
-        if let Some((pos, _)) = display_match {
-            let after = &rest[pos + 8..];
-            // Extract quoted or unquoted value, and compute the end of the display token.
-            let (display_val, token_end) = if let Some(stripped) = after.strip_prefix('"') {
-                let val = stripped.split('"').next().map(|s| s.to_string());
-                // +8 for "display=", +1 for opening quote, +len, +1 for closing quote
-                let len = val.as_ref().map_or(0, |v| v.len());
-                (val, pos + 8 + 1 + len + 1)
-            } else {
-                let val = after.split_whitespace().next().map(|s| s.to_string());
-                let len = val.as_ref().map_or(0, |v| v.len());
-                (val, pos + 8 + len)
-            };
-            def.display = display_val;
+        def.display = extract_attribute(&mut remaining, "display");
+        def.format = extract_attribute(&mut remaining, "format");
 
-            // Strip the display token from raw so it is not passed to DiagramData.
-            let before = rest[..pos].trim_end();
-            let after_token = rest[token_end..].trim_start();
-            let stripped_raw = if before.is_empty() {
-                after_token.to_string()
-            } else if after_token.is_empty() {
-                before.to_string()
-            } else {
-                format!("{before} {after_token}")
-            };
-            def.raw = if stripped_raw.is_empty() {
-                None
-            } else {
-                Some(stripped_raw)
-            };
+        let trimmed = remaining.trim();
+        def.raw = if trimmed.is_empty() {
+            None
         } else {
-            // Store raw for fretted definitions
-            def.raw = Some(rest.to_string());
-        }
+            Some(trimmed.to_string())
+        };
 
         def
     }
@@ -2853,6 +2926,36 @@ mod chord_definition_tests {
     }
 
     #[test]
+    fn test_parse_format_attribute() {
+        let def = ChordDefinition::parse_value(
+            "Am base-fret 1 frets x 0 2 2 1 0 format=\"%{root}%{quality}\"",
+        );
+        assert_eq!(def.format, Some("%{root}%{quality}".to_string()));
+        let raw = def.raw.unwrap();
+        assert!(!raw.contains("format="));
+        assert!(raw.contains("base-fret"));
+    }
+
+    #[test]
+    fn test_parse_both_display_and_format() {
+        let def = ChordDefinition::parse_value(
+            "Am display=\"A minor\" format=\"%{root}%{quality}\" base-fret 1 frets x 0 2 2 1 0",
+        );
+        assert_eq!(def.display, Some("A minor".to_string()));
+        assert_eq!(def.format, Some("%{root}%{quality}".to_string()));
+        let raw = def.raw.unwrap();
+        assert!(!raw.contains("display="));
+        assert!(!raw.contains("format="));
+    }
+
+    #[test]
+    fn test_parse_format_only() {
+        let def = ChordDefinition::parse_value("Am format=\"%{root}-%{quality}\"");
+        assert_eq!(def.format, Some("%{root}-%{quality}".to_string()));
+        assert!(def.raw.is_none());
+    }
+
+    #[test]
     fn test_parse_keyboard_negative_keys() {
         let def = ChordDefinition::parse_value("Cm keys -1 0 3 7");
         assert_eq!(def.keys, Some(vec![-1, 0, 3, 7]));
@@ -2997,5 +3100,121 @@ mod apply_define_displays_tests {
         } else {
             panic!("expected lyrics line");
         }
+    }
+
+    #[test]
+    fn format_expands_chord_components() {
+        let mut song =
+            make_song_with_define_and_chords("Am format=\"%{root} %{quality}\"", &["Am"]);
+        song.apply_define_displays();
+
+        if let Line::Lyrics(ref lyrics) = song.lines[1] {
+            assert_eq!(
+                lyrics.segments[0].chord.as_ref().unwrap().display_name(),
+                "A m"
+            );
+        } else {
+            panic!("expected lyrics line");
+        }
+    }
+
+    #[test]
+    fn format_with_extension() {
+        let mut song =
+            make_song_with_define_and_chords("Am7 format=\"%{root}%{quality}%{ext}\"", &["Am7"]);
+        song.apply_define_displays();
+
+        if let Line::Lyrics(ref lyrics) = song.lines[1] {
+            assert_eq!(
+                lyrics.segments[0].chord.as_ref().unwrap().display_name(),
+                "Am7"
+            );
+        } else {
+            panic!("expected lyrics line");
+        }
+    }
+
+    #[test]
+    fn format_with_bass_note() {
+        let mut song = make_song_with_define_and_chords("G/B format=\"%{root}/%{bass}\"", &["G/B"]);
+        song.apply_define_displays();
+
+        if let Line::Lyrics(ref lyrics) = song.lines[1] {
+            assert_eq!(
+                lyrics.segments[0].chord.as_ref().unwrap().display_name(),
+                "G/B"
+            );
+        } else {
+            panic!("expected lyrics line");
+        }
+    }
+
+    #[test]
+    fn display_takes_precedence_over_format() {
+        let mut song = make_song_with_define_and_chords(
+            "Am display=\"A minor\" format=\"%{root}%{quality}\"",
+            &["Am"],
+        );
+        song.apply_define_displays();
+
+        if let Line::Lyrics(ref lyrics) = song.lines[1] {
+            assert_eq!(
+                lyrics.segments[0].chord.as_ref().unwrap().display_name(),
+                "A minor"
+            );
+        } else {
+            panic!("expected lyrics line");
+        }
+    }
+}
+
+#[cfg(test)]
+mod expand_format_tests {
+    use super::*;
+
+    #[test]
+    fn basic_root_quality() {
+        let chord = Chord::new("Am");
+        assert_eq!(
+            chord.expand_format("%{root}%{quality}"),
+            Some("Am".to_string())
+        );
+    }
+
+    #[test]
+    fn with_accidental() {
+        let chord = Chord::new("Bb");
+        assert_eq!(chord.expand_format("%{root}"), Some("Bb".to_string()));
+    }
+
+    #[test]
+    fn with_extension() {
+        let chord = Chord::new("Cmaj7");
+        let result = chord.expand_format("%{root}%{quality}%{ext}");
+        assert_eq!(result, Some("Cmaj7".to_string()));
+    }
+
+    #[test]
+    fn with_bass() {
+        let chord = Chord::new("Am/G");
+        let result = chord.expand_format("%{root}%{quality}/%{bass}");
+        assert_eq!(result, Some("Am/G".to_string()));
+    }
+
+    #[test]
+    fn custom_format() {
+        let chord = Chord::new("Am");
+        let result = chord.expand_format("[%{root} minor]");
+        assert_eq!(result, Some("[A minor]".to_string()));
+    }
+
+    #[test]
+    fn returns_none_for_unparsed_chord() {
+        let chord = Chord {
+            name: "???".to_string(),
+            detail: None,
+            display: None,
+        };
+        assert_eq!(chord.expand_format("%{root}"), None);
     }
 }
