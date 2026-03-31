@@ -128,8 +128,7 @@ pub fn render_song(song: &Song) -> Vec<u8> {
 /// values, allowing the CLI `--transpose` flag to combine with in-file directives.
 #[must_use]
 pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Config) -> Vec<u8> {
-    let _ = config;
-    let mut doc = PdfDocument::new();
+    let mut doc = PdfDocument::from_config(config);
     render_song_into_doc(song, cli_transpose, &mut doc);
     doc.build_pdf()
 }
@@ -154,7 +153,7 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &C
     }
 
     // Phase 1: render all songs and record which page each starts on.
-    let mut body_doc = PdfDocument::new();
+    let mut body_doc = PdfDocument::from_config(config);
     let mut toc_entries: Vec<(String, usize)> = Vec::new(); // (title, page_index)
 
     for (i, song) in songs.iter().enumerate() {
@@ -173,7 +172,7 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &C
     }
 
     // Phase 2: generate ToC pages.
-    let mut toc_doc = PdfDocument::new();
+    let mut toc_doc = PdfDocument::from_config(config);
     toc_doc.text("Table of Contents", Font::HelveticaBold, TITLE_SIZE);
     toc_doc.newline(TITLE_SIZE + LINE_GAP * 2.0);
 
@@ -207,7 +206,7 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &C
         // Render page number right-aligned
         let num_str = page_num.to_string();
         let num_width = num_str.len() as f32 * TOC_ENTRY_SIZE * CHAR_WIDTH;
-        let right_x = PAGE_W - MARGIN_RIGHT - num_width;
+        let right_x = PAGE_W - toc_doc.margin_right - num_width;
         toc_doc.text_at(&num_str, Font::Helvetica, TOC_ENTRY_SIZE, right_x, y);
 
         toc_doc.newline(TOC_ENTRY_SIZE + LINE_GAP);
@@ -603,7 +602,7 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
     let (render_w, render_h) = compute_image_dimensions(attrs, native_w, native_h, aspect);
 
     // Clamp to printable area.
-    let max_w = PAGE_W - MARGIN_LEFT - MARGIN_RIGHT;
+    let max_w = PAGE_W - doc.margin_left - doc.margin_right;
     let (render_w, render_h) = if render_w > max_w {
         (max_w, max_w / aspect)
     } else {
@@ -865,18 +864,57 @@ struct PdfDocument {
     current_column: u32,
     /// Embedded JPEG images: (raw JPEG data, width in pixels, height in pixels).
     images: Vec<(Vec<u8>, u32, u32)>,
+    /// Layout margins (in points), overridable via config.
+    margin_top: f32,
+    margin_bottom: f32,
+    margin_left: f32,
+    margin_right: f32,
 }
 
 impl PdfDocument {
-    /// Create a new document with one empty page.
+    /// Create a new document with one empty page using default margins.
     fn new() -> Self {
+        Self::with_margins(MARGIN_TOP, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT)
+    }
+
+    /// Create a new document with one empty page and custom margins.
+    fn with_margins(top: f32, bottom: f32, left: f32, right: f32) -> Self {
         Self {
             pages: vec![Vec::new()],
-            y: PAGE_H - MARGIN_TOP,
+            y: PAGE_H - top,
             num_columns: 1,
             current_column: 0,
             images: Vec::new(),
+            margin_top: top,
+            margin_bottom: bottom,
+            margin_left: left,
+            margin_right: right,
         }
+    }
+
+    /// Create a new document reading margins from config.
+    fn from_config(config: &Config) -> Self {
+        let top = config
+            .get_path("pdf.margins.top")
+            .as_f64()
+            .map(|v| v as f32)
+            .unwrap_or(MARGIN_TOP);
+        let bottom = config
+            .get_path("pdf.margins.bottom")
+            .as_f64()
+            .map(|v| v as f32)
+            .unwrap_or(MARGIN_BOTTOM);
+        let left = config
+            .get_path("pdf.margins.left")
+            .as_f64()
+            .map(|v| v as f32)
+            .unwrap_or(MARGIN_LEFT);
+        let right = config
+            .get_path("pdf.margins.right")
+            .as_f64()
+            .map(|v| v as f32)
+            .unwrap_or(MARGIN_RIGHT);
+        Self::with_margins(top, bottom, left, right)
     }
 
     /// Returns the current Y position.
@@ -892,12 +930,12 @@ impl PdfDocument {
     /// Returns the left margin for the current column.
     fn margin_left(&self) -> f32 {
         if self.num_columns <= 1 {
-            return MARGIN_LEFT;
+            return self.margin_left;
         }
-        let usable_width = PAGE_W - MARGIN_LEFT - MARGIN_RIGHT;
+        let usable_width = PAGE_W - self.margin_left - self.margin_right;
         let total_gaps = (self.num_columns - 1) as f32 * COLUMN_GAP;
         let col_width = (usable_width - total_gaps) / self.num_columns as f32;
-        MARGIN_LEFT + self.current_column as f32 * (col_width + COLUMN_GAP)
+        self.margin_left + self.current_column as f32 * (col_width + COLUMN_GAP)
     }
 
     /// Set the number of columns (clamped to 1..=[`MAX_COLUMNS`]). Resets to column 0.
@@ -915,7 +953,7 @@ impl PdfDocument {
         }
         if self.current_column + 1 < self.num_columns {
             self.current_column += 1;
-            self.y = PAGE_H - MARGIN_TOP;
+            self.y = PAGE_H - self.margin_top;
         } else {
             self.new_page();
         }
@@ -924,7 +962,7 @@ impl PdfDocument {
     /// Ensure there is at least `needed` points of vertical space remaining.
     /// If not, advance to next column or start a new page.
     fn ensure_space(&mut self, needed: f32) {
-        if self.y - needed < MARGIN_BOTTOM {
+        if self.y - needed < self.margin_bottom {
             self.next_column_or_page();
         }
     }
@@ -933,7 +971,7 @@ impl PdfDocument {
     fn next_column_or_page(&mut self) {
         if self.num_columns > 1 && self.current_column + 1 < self.num_columns {
             self.current_column += 1;
-            self.y = PAGE_H - MARGIN_TOP;
+            self.y = PAGE_H - self.margin_top;
         } else {
             self.new_page();
         }
@@ -948,7 +986,7 @@ impl PdfDocument {
             return;
         }
         self.pages.push(Vec::new());
-        self.y = PAGE_H - MARGIN_TOP;
+        self.y = PAGE_H - self.margin_top;
         self.current_column = 0;
     }
 
@@ -971,7 +1009,7 @@ impl PdfDocument {
     /// Move the Y cursor down. May trigger a column/page break if past bottom margin.
     fn newline(&mut self, amount: f32) {
         self.y -= amount;
-        if self.y < MARGIN_BOTTOM {
+        if self.y < self.margin_bottom {
             self.next_column_or_page();
         }
     }
@@ -1066,7 +1104,7 @@ impl PdfDocument {
     fn take_pages(&mut self) -> Vec<Vec<String>> {
         let pages = std::mem::take(&mut self.pages);
         self.pages.push(Vec::new());
-        self.y = PAGE_H - MARGIN_TOP;
+        self.y = PAGE_H - self.margin_top;
         self.current_column = 0;
         pages
     }
@@ -2353,5 +2391,26 @@ mod jpeg_tests {
         assert!(!is_safe_image_path("../photo.jpg"));
         assert!(!is_safe_image_path("images/../../etc/shadow.jpeg"));
         assert!(!is_safe_image_path("sub/../../../photo.jpg"));
+    }
+
+    #[test]
+    fn test_custom_margins_from_config() {
+        let config = Config::defaults().with_define("pdf.margins.top=100");
+        let doc = PdfDocument::from_config(&config);
+        assert!((doc.margin_top - 100.0).abs() < 0.01);
+        // Other margins should keep defaults.
+        assert!((doc.margin_bottom - MARGIN_BOTTOM).abs() < 0.01);
+        assert!((doc.margin_left - MARGIN_LEFT).abs() < 0.01);
+        assert!((doc.margin_right - MARGIN_RIGHT).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_custom_margins_affect_output() {
+        let song = chordpro_core::parse("{title: Test}\nHello").unwrap();
+        let default_pdf = render_song(&song);
+        let config = Config::defaults().with_define("pdf.margins.top=200");
+        let custom_pdf = render_song_with_transpose(&song, 0, &config);
+        // Different margins produce different PDF output.
+        assert_ne!(default_pdf, custom_pdf);
     }
 }
