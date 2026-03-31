@@ -4,6 +4,7 @@ pub mod ast;
 pub mod chord;
 pub mod chord_diagram;
 pub mod config;
+pub mod external_tool;
 pub mod inline_markup;
 pub mod lexer;
 pub mod parser;

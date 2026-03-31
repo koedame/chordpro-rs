@@ -1,0 +1,56 @@
+name: Extended Tests
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  extended:
+    name: Extended tests (external tools)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install abc2svg
+        run: npm install -g abc2svg
+
+      - name: Install Lilypond
+        run: sudo apt-get update && sudo apt-get install -y lilypond
+
+      - name: Install Perl ChordPro
+        run: |
+          sudo apt-get install -y cpanminus libperl-dev
+          cpanm --notest App::Music::ChordPro
+
+      - name: Verify tool installations
+        run: |
+          echo "=== abc2svg ==="
+          abc2svg --version || echo "abc2svg installed (no --version)"
+          echo "=== Lilypond ==="
+          lilypond --version
+          echo "=== Perl ChordPro ==="
+          chordpro --version
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Run ignored tests (external-tool tests)
+        run: cargo test --workspace -- --ignored
+
+      - name: Run Perl comparison (text)
+        run: ./scripts/compare-with-perl.sh text
+
+      - name: Run Perl comparison (html)
+        run: ./scripts/compare-with-perl.sh html || true

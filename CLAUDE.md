@@ -15,6 +15,7 @@ All code, comments, documentation, commit messages, and PR descriptions must be 
 ```bash
 cargo build          # Build all crates
 cargo test           # Run all tests
+cargo test -- --ignored  # Run tests requiring external tools
 cargo clippy         # Lint (CI uses -D warnings)
 cargo fmt --check    # Check formatting (CI enforced)
 cargo fmt            # Auto-format code
