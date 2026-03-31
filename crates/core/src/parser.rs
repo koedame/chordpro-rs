@@ -1205,6 +1205,25 @@ pub fn parse_multi_lenient_with_options(input: &str, options: &ParseOptions) -> 
 /// assert_eq!(attrs.src, "photo.jpg");
 /// assert_eq!(attrs.width.as_deref(), Some("200"));
 /// ```
+/// Maximum byte length for the `src` attribute value.
+const IMAGE_SRC_MAX_BYTES: usize = 4096;
+
+/// Maximum byte length for other image attribute values.
+const IMAGE_ATTR_MAX_BYTES: usize = 1024;
+
+/// Truncates a string to the given maximum byte length at a valid UTF-8
+/// character boundary.
+fn truncate_string(s: String, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s[..end].to_string()
+}
+
 #[must_use]
 pub fn parse_image_attributes(input: &str) -> ImageAttributes {
     let mut attrs = ImageAttributes::default();
@@ -1212,12 +1231,12 @@ pub fn parse_image_attributes(input: &str) -> ImageAttributes {
 
     for (key, value) in pairs {
         match key.as_str() {
-            "src" => attrs.src = value,
-            "width" => attrs.width = Some(value),
-            "height" => attrs.height = Some(value),
-            "scale" => attrs.scale = Some(value),
-            "title" => attrs.title = Some(value),
-            "anchor" => attrs.anchor = Some(value),
+            "src" => attrs.src = truncate_string(value, IMAGE_SRC_MAX_BYTES),
+            "width" => attrs.width = Some(truncate_string(value, IMAGE_ATTR_MAX_BYTES)),
+            "height" => attrs.height = Some(truncate_string(value, IMAGE_ATTR_MAX_BYTES)),
+            "scale" => attrs.scale = Some(truncate_string(value, IMAGE_ATTR_MAX_BYTES)),
+            "title" => attrs.title = Some(truncate_string(value, IMAGE_ATTR_MAX_BYTES)),
+            "anchor" => attrs.anchor = Some(truncate_string(value, IMAGE_ATTR_MAX_BYTES)),
             _ => {
                 // Unknown attributes are silently ignored per spec.
             }
@@ -3097,6 +3116,57 @@ mod tests {
         let attrs = super::parse_image_attributes("  src=a.jpg   width=100  ");
         assert_eq!(attrs.src, "a.jpg");
         assert_eq!(attrs.width.as_deref(), Some("100"));
+    }
+
+    #[test]
+    fn parse_image_attributes_src_truncated_at_limit() {
+        let long_src = "a".repeat(5000);
+        let input = format!("src={long_src}");
+        let attrs = super::parse_image_attributes(&input);
+        assert_eq!(attrs.src.len(), super::IMAGE_SRC_MAX_BYTES);
+    }
+
+    #[test]
+    fn parse_image_attributes_other_attrs_truncated_at_limit() {
+        let long_title = "x".repeat(2000);
+        let input = format!("src=ok.jpg title=\"{long_title}\" width={long_title}");
+        let attrs = super::parse_image_attributes(&input);
+        assert_eq!(attrs.src, "ok.jpg");
+        assert_eq!(
+            attrs.title.as_deref().map(str::len),
+            Some(super::IMAGE_ATTR_MAX_BYTES)
+        );
+        assert_eq!(
+            attrs.width.as_deref().map(str::len),
+            Some(super::IMAGE_ATTR_MAX_BYTES)
+        );
+    }
+
+    #[test]
+    fn parse_image_attributes_truncation_respects_utf8_boundary() {
+        // Each CJK character is 3 bytes. 341 chars = 1023 bytes, 342 = 1026.
+        // With a 1024 limit the truncation must land on a char boundary.
+        let cjk = "漢".repeat(342); // 1026 bytes
+        let input = format!("title=\"{cjk}\"");
+        let attrs = super::parse_image_attributes(&input);
+        let title = attrs.title.unwrap();
+        assert!(title.len() <= super::IMAGE_ATTR_MAX_BYTES);
+        // Must be valid UTF-8 (String guarantees this, but verify length is
+        // at a 3-byte boundary).
+        assert_eq!(title.len(), 1023); // 341 * 3
+    }
+
+    #[test]
+    fn parse_image_attributes_values_within_limit_unchanged() {
+        let title = "a".repeat(1024);
+        let input = format!("src=ok.jpg title=\"{title}\"");
+        let attrs = super::parse_image_attributes(&input);
+        assert_eq!(attrs.title.as_deref(), Some(title.as_str()));
+    }
+
+    #[test]
+    fn truncate_string_empty() {
+        assert_eq!(super::truncate_string(String::new(), 100), "");
     }
 
     #[test]
