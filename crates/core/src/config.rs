@@ -22,6 +22,49 @@
 
 use crate::rrjson::{self, Value};
 
+use std::fmt;
+
+// ---------------------------------------------------------------------------
+// Error type
+// ---------------------------------------------------------------------------
+
+/// An error encountered when loading or resolving a configuration file.
+#[derive(Debug)]
+pub enum ConfigError {
+    /// An I/O error occurred while reading a config file.
+    Io {
+        /// The path that failed to read.
+        path: String,
+        /// The underlying I/O error.
+        source: std::io::Error,
+    },
+    /// A parse error occurred in the config file content.
+    Parse {
+        /// The path of the file that failed to parse.
+        path: String,
+        /// The underlying parse error.
+        source: rrjson::ParseError,
+    },
+}
+
+impl fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io { path, source } => write!(f, "{path}: {source}"),
+            Self::Parse { path, source } => write!(f, "{path}: {source}"),
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+            Self::Parse { source, .. } => Some(source),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Deep merge
 // ---------------------------------------------------------------------------
@@ -147,20 +190,26 @@ impl Config {
 
     /// Resolve a config name: try as a preset first, then as a file path.
     ///
-    /// Returns `Ok(Config)` on success, or an error string on failure.
+    /// Returns `Ok(Config)` on success, or a [`ConfigError`] on failure.
     ///
     /// # Errors
     ///
-    /// Returns an error message if the name is not a preset and the file
-    /// cannot be read or parsed.
-    pub fn resolve(name: &str) -> Result<Self, String> {
+    /// Returns [`ConfigError::Io`] if the file cannot be read, or
+    /// [`ConfigError::Parse`] if the content is malformed.
+    pub fn resolve(name: &str) -> Result<Self, ConfigError> {
         // Try preset first
         if let Some(preset) = Self::preset(name) {
             return Ok(preset);
         }
         // Try as a file path
-        let text = std::fs::read_to_string(name).map_err(|e| format!("{name}: {e}"))?;
-        Self::parse(&text).map_err(|e| format!("{name}: {e}"))
+        let text = std::fs::read_to_string(name).map_err(|e| ConfigError::Io {
+            path: name.to_string(),
+            source: e,
+        })?;
+        Self::parse(&text).map_err(|e| ConfigError::Parse {
+            path: name.to_string(),
+            source: e,
+        })
     }
 
     /// Apply a single `key=value` define override.
