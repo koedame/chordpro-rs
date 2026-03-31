@@ -827,12 +827,12 @@ const COLUMN_GAP: f32 = 20.0;
 // JPEG header parsing
 // ---------------------------------------------------------------------------
 
-/// Parse JPEG dimensions from raw file data by locating a SOF0 or SOF2 marker.
+/// Parse JPEG dimensions from raw file data by locating a Start of Frame marker.
 ///
-/// JPEG files consist of a sequence of markers. This function scans for
-/// `0xFF 0xC0` (SOF0, baseline DCT) or `0xFF 0xC2` (SOF2, progressive DCT)
-/// and reads the image height (2 bytes at marker+3) and width (2 bytes at
-/// marker+5).
+/// JPEG files consist of a sequence of markers. This function scans for any
+/// valid SOF marker (SOF0–SOF3, SOF5–SOF7, SOF9–SOF11, SOF13–SOF15) and reads
+/// the image height (2 bytes at marker+3) and width (2 bytes at marker+5).
+/// All SOF markers share the same segment layout.
 ///
 /// Returns `None` if the data is too short or no SOF marker is found.
 fn parse_jpeg_dimensions(data: &[u8]) -> Option<(u32, u32)> {
@@ -860,8 +860,9 @@ fn parse_jpeg_dimensions(data: &[u8]) -> Option<(u32, u32)> {
             continue;
         }
 
-        // SOF0 (baseline) or SOF2 (progressive)
-        if marker == 0xC0 || marker == 0xC2 {
+        // Any SOF marker (SOF0–SOF3, SOF5–SOF7, SOF9–SOF11, SOF13–SOF15).
+        // Excludes 0xC4 (DHT), 0xC8 (JPG reserved), and 0xCC (DAC).
+        if matches!(marker, 0xC0..=0xC3 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF) {
             // Need at least 7 more bytes after the marker: length(2) + precision(1) + height(2) + width(2)
             if i + 9 > data.len() {
                 return None;
@@ -2309,6 +2310,81 @@ mod jpeg_tests {
         data.push(0x00);
         let dims = parse_jpeg_dimensions(&data);
         assert_eq!(dims, Some((400, 300)));
+    }
+
+    /// Build a minimal valid JPEG byte sequence with an arbitrary SOF marker.
+    fn minimal_jpeg_with_sof(sof_marker: u8, width: u16, height: u16) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0xFF, 0xD8]); // SOI
+        data.extend_from_slice(&[0xFF, 0xE0, 0x00, 0x02]); // APP0
+        data.extend_from_slice(&[0xFF, sof_marker]); // SOF marker
+        data.extend_from_slice(&[0x00, 0x08]); // length
+        data.push(0x08); // precision
+        data.extend_from_slice(&height.to_be_bytes());
+        data.extend_from_slice(&width.to_be_bytes());
+        data.push(0x00); // components
+        data
+    }
+
+    #[test]
+    fn test_parse_jpeg_dimensions_sof1_extended_sequential() {
+        let data = minimal_jpeg_with_sof(0xC1, 800, 600);
+        assert_eq!(parse_jpeg_dimensions(&data), Some((800, 600)));
+    }
+
+    #[test]
+    fn test_parse_jpeg_dimensions_sof3_lossless() {
+        let data = minimal_jpeg_with_sof(0xC3, 1024, 768);
+        assert_eq!(parse_jpeg_dimensions(&data), Some((1024, 768)));
+    }
+
+    #[test]
+    fn test_parse_jpeg_dimensions_sof9_arithmetic_sequential() {
+        let data = minimal_jpeg_with_sof(0xC9, 320, 240);
+        assert_eq!(parse_jpeg_dimensions(&data), Some((320, 240)));
+    }
+
+    #[test]
+    fn test_parse_jpeg_dimensions_sof10_arithmetic_progressive() {
+        let data = minimal_jpeg_with_sof(0xCA, 1920, 1080);
+        assert_eq!(parse_jpeg_dimensions(&data), Some((1920, 1080)));
+    }
+
+    #[test]
+    fn test_parse_jpeg_dimensions_sof11_arithmetic_lossless() {
+        let data = minimal_jpeg_with_sof(0xCB, 256, 256);
+        assert_eq!(parse_jpeg_dimensions(&data), Some((256, 256)));
+    }
+
+    #[test]
+    fn test_parse_jpeg_dimensions_all_sof_markers() {
+        let sof_markers = [
+            0xC0, 0xC1, 0xC2, 0xC3, // SOF0–SOF3
+            0xC5, 0xC6, 0xC7, // SOF5–SOF7
+            0xC9, 0xCA, 0xCB, // SOF9–SOF11
+            0xCD, 0xCE, 0xCF, // SOF13–SOF15
+        ];
+        for marker in sof_markers {
+            let data = minimal_jpeg_with_sof(marker, 500, 400);
+            assert_eq!(
+                parse_jpeg_dimensions(&data),
+                Some((500, 400)),
+                "SOF marker 0x{marker:02X} should be recognized"
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_jpeg_dimensions_non_sof_markers_not_matched() {
+        // 0xC4 (DHT), 0xC8 (reserved), 0xCC (DAC) must NOT be treated as SOF.
+        for marker in [0xC4, 0xC8, 0xCC] {
+            let data = minimal_jpeg_with_sof(marker, 500, 400);
+            assert_eq!(
+                parse_jpeg_dimensions(&data),
+                None,
+                "Marker 0x{marker:02X} should NOT be recognized as SOF"
+            );
+        }
     }
 
     #[test]
