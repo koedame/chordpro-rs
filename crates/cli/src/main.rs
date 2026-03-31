@@ -36,6 +36,11 @@ struct Cli {
     /// Set a config value at runtime (highest precedence). Format: key=value.
     #[arg(short = 'D', long = "define")]
     defines: Vec<String>,
+
+    /// Skip loading system, user, and project config files.
+    /// Only built-in defaults are used as the base. --config and --define still apply.
+    #[arg(long = "no-default-configs")]
+    no_default_configs: bool,
 }
 
 /// Supported output formats.
@@ -61,7 +66,11 @@ fn main() -> ExitCode {
         .map(|s| s.to_string());
 
     // Build configuration: defaults → system → user → project → custom config files → defines
-    let mut config = chordpro_core::config::Config::load(project_dir.as_deref(), None);
+    let mut config = if cli.no_default_configs {
+        chordpro_core::config::Config::defaults()
+    } else {
+        chordpro_core::config::Config::load(project_dir.as_deref(), None)
+    };
 
     // Apply --config files/presets in order (preset names resolved first)
     for config_name in &cli.configs {
