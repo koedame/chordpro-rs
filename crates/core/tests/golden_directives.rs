@@ -527,3 +527,68 @@ fn formatting_directives_golden_test() {
         }
     }
 }
+
+#[test]
+fn page_control_directives_golden_test() {
+    let input = fixture("page-control-directives/input.cho");
+    let song = parse(&input).expect("parse failed");
+
+    // Collect all page control directives from the parsed output.
+    let page_control_directives: Vec<_> = song
+        .lines
+        .iter()
+        .filter_map(|line| {
+            if let Line::Directive(d) = line {
+                if d.kind.is_page_control() {
+                    return Some(d);
+                }
+            }
+            None
+        })
+        .collect();
+
+    // The fixture should contain at least one of each page control directive.
+    let kinds: Vec<_> = page_control_directives.iter().map(|d| &d.kind).collect();
+    assert!(
+        kinds.contains(&&DirectiveKind::NewPage),
+        "expected NewPage directive"
+    );
+    assert!(
+        kinds.contains(&&DirectiveKind::NewPhysicalPage),
+        "expected NewPhysicalPage directive"
+    );
+    assert!(
+        kinds.contains(&&DirectiveKind::ColumnBreak),
+        "expected ColumnBreak directive"
+    );
+    assert!(
+        kinds.contains(&&DirectiveKind::Columns),
+        "expected Columns directive"
+    );
+
+    // Verify classification: all page control directives are NOT metadata.
+    for d in &page_control_directives {
+        assert!(
+            d.kind.is_page_control(),
+            "{:?} should be page_control",
+            d.kind
+        );
+        assert!(!d.kind.is_metadata(), "{:?} should not be metadata", d.kind);
+        assert!(
+            !d.kind.is_font_size_color(),
+            "{:?} should not be font_size_color",
+            d.kind
+        );
+    }
+
+    // Verify canonical names for short aliases.
+    for d in &page_control_directives {
+        match d.kind {
+            DirectiveKind::NewPage => assert_eq!(d.name, "new_page"),
+            DirectiveKind::NewPhysicalPage => assert_eq!(d.name, "new_physical_page"),
+            DirectiveKind::ColumnBreak => assert_eq!(d.name, "column_break"),
+            DirectiveKind::Columns => assert_eq!(d.name, "columns"),
+            _ => {}
+        }
+    }
+}

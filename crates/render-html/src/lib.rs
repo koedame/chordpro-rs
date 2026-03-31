@@ -1240,6 +1240,13 @@ mod transpose_tests {
     }
 
     #[test]
+    fn test_columns_non_numeric_defaults_to_one() {
+        let html = render("{columns: abc}\nHello");
+        // Non-numeric value should default to 1, so no multi-column div.
+        assert!(!html.contains("column-count"));
+    }
+
+    #[test]
     fn test_new_page_generates_page_break() {
         let html = render("Page 1\n{new_page}\nPage 2");
         assert!(html.contains("break-before: page;"));

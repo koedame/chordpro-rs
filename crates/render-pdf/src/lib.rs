@@ -1867,6 +1867,17 @@ mod column_tests {
         assert_eq!(doc.current_column, 0);
     }
 
+    #[test]
+    fn test_columns_non_numeric_defaults_to_one() {
+        let input = "{columns: abc}\n[Am]Hello";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        // Non-numeric value defaults to 1 column — should still render.
+        assert!(content.contains("Am"));
+        assert!(content.contains("Hello"));
+    }
+
     // --- Multi-song rendering ---
 
     #[test]
