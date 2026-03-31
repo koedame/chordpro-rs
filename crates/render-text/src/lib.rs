@@ -124,6 +124,22 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
     result
 }
 
+/// Render multiple [`Song`]s to plain text, separated by a blank line.
+#[must_use]
+pub fn render_songs(songs: &[Song]) -> String {
+    render_songs_with_transpose(songs, 0)
+}
+
+/// Render multiple [`Song`]s to plain text with transposition.
+#[must_use]
+pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8) -> String {
+    songs
+        .iter()
+        .map(|song| render_song_with_transpose(song, cli_transpose))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 /// Parse a ChordPro source string and render it to plain text.
 ///
 /// Returns `Ok(text)` on success, or the [`chordpro_core::ParseError`] if
@@ -594,6 +610,45 @@ mod tests {
         let input = "{start_of_solo}\n[Em]Solo line\n{end_of_solo}";
         let output = render(input);
         assert!(output.contains("[Solo]"));
+    }
+}
+
+#[cfg(test)]
+mod multi_song_tests {
+    use super::*;
+
+    #[test]
+    fn test_render_songs_two_songs() {
+        let songs = chordpro_core::parse_multi(
+            "{title: Song One}\n[Am]Hello\n{new_song}\n{title: Song Two}\n[G]World",
+        )
+        .unwrap();
+        let output = render_songs(&songs);
+        assert!(output.contains("Song One"));
+        assert!(output.contains("Am"));
+        assert!(output.contains("Hello"));
+        assert!(output.contains("Song Two"));
+        assert!(output.contains("G\nWorld"));
+        // Two songs are separated by a blank line (double newline between them)
+        assert!(output.contains("\n\n"));
+    }
+
+    #[test]
+    fn test_render_songs_single_song() {
+        let songs = chordpro_core::parse_multi("{title: Only One}\nLyrics").unwrap();
+        let output = render_songs(&songs);
+        assert_eq!(output, render_song(&songs[0]));
+    }
+
+    #[test]
+    fn test_render_songs_with_transpose() {
+        let songs =
+            chordpro_core::parse_multi("{title: S1}\n[C]Do\n{new_song}\n{title: S2}\n[G]Re")
+                .unwrap();
+        let output = render_songs_with_transpose(&songs, 2);
+        // C+2=D, G+2=A
+        assert!(output.contains("D\nDo"));
+        assert!(output.contains("A\nRe"));
     }
 }
 

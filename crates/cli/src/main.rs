@@ -78,8 +78,7 @@ fn main() -> ExitCode {
     // Future work will pass it to render functions.
     let _ = config;
 
-    let mut combined_text = String::new();
-    let mut combined_bytes: Vec<u8> = Vec::new();
+    let mut all_songs: Vec<chordpro_core::ast::Song> = Vec::new();
     let is_binary = matches!(cli.format, Format::Pdf);
     let mut had_error = false;
 
@@ -93,9 +92,9 @@ fn main() -> ExitCode {
             }
         };
 
-        let song = match chordpro_core::parse(&input) {
-            Ok(song) => song,
-            Err(e) => {
+        let result = chordpro_core::parse_multi_lenient(&input);
+        for parse_result in &result.results {
+            for e in &parse_result.errors {
                 eprintln!(
                     "error: {path}: parse error at line {} column {}: {}",
                     e.line(),
@@ -103,34 +102,29 @@ fn main() -> ExitCode {
                     e.message
                 );
                 had_error = true;
-                continue;
             }
-        };
-
-        if is_binary {
-            // PDF: each file produces a separate PDF. For multiple files,
-            // only the last one is written (PDF doesn't support concatenation).
-            if !combined_bytes.is_empty() {
-                eprintln!(
-                    "warning: PDF output supports one file at a time; previous output discarded"
-                );
-            }
-            combined_bytes = chordpro_render_pdf::render_song_with_transpose(&song, cli.transpose);
-        } else {
-            let text = match cli.format {
-                Format::Text => {
-                    chordpro_render_text::render_song_with_transpose(&song, cli.transpose)
-                }
-                Format::Html => {
-                    chordpro_render_html::render_song_with_transpose(&song, cli.transpose)
-                }
-                Format::Pdf => unreachable!(),
-            };
-            if !combined_text.is_empty() {
-                combined_text.push('\n');
-            }
-            combined_text.push_str(&text);
         }
+        all_songs.extend(result.results.into_iter().map(|r| r.song));
+    }
+
+    let combined_text;
+    let combined_bytes;
+
+    if is_binary {
+        combined_bytes =
+            chordpro_render_pdf::render_songs_with_transpose(&all_songs, cli.transpose);
+        combined_text = String::new();
+    } else {
+        combined_bytes = Vec::new();
+        combined_text = match cli.format {
+            Format::Text => {
+                chordpro_render_text::render_songs_with_transpose(&all_songs, cli.transpose)
+            }
+            Format::Html => {
+                chordpro_render_html::render_songs_with_transpose(&all_songs, cli.transpose)
+            }
+            Format::Pdf => unreachable!(),
+        };
     }
 
     if had_error && combined_text.is_empty() && combined_bytes.is_empty() {

@@ -111,6 +111,45 @@ pub fn render_song(song: &Song) -> Vec<u8> {
 #[must_use]
 pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
     let mut doc = PdfDocument::new();
+    render_song_into_doc(song, cli_transpose, &mut doc);
+    doc.build_pdf()
+}
+
+/// Render multiple [`Song`]s into a single multi-page PDF document.
+///
+/// Each song starts on a new page.
+#[must_use]
+pub fn render_songs(songs: &[Song]) -> Vec<u8> {
+    render_songs_with_transpose(songs, 0)
+}
+
+/// Render multiple [`Song`]s into a single PDF with transposition.
+///
+/// Each song starts on a new page (except the first).
+#[must_use]
+pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8) -> Vec<u8> {
+    if songs.len() == 1 {
+        return render_song_with_transpose(&songs[0], cli_transpose);
+    }
+
+    let mut doc = PdfDocument::new();
+
+    for (i, song) in songs.iter().enumerate() {
+        if i > 0 {
+            doc.new_page();
+        }
+        render_song_into_doc(song, cli_transpose, &mut doc);
+    }
+
+    doc.build_pdf()
+}
+
+/// Render a single song's content into an existing [`PdfDocument`].
+///
+/// This is the shared implementation used by both [`render_song_with_transpose`]
+/// and [`render_songs_with_transpose`]. It does not call `build_pdf`; the caller
+/// is responsible for finalising the document.
+fn render_song_into_doc(song: &Song, cli_transpose: i8, doc: &mut PdfDocument) {
     let mut transpose_offset: i8 = cli_transpose;
     let mut fmt_state = PdfFormattingState::default();
 
@@ -136,7 +175,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
                 if let Some(buf) = chorus_buf.as_mut() {
                     buf.push(line.clone());
                 }
-                render_lyrics(lyrics, transpose_offset, &fmt_state, &mut doc);
+                render_lyrics(lyrics, transpose_offset, &fmt_state, doc);
             }
             Line::Directive(d) if !d.kind.is_metadata() => {
                 if d.kind == DirectiveKind::Transpose {
@@ -151,7 +190,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
                 }
                 match &d.kind {
                     DirectiveKind::StartOfChorus => {
-                        render_section_label(d, &mut doc);
+                        render_section_label(d, doc);
                         chorus_buf = Some(Vec::new());
                     }
                     DirectiveKind::EndOfChorus => {
@@ -165,7 +204,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
                             &chorus_body,
                             transpose_offset,
                             &fmt_state,
-                            &mut doc,
+                            doc,
                         );
                     }
                     DirectiveKind::NewPage | DirectiveKind::NewPhysicalPage => {
@@ -186,7 +225,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
                         if let Some(buf) = chorus_buf.as_mut() {
                             buf.push(line.clone());
                         }
-                        render_directive(d, &mut doc);
+                        render_directive(d, doc);
                     }
                 }
             }
@@ -194,7 +233,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
                 if let Some(buf) = chorus_buf.as_mut() {
                     buf.push(line.clone());
                 }
-                render_comment(*style, text, &mut doc);
+                render_comment(*style, text, doc);
             }
             Line::Empty => {
                 if let Some(buf) = chorus_buf.as_mut() {
@@ -205,8 +244,6 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
             _ => {}
         }
     }
-
-    doc.build_pdf()
 }
 
 /// Parse and render a ChordPro source string to PDF bytes.
@@ -1202,5 +1239,59 @@ mod column_tests {
         doc.column_break(); // → new page, column 0
         assert_eq!(doc.page_count(), 2);
         assert_eq!(doc.current_column, 0);
+    }
+
+    // --- Multi-song rendering ---
+
+    #[test]
+    fn test_render_songs_single() {
+        let songs = chordpro_core::parse_multi("{title: Only}\n[Am]Hello").unwrap();
+        let bytes = render_songs(&songs);
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert!(bytes.ends_with(b"%%EOF\n"));
+        // Single song: output should match render_song
+        assert_eq!(bytes, render_song(&songs[0]));
+    }
+
+    #[test]
+    fn test_render_songs_two_songs_multi_page() {
+        let songs = chordpro_core::parse_multi(
+            "{title: Song A}\n[Am]Hello\n{new_song}\n{title: Song B}\n[G]World",
+        )
+        .unwrap();
+        let bytes = render_songs(&songs);
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert!(bytes.ends_with(b"%%EOF\n"));
+        let content = String::from_utf8_lossy(&bytes);
+        // Both songs should be present
+        assert!(content.contains("Song A"));
+        assert!(content.contains("Song B"));
+        // Pages node should have /Count 2
+        assert!(content.contains("/Count 2"));
+    }
+
+    #[test]
+    fn test_render_songs_with_transpose() {
+        let songs =
+            chordpro_core::parse_multi("{title: S1}\n[C]Do\n{new_song}\n{title: S2}\n[G]Re")
+                .unwrap();
+        let bytes = render_songs_with_transpose(&songs, 2);
+        let content = String::from_utf8_lossy(&bytes);
+        // C+2=D, G+2=A — both transposed chords should appear
+        assert!(content.contains("(D)"));
+        assert!(content.contains("(A)"));
+    }
+
+    #[test]
+    fn test_render_song_into_doc_helper() {
+        let song = chordpro_core::parse("{title: Test}\n[Am]Hello").unwrap();
+        let mut doc = PdfDocument::new();
+        render_song_into_doc(&song, 0, &mut doc);
+        // Document should have 1 page with content
+        assert_eq!(doc.page_count(), 1);
+        let pdf = doc.build_pdf();
+        assert!(pdf.starts_with(b"%PDF-1.4"));
+        let content = String::from_utf8_lossy(&pdf);
+        assert!(content.contains("Test"));
     }
 }

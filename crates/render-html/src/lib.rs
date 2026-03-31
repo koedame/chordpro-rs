@@ -237,6 +237,57 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
     html
 }
 
+/// Render multiple [`Song`]s into a single HTML5 document.
+#[must_use]
+pub fn render_songs(songs: &[Song]) -> String {
+    render_songs_with_transpose(songs, 0)
+}
+
+/// Render multiple [`Song`]s into a single HTML5 document with transposition.
+///
+/// When there is only one song, this is identical to [`render_song_with_transpose`].
+/// For multiple songs, the document uses the first song's title and separates
+/// each song with an `<hr class="song-separator">`.
+#[must_use]
+pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8) -> String {
+    if songs.len() <= 1 {
+        return songs
+            .first()
+            .map(|s| render_song_with_transpose(s, cli_transpose))
+            .unwrap_or_default();
+    }
+    // Use the first song's title for the document
+    let mut html = String::new();
+    let title = songs
+        .first()
+        .and_then(|s| s.metadata.title.as_deref())
+        .unwrap_or("Untitled");
+    html.push_str(&format!(
+        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>{}</title>\n",
+        escape(title)
+    ));
+    html.push_str("<style>\n");
+    html.push_str(CSS);
+    html.push_str("</style>\n</head>\n<body>\n");
+
+    for (i, song) in songs.iter().enumerate() {
+        if i > 0 {
+            html.push_str("<hr class=\"song-separator\">\n");
+        }
+        // Render each song as a full document, then extract the <div class="song">...</div> body.
+        let song_html = render_song_with_transpose(song, cli_transpose);
+        if let Some(start) = song_html.find("<div class=\"song\">") {
+            if let Some(end) = song_html.rfind("</div>\n</body>") {
+                html.push_str(&song_html[start..end + 6]); // include </div>
+                html.push('\n');
+            }
+        }
+    }
+
+    html.push_str("</body>\n</html>\n");
+    html
+}
+
 /// Parse a ChordPro source string and render it to HTML.
 ///
 /// Returns `Ok(html)` on success, or the [`chordpro_core::ParseError`] if
@@ -1124,5 +1175,47 @@ mod delegate_tests {
         assert!(html.contains("<section class=\"textblock\">"));
         assert!(html.contains("Textblock"));
         assert!(html.contains("</section>"));
+    }
+
+    // --- Multi-song rendering ---
+
+    #[test]
+    fn test_render_songs_single() {
+        let songs = chordpro_core::parse_multi("{title: Only}").unwrap();
+        let html = render_songs(&songs);
+        // Single song: should be identical to render_song
+        assert_eq!(html, render_song(&songs[0]));
+    }
+
+    #[test]
+    fn test_render_songs_two_songs_with_hr_separator() {
+        let songs = chordpro_core::parse_multi(
+            "{title: Song A}\n[Am]Hello\n{new_song}\n{title: Song B}\n[G]World",
+        )
+        .unwrap();
+        let html = render_songs(&songs);
+        // Document title from first song
+        assert!(html.contains("<title>Song A</title>"));
+        // Both songs present
+        assert!(html.contains("<h1>Song A</h1>"));
+        assert!(html.contains("<h1>Song B</h1>"));
+        // Separator between songs
+        assert!(html.contains("<hr class=\"song-separator\">"));
+        // Each song in its own div.song
+        assert_eq!(html.matches("<div class=\"song\">").count(), 2);
+        // Single HTML document wrapper
+        assert_eq!(html.matches("<!DOCTYPE html>").count(), 1);
+        assert_eq!(html.matches("</html>").count(), 1);
+    }
+
+    #[test]
+    fn test_render_songs_with_transpose() {
+        let songs =
+            chordpro_core::parse_multi("{title: S1}\n[C]Do\n{new_song}\n{title: S2}\n[G]Re")
+                .unwrap();
+        let html = render_songs_with_transpose(&songs, 2);
+        // C+2=D, G+2=A
+        assert!(html.contains(">D<"));
+        assert!(html.contains(">A<"));
     }
 }
