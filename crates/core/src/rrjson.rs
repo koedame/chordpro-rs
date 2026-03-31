@@ -156,14 +156,23 @@ pub fn parse_rrjson(input: &str) -> Result<Value, ParseError> {
 // Internal parser
 // ---------------------------------------------------------------------------
 
+/// Maximum nesting depth for objects and arrays to prevent stack overflow
+/// from deeply nested input.
+const MAX_NESTING_DEPTH: usize = 64;
+
 struct Parser<'a> {
     input: &'a str,
     pos: usize,
+    depth: usize,
 }
 
 impl<'a> Parser<'a> {
     fn new(input: &'a str) -> Self {
-        Self { input, pos: 0 }
+        Self {
+            input,
+            pos: 0,
+            depth: 0,
+        }
     }
 
     fn error(&self, message: &str) -> ParseError {
@@ -268,12 +277,18 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_object(&mut self) -> Result<Value, ParseError> {
+        if self.depth >= MAX_NESTING_DEPTH {
+            return Err(self.error("maximum nesting depth exceeded"));
+        }
+        self.depth += 1;
+
         self.expect('{')?;
         let mut entries = Vec::new();
 
         self.skip_ws_and_comments();
         if self.peek() == Some('}') {
             self.advance();
+            self.depth -= 1;
             return Ok(Value::Object(entries));
         }
 
@@ -310,16 +325,23 @@ impl<'a> Parser<'a> {
         }
 
         self.expect('}')?;
+        self.depth -= 1;
         Ok(Value::Object(entries))
     }
 
     fn parse_array(&mut self) -> Result<Value, ParseError> {
+        if self.depth >= MAX_NESTING_DEPTH {
+            return Err(self.error("maximum nesting depth exceeded"));
+        }
+        self.depth += 1;
+
         self.expect('[')?;
         let mut items = Vec::new();
 
         self.skip_ws_and_comments();
         if self.peek() == Some(']') {
             self.advance();
+            self.depth -= 1;
             return Ok(Value::Array(items));
         }
 
@@ -344,6 +366,7 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(']')?;
+        self.depth -= 1;
         Ok(Value::Array(items))
     }
 
@@ -806,5 +829,71 @@ mod tests {
     fn test_scientific_notation() {
         let v = parse_rrjson(r#"{"n": 1.5e2}"#).unwrap();
         assert_eq!(v["n"], Value::Number(150.0));
+    }
+
+    // -- Nesting depth limits ----------------------------------------------------
+
+    #[test]
+    fn test_deeply_nested_objects_rejected() {
+        // Build nesting that exceeds MAX_NESTING_DEPTH
+        let open: String = "{\"a\":".repeat(MAX_NESTING_DEPTH + 1);
+        let close: String = "}".repeat(MAX_NESTING_DEPTH + 1);
+        let input = format!("{open}1{close}");
+        let result = parse_rrjson(&input);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("nesting depth"),
+            "error should mention nesting depth: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn test_deeply_nested_arrays_rejected() {
+        let open: String = "[".repeat(MAX_NESTING_DEPTH + 1);
+        let close: String = "]".repeat(MAX_NESTING_DEPTH + 1);
+        let input = format!("{open}1{close}");
+        let result = parse_rrjson(&input);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("nesting depth"),
+            "error should mention nesting depth: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn test_nesting_at_max_depth_accepted() {
+        // Exactly MAX_NESTING_DEPTH levels should be accepted
+        let open: String = "{\"a\":".repeat(MAX_NESTING_DEPTH);
+        let close: String = "}".repeat(MAX_NESTING_DEPTH);
+        let input = format!("{open}1{close}");
+        let result = parse_rrjson(&input);
+        assert!(result.is_ok(), "nesting at exactly max depth should work");
+    }
+
+    #[test]
+    fn test_mixed_nesting_depth_rejected() {
+        // Mix objects and arrays to exceed depth
+        let mut input = String::new();
+        for i in 0..=MAX_NESTING_DEPTH {
+            if i % 2 == 0 {
+                input.push_str("{\"a\":");
+            } else {
+                input.push('[');
+            }
+        }
+        input.push('1');
+        for i in (0..=MAX_NESTING_DEPTH).rev() {
+            if i % 2 == 0 {
+                input.push('}');
+            } else {
+                input.push(']');
+            }
+        }
+        let result = parse_rrjson(&input);
+        assert!(result.is_err());
     }
 }
