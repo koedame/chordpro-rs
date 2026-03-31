@@ -922,6 +922,11 @@ const COLUMN_GAP: f32 = 20.0;
 /// Returns `(width, height, components)` or `None` if the data is too short
 /// or no SOF marker is found.
 fn parse_jpeg_dimensions(data: &[u8]) -> Option<(u32, u32, u8)> {
+    // Maximum number of bytes to scan for the SOF marker.  Real JPEG files
+    // contain the SOF within the first few KB.  This limit prevents a crafted
+    // file from forcing a byte-by-byte scan through megabytes of data.
+    const MAX_SCAN_BYTES: usize = 64 * 1024;
+
     // Minimum valid JPEG: SOI (2 bytes) + at least one marker segment
     if data.len() < 4 {
         return None;
@@ -931,8 +936,9 @@ fn parse_jpeg_dimensions(data: &[u8]) -> Option<(u32, u32, u8)> {
         return None;
     }
 
+    let scan_limit = data.len().min(MAX_SCAN_BYTES);
     let mut i = 2;
-    while i + 1 < data.len() {
+    while i + 1 < scan_limit {
         if data[i] != 0xFF {
             // Not a valid marker prefix — skip byte
             i += 1;
@@ -2502,6 +2508,27 @@ mod jpeg_tests {
         assert_eq!(
             parse_jpeg_dimensions(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A]),
             None
+        );
+    }
+
+    #[test]
+    fn test_parse_jpeg_dimensions_exceeds_scan_limit() {
+        // Build a JPEG with valid SOI, then >64 KB of padding before the SOF.
+        // The parser should bail out before reaching the SOF marker.
+        let mut data = vec![0xFF, 0xD8]; // SOI
+        // Fill with non-marker bytes (not 0xFF) to force byte-by-byte scanning
+        data.resize(70_000, 0x00);
+        // Append a valid SOF0 marker well past the 64 KB scan limit
+        data.extend_from_slice(&[0xFF, 0xC0]);
+        data.extend_from_slice(&[0x00, 0x08]);
+        data.push(0x08);
+        data.extend_from_slice(&100_u16.to_be_bytes());
+        data.extend_from_slice(&200_u16.to_be_bytes());
+        data.push(3);
+        assert_eq!(
+            parse_jpeg_dimensions(&data),
+            None,
+            "SOF beyond scan limit should not be found"
         );
     }
 
