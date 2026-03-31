@@ -61,11 +61,12 @@ pub fn has_lilypond() -> bool {
 /// - `abc2svg` is not available or fails to execute
 /// - The output does not contain a recognizable `<body>` section
 pub fn invoke_abc2svg(abc_content: &str) -> Result<String, String> {
+    let sanitized = sanitize_abc_content(abc_content);
+
     let tmp_dir = std::env::temp_dir();
     let tmp_path = tmp_dir.join(format!("chordpro_abc_{}.abc", std::process::id()));
 
-    std::fs::write(&tmp_path, abc_content)
-        .map_err(|e| format!("failed to write temp file: {e}"))?;
+    std::fs::write(&tmp_path, &sanitized).map_err(|e| format!("failed to write temp file: {e}"))?;
 
     let output = Command::new("abc2svg")
         .arg("tosvg.js")
@@ -86,6 +87,48 @@ pub fn invoke_abc2svg(abc_content: &str) -> Result<String, String> {
     let html = String::from_utf8_lossy(&output.stdout);
     extract_body_content(&html)
         .ok_or_else(|| "failed to extract SVG from abc2svg output".to_string())
+}
+
+/// Strip dangerous JavaScript directives from ABC notation content.
+///
+/// abc2svg supports embedded JavaScript via `%%beginjs`/`%%endjs` blocks and
+/// `%%javascript` directives. When processing untrusted `.cho` files, these
+/// directives could allow arbitrary code execution in the Node.js runtime.
+/// This function removes such directives to prevent code injection.
+fn sanitize_abc_content(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut in_js_block = false;
+
+    for line in input.lines() {
+        let trimmed = line.trim();
+
+        if in_js_block {
+            if trimmed == "%%endjs" || trimmed.eq_ignore_ascii_case("%%endjs") {
+                in_js_block = false;
+            }
+            continue;
+        }
+
+        if trimmed == "%%beginjs" || trimmed.eq_ignore_ascii_case("%%beginjs") {
+            in_js_block = true;
+            continue;
+        }
+
+        // %%javascript <code> is a single-line JS directive.
+        if trimmed.starts_with("%%javascript") || trimmed.starts_with("%%JavaScript") {
+            let after = &trimmed["%%javascript".len()..];
+            if after.is_empty() || after.starts_with(' ') || after.starts_with('\t') {
+                continue;
+            }
+        }
+
+        if !output.is_empty() {
+            output.push('\n');
+        }
+        output.push_str(line);
+    }
+
+    output
 }
 
 /// Extract content after `<body>` from an HTML string.
@@ -267,6 +310,49 @@ mod tests {
             result.is_err(),
             "Lilypond should reject Scheme system calls with -dsafe"
         );
+    }
+
+    #[test]
+    fn sanitize_abc_strips_beginjs_endjs_block() {
+        let input = "X:1\nK:C\n%%beginjs\nprocess.exit(1);\n%%endjs\nCDEF|\n";
+        let result = super::sanitize_abc_content(input);
+        assert_eq!(result, "X:1\nK:C\nCDEF|");
+        assert!(!result.contains("beginjs"));
+        assert!(!result.contains("process"));
+    }
+
+    #[test]
+    fn sanitize_abc_strips_javascript_directive() {
+        let input = "X:1\nK:C\n%%javascript require('child_process').exec('id')\nCDEF|\n";
+        let result = super::sanitize_abc_content(input);
+        assert_eq!(result, "X:1\nK:C\nCDEF|");
+        assert!(!result.contains("javascript"));
+        assert!(!result.contains("child_process"));
+    }
+
+    #[test]
+    fn sanitize_abc_preserves_normal_content() {
+        let input = "X:1\nT:Test\nM:4/4\nK:C\n%%MIDI program 1\nCDEF|GABc|\n";
+        let result = super::sanitize_abc_content(input);
+        assert_eq!(
+            result,
+            "X:1\nT:Test\nM:4/4\nK:C\n%%MIDI program 1\nCDEF|GABc|"
+        );
+    }
+
+    #[test]
+    fn sanitize_abc_case_insensitive_beginjs() {
+        let input = "X:1\n%%BeginJS\nalert(1);\n%%EndJS\nK:C\n";
+        let result = super::sanitize_abc_content(input);
+        assert_eq!(result, "X:1\nK:C");
+    }
+
+    #[test]
+    fn sanitize_abc_does_not_strip_javascript_prefix_in_other_words() {
+        // %%javascriptfoo is NOT a %%javascript directive (no space/tab separator).
+        let input = "X:1\n%%javascriptfoo bar\nK:C\n";
+        let result = super::sanitize_abc_content(input);
+        assert!(result.contains("%%javascriptfoo"));
     }
 
     #[test]
