@@ -1,0 +1,96 @@
+name: Auto Update PR Branches
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: auto-update-branch
+  cancel-in-progress: true
+
+jobs:
+  update-branches:
+    name: Update out-of-date PR branches
+    runs-on: ubuntu-latest
+    # Minimal permissions — CLAUDE_PAT (passed to github-script) provides
+    # the access needed for the update-branch API call and ensures the
+    # resulting commits trigger CI on the updated branches.
+    permissions:
+      pull-requests: read
+      contents: read
+    steps:
+      - name: Update PR branches
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.CLAUDE_PAT }}
+          script: |
+            const DELAY_BETWEEN_UPDATES_MS = 3000;
+
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              base: 'main',
+              per_page: 100,
+            });
+
+            console.log(`Found ${prs.length} open PR(s) targeting main`);
+
+            let updated = 0;
+            let alreadyUpToDate = 0;
+            let skipped = 0;
+            let failed = 0;
+
+            for (let i = 0; i < prs.length; i++) {
+              const pr = prs[i];
+
+              // Skip dependabot PRs — they manage their own updates
+              if (pr.user.login === 'dependabot[bot]') {
+                console.log(`PR #${pr.number}: skipping (dependabot)`);
+                skipped++;
+                continue;
+              }
+
+              // Skip draft PRs — authors control their own update cadence
+              if (pr.draft) {
+                console.log(`PR #${pr.number}: skipping (draft)`);
+                skipped++;
+                continue;
+              }
+
+              console.log(`PR #${pr.number} (${pr.head.ref}): updating branch...`);
+
+              try {
+                await github.rest.pulls.updateBranch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.number,
+                });
+                console.log(`PR #${pr.number}: branch updated successfully`);
+                updated++;
+              } catch (error) {
+                if (error.status === 422) {
+                  console.log(`PR #${pr.number}: already up to date`);
+                  alreadyUpToDate++;
+                } else if (error.status === 409) {
+                  console.log(`PR #${pr.number}: has merge conflicts, skipping (handled by auto-rebase)`);
+                  skipped++;
+                } else {
+                  console.log(`::warning::PR #${pr.number}: update failed (${error.status}: ${error.message})`);
+                  failed++;
+                }
+                continue;
+              }
+
+              // Delay between updates to avoid API pressure
+              if (i < prs.length - 1) {
+                await new Promise(r => setTimeout(r, DELAY_BETWEEN_UPDATES_MS));
+              }
+            }
+
+            console.log('');
+            console.log('=== Summary ===');
+            console.log(`Updated:           ${updated}`);
+            console.log(`Already up to date: ${alreadyUpToDate}`);
+            console.log(`Skipped:           ${skipped}`);
+            console.log(`Failed:            ${failed}`);

@@ -2,10 +2,23 @@
 //!
 //! Converts a parsed ChordPro AST into a self-contained HTML5 document with
 //! embedded CSS for chord-over-lyrics layout.
+//!
+//! # Security
+//!
+//! Delegate section environments (`{start_of_svg}`, `{start_of_abc}`,
+//! `{start_of_ly}`, `{start_of_textblock}`) emit their content as raw,
+//! unescaped HTML. This is by design per the ChordPro specification, as these
+//! sections contain verbatim markup (e.g., inline SVG). When rendering
+//! untrusted ChordPro input, consumers should apply Content Security Policy
+//! (CSP) headers or sandbox the HTML output to mitigate script injection.
 
 use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
 use chordpro_core::inline_markup::{SpanAttributes, TextSpan};
 use chordpro_core::transpose::transpose_chord;
+
+/// Maximum number of CSS columns allowed.
+/// Matches `MAX_COLUMNS` in the PDF renderer.
+const MAX_COLUMNS: u32 = 32;
 
 // ---------------------------------------------------------------------------
 // Formatting state
@@ -142,7 +155,14 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
         match line {
             Line::Lyrics(lyrics_line) => {
                 if in_svg_section {
-                    // Inside SVG section: emit lyrics text as raw SVG content.
+                    // Inside SVG section: emit lyrics text as raw, unescaped content.
+                    //
+                    // NOTE: This is intentional per the ChordPro specification.
+                    // Delegate sections (SVG, ABC, Lilypond, textblock) contain
+                    // verbatim markup that must pass through without escaping.
+                    // Consumers rendering untrusted ChordPro input should apply
+                    // Content Security Policy (CSP) headers or sandbox the output
+                    // to mitigate potential script injection.
                     let raw = lyrics_line.text();
                     html.push_str(&raw);
                     html.push('\n');
@@ -198,7 +218,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
                             .as_deref()
                             .and_then(|v| v.trim().parse().ok())
                             .unwrap_or(1)
-                            .clamp(1, 32);
+                            .clamp(1, MAX_COLUMNS);
                         if columns_open {
                             html.push_str("</div>\n");
                             columns_open = false;

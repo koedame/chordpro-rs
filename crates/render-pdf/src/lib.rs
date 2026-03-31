@@ -35,7 +35,10 @@ struct PdfFormattingState {
 impl PdfFormattingState {
     /// Apply a formatting directive, updating the appropriate style.
     fn apply(&mut self, kind: &DirectiveKind, value: &Option<String>) {
-        let size_val = value.as_deref().and_then(|v| v.parse::<f32>().ok());
+        let size_val = value
+            .as_deref()
+            .and_then(|v| v.parse::<f32>().ok())
+            .map(|s| s.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE));
         match kind {
             DirectiveKind::TextSize => self.text.size = size_val,
             DirectiveKind::ChordSize => self.chord.size = size_val,
@@ -92,6 +95,10 @@ const MAX_PAGES: usize = 10_000;
 /// Maximum number of columns allowed.
 /// Prevents degenerate layout and f32 overflow from extreme values.
 const MAX_COLUMNS: u32 = 32;
+/// Minimum font size (in points) accepted from user directives.
+const MIN_FONT_SIZE: f32 = 0.5;
+/// Maximum font size (in points) accepted from user directives.
+const MAX_FONT_SIZE: f32 = 200.0;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -1019,7 +1026,13 @@ impl PdfDocument {
     }
 
     /// Append a pre-built page to this document.
+    ///
+    /// Silently drops the page when [`MAX_PAGES`] has been reached, consistent
+    /// with [`new_page`](Self::new_page).
     fn push_page(&mut self, ops: Vec<String>) {
+        if self.pages.len() >= MAX_PAGES {
+            return;
+        }
         self.pages.push(ops);
     }
 
@@ -1539,6 +1552,37 @@ mod formatting_directive_tests {
         let bytes = render_song(&song);
         assert!(bytes.starts_with(b"%PDF"));
     }
+
+    #[test]
+    fn test_textsize_clamped_to_max() {
+        let input = "{textsize: 99999}\nHello";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        // Font size must be clamped to MAX_FONT_SIZE (200), not 99999.
+        assert!(!content.contains("99999"));
+        assert!(content.contains("200"));
+    }
+
+    #[test]
+    fn test_textsize_clamped_to_min() {
+        let input = "{textsize: -5}\nHello";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        // Negative size must be clamped to MIN_FONT_SIZE (0.5).
+        assert!(content.contains("0.5"));
+    }
+
+    #[test]
+    fn test_chordsize_clamped_to_max() {
+        let input = "{chordsize: 500}\n[Am]Hello";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(!content.contains("500"));
+        assert!(content.contains("200"));
+    }
 }
 
 #[cfg(test)]
@@ -1656,6 +1700,44 @@ mod multipage_tests {
         let _ = doc.take_pages();
         doc.new_page();
         assert_eq!(doc.page_count(), 2);
+    }
+
+    #[test]
+    fn test_push_page_respects_max_limit() {
+        let mut doc = PdfDocument::new();
+        // Fill to MAX_PAGES via new_page.
+        for _ in 1..MAX_PAGES {
+            doc.new_page();
+        }
+        assert_eq!(doc.page_count(), MAX_PAGES);
+
+        // push_page should be silently dropped.
+        doc.push_page(vec!["BT (overflow) Tj ET".to_string()]);
+        assert_eq!(doc.page_count(), MAX_PAGES);
+    }
+
+    #[test]
+    fn test_combined_toc_and_body_respects_max_limit() {
+        let mut toc_doc = PdfDocument::new();
+        // Simulate ToC with a few pages.
+        for _ in 1..5 {
+            toc_doc.new_page();
+        }
+        assert_eq!(toc_doc.page_count(), 5);
+
+        let mut body_doc = PdfDocument::new();
+        // Fill body to MAX_PAGES.
+        for _ in 1..MAX_PAGES {
+            body_doc.new_page();
+        }
+        assert_eq!(body_doc.page_count(), MAX_PAGES);
+
+        // Combine: push body pages into toc_doc.
+        for page_ops in body_doc.take_pages() {
+            toc_doc.push_page(page_ops);
+        }
+        // Combined must not exceed MAX_PAGES.
+        assert_eq!(toc_doc.page_count(), MAX_PAGES);
     }
 }
 
