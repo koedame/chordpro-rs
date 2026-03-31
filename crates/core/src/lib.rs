@@ -2,6 +2,7 @@
 
 pub mod ast;
 pub mod chord;
+pub mod config;
 pub mod inline_markup;
 pub mod lexer;
 pub mod parser;
