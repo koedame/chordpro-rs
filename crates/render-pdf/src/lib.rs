@@ -99,6 +99,8 @@ const MAX_COLUMNS: u32 = 32;
 const MIN_FONT_SIZE: f32 = 0.5;
 /// Maximum font size (in points) accepted from user directives.
 const MAX_FONT_SIZE: f32 = 200.0;
+/// Maximum image file size in bytes (50 MB).
+const MAX_IMAGE_FILE_SIZE: u64 = 50 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -537,6 +539,13 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
     let src_lower = attrs.src.to_ascii_lowercase();
     if !src_lower.ends_with(".jpg") && !src_lower.ends_with(".jpeg") {
         return;
+    }
+
+    // Check file size before reading to avoid excessive memory allocation.
+    match std::fs::metadata(&attrs.src) {
+        Ok(meta) if meta.len() > MAX_IMAGE_FILE_SIZE => return,
+        Err(_) => return,
+        _ => {}
     }
 
     let data = match std::fs::read(&attrs.src) {
@@ -2220,5 +2229,29 @@ mod jpeg_tests {
         let (w, h) = compute_image_dimensions(&attrs, 800.0, 600.0, 800.0 / 600.0);
         assert!((w - 800.0).abs() < 0.01);
         assert!((h - 600.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_oversized_image_file_is_skipped() {
+        // Create a temporary file that exceeds MAX_IMAGE_FILE_SIZE by writing
+        // a sparse file (only metadata matters — we just need the reported size).
+        let dir = std::env::temp_dir().join("chordpro_pdf_test_oversized");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("huge.jpg");
+
+        // Write a file that is exactly 1 byte over the limit.
+        let f = std::fs::File::create(&path).unwrap();
+        f.set_len(MAX_IMAGE_FILE_SIZE + 1).unwrap();
+        drop(f);
+
+        let input = format!("{{image: src={}}}", path.display());
+        let song = chordpro_core::parse(&input).unwrap();
+        // Should not panic or crash — the oversized image is silently skipped.
+        let pdf = render_song(&song);
+        // The PDF is valid but contains no image XObjects.
+        assert!(!pdf.is_empty());
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
     }
 }
