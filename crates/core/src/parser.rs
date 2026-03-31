@@ -882,8 +882,8 @@ pub fn parse_with_options(input: &str, options: &ParseOptions) -> Result<Song, P
                 options.max_input_size
             ),
             Span::new(
-                crate::token::Position::new(0, 0),
-                crate::token::Position::new(0, 0),
+                crate::token::Position::new(1, 1),
+                crate::token::Position::new(1, 1),
             ),
         ));
     }
@@ -927,8 +927,8 @@ pub fn parse_lenient_with_options(input: &str, options: &ParseOptions) -> ParseR
                     options.max_input_size
                 ),
                 Span::new(
-                    crate::token::Position::new(0, 0),
-                    crate::token::Position::new(0, 0),
+                    crate::token::Position::new(1, 1),
+                    crate::token::Position::new(1, 1),
                 ),
             )],
         };
@@ -1084,8 +1084,8 @@ pub fn parse_multi_with_options(
                 options.max_input_size
             ),
             Span::new(
-                crate::token::Position::new(0, 0),
-                crate::token::Position::new(0, 0),
+                crate::token::Position::new(1, 1),
+                crate::token::Position::new(1, 1),
             ),
         ));
     }
@@ -1139,8 +1139,8 @@ pub fn parse_multi_lenient_with_options(input: &str, options: &ParseOptions) -> 
                         options.max_input_size
                     ),
                     Span::new(
-                        crate::token::Position::new(0, 0),
-                        crate::token::Position::new(0, 0),
+                        crate::token::Position::new(1, 1),
+                        crate::token::Position::new(1, 1),
                     ),
                 )],
             }],
