@@ -569,18 +569,16 @@ fn span_attrs_to_css(attrs: &SpanAttributes) -> String {
     css
 }
 
-/// Strip characters that could break out of a CSS property value context.
+/// Sanitize a user-provided value for use in a CSS property value context.
 ///
-/// This prevents CSS injection by removing `;` (property boundary), `{`/`}`
-/// (rule boundaries), `(`/`)` (function calls like `url()`), quotes, and
-/// backslashes from user-provided attribute values.
+/// Uses a whitelist approach: only characters safe in CSS values are retained.
+/// Allowed: ASCII alphanumeric, `#` (hex colors), `.` (decimals), `-` (negatives,
+/// hyphenated names), ` ` (multi-word font names), `,` (font family lists),
+/// `%` (percentages), `+` (font-weight values like `+lighter`).
 fn sanitize_css_value(s: &str) -> String {
     s.chars()
         .filter(|c| {
-            !matches!(
-                c,
-                ';' | '{' | '}' | '(' | ')' | '\'' | '\\' | '<' | '>' | '"'
-            )
+            c.is_ascii_alphanumeric() || matches!(c, '#' | '.' | '-' | ' ' | ',' | '%' | '+')
         })
         .collect()
 }
