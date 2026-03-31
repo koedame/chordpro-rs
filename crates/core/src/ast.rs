@@ -61,6 +61,58 @@ impl Song {
             lines: Vec::new(),
         }
     }
+
+    /// Resolves `{define}` display attributes and applies them to matching chords.
+    ///
+    /// Scans all `{define}` directives in the song, collecting any `display`
+    /// overrides. Then walks every chord in the song and sets `Chord::display`
+    /// for chords whose name matches a definition with a display attribute.
+    ///
+    /// Later definitions override earlier ones for the same chord name.
+    pub fn apply_define_displays(&mut self) {
+        // First pass: collect chord name -> display mappings from {define} directives.
+        let mut display_map: Vec<(String, String)> = Vec::new();
+        for line in &self.lines {
+            if let Line::Directive(directive) = line {
+                if directive.kind == DirectiveKind::Define {
+                    if let Some(ref value) = directive.value {
+                        let def = ChordDefinition::parse_value(value);
+                        if let Some(display) = def.display {
+                            // Later definitions override earlier ones.
+                            if let Some(entry) =
+                                display_map.iter_mut().find(|(n, _)| *n == def.name)
+                            {
+                                entry.1 = display;
+                            } else {
+                                display_map.push((def.name, display));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if display_map.is_empty() {
+            return;
+        }
+
+        // Second pass: apply display overrides to matching chords.
+        for line in &mut self.lines {
+            if let Line::Lyrics(lyrics_line) = line {
+                for segment in &mut lyrics_line.segments {
+                    if let Some(ref mut chord) = segment.chord {
+                        if chord.display.is_none() {
+                            if let Some((_, display)) =
+                                display_map.iter().find(|(n, _)| *n == chord.name)
+                            {
+                                chord.display = Some(display.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl Default for Song {
@@ -540,20 +592,47 @@ impl ChordDefinition {
             return def;
         }
 
-        // Check for "display" attribute in the raw value
-        if let Some(pos) = rest.find("display=") {
+        // Check for "display" attribute in the raw value.
+        // Match only at a word boundary (preceded by whitespace or at start).
+        let display_match = rest
+            .match_indices("display=")
+            .find(|&(pos, _)| pos == 0 || rest.as_bytes()[pos - 1].is_ascii_whitespace());
+
+        if let Some((pos, _)) = display_match {
             let after = &rest[pos + 8..];
-            // Extract quoted value
-            let display_val = if let Some(stripped) = after.strip_prefix('"') {
-                stripped.split('"').next().map(|s| s.to_string())
+            // Extract quoted or unquoted value, and compute the end of the display token.
+            let (display_val, token_end) = if let Some(stripped) = after.strip_prefix('"') {
+                let val = stripped.split('"').next().map(|s| s.to_string());
+                // +8 for "display=", +1 for opening quote, +len, +1 for closing quote
+                let len = val.as_ref().map_or(0, |v| v.len());
+                (val, pos + 8 + 1 + len + 1)
             } else {
-                after.split_whitespace().next().map(|s| s.to_string())
+                let val = after.split_whitespace().next().map(|s| s.to_string());
+                let len = val.as_ref().map_or(0, |v| v.len());
+                (val, pos + 8 + len)
             };
             def.display = display_val;
+
+            // Strip the display token from raw so it is not passed to DiagramData.
+            let before = rest[..pos].trim_end();
+            let after_token = rest[token_end..].trim_start();
+            let stripped_raw = if before.is_empty() {
+                after_token.to_string()
+            } else if after_token.is_empty() {
+                before.to_string()
+            } else {
+                format!("{before} {after_token}")
+            };
+            def.raw = if stripped_raw.is_empty() {
+                None
+            } else {
+                Some(stripped_raw)
+            };
+        } else {
+            // Store raw for fretted definitions
+            def.raw = Some(rest.to_string());
         }
 
-        // Store raw for fretted definitions
-        def.raw = Some(rest.to_string());
         def
     }
 }
@@ -2718,6 +2797,59 @@ mod chord_definition_tests {
             ChordDefinition::parse_value("Am base-fret 1 frets x 0 2 2 1 0 display=\"A minor\"");
         assert_eq!(def.name, "Am");
         assert_eq!(def.display, Some("A minor".to_string()));
+        // display= should be stripped from raw
+        let raw = def.raw.unwrap();
+        assert!(
+            !raw.contains("display="),
+            "display= should be stripped from raw, got: {raw}"
+        );
+        assert!(raw.contains("base-fret"));
+    }
+
+    #[test]
+    fn test_parse_display_attribute_at_start() {
+        let def =
+            ChordDefinition::parse_value("Am display=\"A minor\" base-fret 1 frets x 0 2 2 1 0");
+        assert_eq!(def.display, Some("A minor".to_string()));
+        let raw = def.raw.unwrap();
+        assert!(!raw.contains("display="));
+        assert!(raw.contains("base-fret"));
+    }
+
+    #[test]
+    fn test_parse_display_attribute_middle() {
+        let def =
+            ChordDefinition::parse_value("Am base-fret 1 display=\"A minor\" frets x 0 2 2 1 0");
+        assert_eq!(def.display, Some("A minor".to_string()));
+        let raw = def.raw.unwrap();
+        assert!(!raw.contains("display="));
+        assert!(raw.contains("base-fret"));
+        assert!(raw.contains("frets"));
+    }
+
+    #[test]
+    fn test_parse_display_unquoted() {
+        let def = ChordDefinition::parse_value("Am base-fret 1 frets x 0 2 2 1 0 display=Aminor");
+        assert_eq!(def.display, Some("Aminor".to_string()));
+        let raw = def.raw.unwrap();
+        assert!(!raw.contains("display="));
+    }
+
+    #[test]
+    fn test_parse_display_no_false_match() {
+        // "undisplay=" should not match as "display="
+        let def = ChordDefinition::parse_value("Am undisplay=foo base-fret 1 frets x 0 2 2 1 0");
+        assert_eq!(def.display, None);
+        let raw = def.raw.unwrap();
+        assert!(raw.contains("undisplay=foo"));
+    }
+
+    #[test]
+    fn test_parse_display_only() {
+        // display-only definition (no fret data)
+        let def = ChordDefinition::parse_value("Am display=\"A minor\"");
+        assert_eq!(def.display, Some("A minor".to_string()));
+        assert!(def.raw.is_none());
     }
 
     #[test]
@@ -2744,5 +2876,126 @@ mod chord_definition_tests {
     fn has_src_returns_false_for_explicit_empty_string() {
         let attrs = ImageAttributes::new("");
         assert!(!attrs.has_src());
+    }
+}
+
+#[cfg(test)]
+mod apply_define_displays_tests {
+    use super::*;
+
+    fn make_song_with_define_and_chords(define_value: &str, chord_names: &[&str]) -> Song {
+        let mut song = Song::new();
+
+        // Add {define} directive
+        song.lines.push(Line::Directive(Directive::with_value(
+            "define",
+            define_value,
+        )));
+
+        // Add a lyrics line with the given chords
+        let mut lyrics = LyricsLine::new();
+        for name in chord_names {
+            lyrics
+                .segments
+                .push(LyricsSegment::new(Some(Chord::new(*name)), "word "));
+        }
+        song.lines.push(Line::Lyrics(lyrics));
+
+        song
+    }
+
+    #[test]
+    fn applies_display_to_matching_chords() {
+        let mut song = make_song_with_define_and_chords(
+            "Am base-fret 1 frets x 0 2 2 1 0 display=\"A minor\"",
+            &["Am", "G", "Am"],
+        );
+        song.apply_define_displays();
+
+        if let Line::Lyrics(ref lyrics) = song.lines[1] {
+            assert_eq!(
+                lyrics.segments[0].chord.as_ref().unwrap().display_name(),
+                "A minor"
+            );
+            assert_eq!(
+                lyrics.segments[1].chord.as_ref().unwrap().display_name(),
+                "G"
+            );
+            assert_eq!(
+                lyrics.segments[2].chord.as_ref().unwrap().display_name(),
+                "A minor"
+            );
+        } else {
+            panic!("expected lyrics line");
+        }
+    }
+
+    #[test]
+    fn no_display_when_not_defined() {
+        let mut song =
+            make_song_with_define_and_chords("Am base-fret 1 frets x 0 2 2 1 0", &["Am"]);
+        song.apply_define_displays();
+
+        if let Line::Lyrics(ref lyrics) = song.lines[1] {
+            assert_eq!(lyrics.segments[0].chord.as_ref().unwrap().display, None);
+        } else {
+            panic!("expected lyrics line");
+        }
+    }
+
+    #[test]
+    fn later_define_overrides_earlier() {
+        let mut song = Song::new();
+        song.lines.push(Line::Directive(Directive::with_value(
+            "define",
+            "Am display=\"first\"",
+        )));
+        song.lines.push(Line::Directive(Directive::with_value(
+            "define",
+            "Am display=\"second\"",
+        )));
+        let mut lyrics = LyricsLine::new();
+        lyrics
+            .segments
+            .push(LyricsSegment::new(Some(Chord::new("Am")), "text"));
+        song.lines.push(Line::Lyrics(lyrics));
+
+        song.apply_define_displays();
+
+        if let Line::Lyrics(ref lyrics) = song.lines[2] {
+            assert_eq!(
+                lyrics.segments[0].chord.as_ref().unwrap().display_name(),
+                "second"
+            );
+        } else {
+            panic!("expected lyrics line");
+        }
+    }
+
+    #[test]
+    fn does_not_overwrite_existing_display() {
+        let mut song = Song::new();
+        song.lines.push(Line::Directive(Directive::with_value(
+            "define",
+            "Am display=\"from define\"",
+        )));
+        let mut lyrics = LyricsLine::new();
+        let mut chord = Chord::new("Am");
+        chord.display = Some("already set".to_string());
+        lyrics
+            .segments
+            .push(LyricsSegment::new(Some(chord), "text"));
+        song.lines.push(Line::Lyrics(lyrics));
+
+        song.apply_define_displays();
+
+        if let Line::Lyrics(ref lyrics) = song.lines[1] {
+            assert_eq!(
+                lyrics.segments[0].chord.as_ref().unwrap().display_name(),
+                "already set"
+            );
+        } else {
+            panic!("expected lyrics line");
+        }
     }
 }

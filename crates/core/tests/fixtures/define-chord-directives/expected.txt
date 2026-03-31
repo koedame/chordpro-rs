@@ -40,5 +40,82 @@ Song {
                 selector: None,
             },
         ),
+        Directive(
+            Directive {
+                name: "define",
+                value: Some(
+                    "Am base-fret 1 frets x 0 2 2 1 0 display=\"A minor\"",
+                ),
+                kind: Define,
+                selector: None,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "Am",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: A,
+                                        root_accidental: None,
+                                        quality: Minor,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                                display: Some(
+                                    "A minor",
+                                ),
+                            },
+                        ),
+                        text: "Hello ",
+                        spans: [],
+                    },
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "G",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: G,
+                                        root_accidental: None,
+                                        quality: Major,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                                display: None,
+                            },
+                        ),
+                        text: "world ",
+                        spans: [],
+                    },
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "Am",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: A,
+                                        root_accidental: None,
+                                        quality: Minor,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                                display: Some(
+                                    "A minor",
+                                ),
+                            },
+                        ),
+                        text: "again",
+                        spans: [],
+                    },
+                ],
+            },
+        ),
     ],
 }

@@ -195,6 +195,7 @@ impl Parser {
             song.lines.push(line);
         }
 
+        song.apply_define_displays();
         Ok(song)
     }
 
@@ -233,6 +234,7 @@ impl Parser {
             }
         }
 
+        song.apply_define_displays();
         ParseResult { song, errors }
     }
 
