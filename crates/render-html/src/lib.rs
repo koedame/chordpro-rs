@@ -187,7 +187,15 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                         .as_deref()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(0);
-                    transpose_offset = file_offset.saturating_add(cli_transpose);
+                    let (combined, saturated) =
+                        chordpro_core::transpose::combine_transpose(file_offset, cli_transpose);
+                    if saturated {
+                        eprintln!(
+                            "warning: transpose offset {file_offset} + {cli_transpose} \
+                             exceeds i8 range, clamped to {combined}"
+                        );
+                    }
+                    transpose_offset = combined;
                     continue;
                 }
                 if directive.kind.is_font_size_color() {

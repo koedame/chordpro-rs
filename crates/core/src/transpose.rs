@@ -167,6 +167,17 @@ pub fn transpose(song: &Song, semitones: i8) -> Song {
     }
 }
 
+/// Combine a file-level transpose offset with a CLI transpose offset.
+///
+/// Returns `(result, saturated)` where `result` is the clamped sum and
+/// `saturated` is `true` if the exact sum would have overflowed i8.
+#[must_use]
+pub fn combine_transpose(file_offset: i8, cli_offset: i8) -> (i8, bool) {
+    let exact = file_offset as i16 + cli_offset as i16;
+    let saturated = exact < i8::MIN as i16 || exact > i8::MAX as i16;
+    (file_offset.saturating_add(cli_offset), saturated)
+}
+
 /// Transpose all chords in a lyrics line.
 fn transpose_lyrics(lyrics_line: &LyricsLine, semitones: i8) -> LyricsLine {
     LyricsLine {
@@ -371,5 +382,35 @@ mod tests {
             let t = transpose_detail(&detail, i as i8);
             assert_eq!(t.to_string(), *expected, "transpose C by {i}");
         }
+    }
+
+    // --- combine_transpose ---
+
+    #[test]
+    fn combine_transpose_no_overflow() {
+        let (result, saturated) = combine_transpose(5, 3);
+        assert_eq!(result, 8);
+        assert!(!saturated);
+    }
+
+    #[test]
+    fn combine_transpose_positive_overflow() {
+        let (result, saturated) = combine_transpose(100, 50);
+        assert_eq!(result, 127);
+        assert!(saturated);
+    }
+
+    #[test]
+    fn combine_transpose_negative_overflow() {
+        let (result, saturated) = combine_transpose(-100, -50);
+        assert_eq!(result, -128);
+        assert!(saturated);
+    }
+
+    #[test]
+    fn combine_transpose_exact_max() {
+        let (result, saturated) = combine_transpose(100, 27);
+        assert_eq!(result, 127);
+        assert!(!saturated);
     }
 }
