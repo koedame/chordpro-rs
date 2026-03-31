@@ -281,9 +281,11 @@ fn render_song_into_doc(song: &Song, cli_transpose: i8, doc: &mut PdfDocument) {
                             doc,
                         );
                     }
-                    // Page control directives are intentionally NOT captured
-                    // in the chorus buffer. Replaying page/column breaks during
-                    // {chorus} recall would produce unexpected layout changes.
+                    // All page control directives ({new_page}, {new_physical_page},
+                    // {column_break}, {columns}) are intentionally excluded from the
+                    // chorus buffer. These affect global page/column layout, and
+                    // replaying them during {chorus} recall would produce unexpected
+                    // layout changes (e.g., duplicate page breaks, column resets).
                     DirectiveKind::NewPage | DirectiveKind::NewPhysicalPage => {
                         // TODO: NewPhysicalPage should eventually handle duplex
                         // printing differently (e.g., insert a blank page to
@@ -1738,6 +1740,28 @@ mod multipage_tests {
         }
         // Combined must not exceed MAX_PAGES.
         assert_eq!(toc_doc.page_count(), MAX_PAGES);
+    }
+
+    #[test]
+    fn test_page_control_not_replayed_in_chorus_recall() {
+        // {new_page} inside a chorus must NOT create an extra page on {chorus} recall.
+        let input = "\
+{start_of_chorus}\n\
+{new_page}\n\
+[G]La la la\n\
+{end_of_chorus}\n\
+Verse text\n\
+{chorus}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        // The initial chorus {new_page} creates page 2.
+        // The chorus recall should NOT create another page break.
+        // Expected: exactly 2 pages (initial page + one {new_page}).
+        assert!(
+            content.contains("/Count 2"),
+            "chorus recall must not replay page breaks"
+        );
     }
 }
 

@@ -231,9 +231,11 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
                             columns_open = true;
                         }
                     }
-                    // Page control directives are intentionally NOT captured
-                    // in the chorus buffer. Replaying page/column breaks during
-                    // {chorus} recall would produce unexpected layout changes.
+                    // All page control directives ({new_page}, {new_physical_page},
+                    // {column_break}, {columns}) are intentionally excluded from the
+                    // chorus buffer. These affect global page/column layout, and
+                    // replaying them during {chorus} recall would produce unexpected
+                    // layout changes (e.g., duplicate page breaks, column resets).
                     DirectiveKind::ColumnBreak => {
                         html.push_str("<div style=\"break-before: column;\"></div>\n");
                     }
@@ -1247,6 +1249,25 @@ mod transpose_tests {
     fn test_new_physical_page_generates_page_break() {
         let html = render("Page 1\n{new_physical_page}\nPage 2");
         assert!(html.contains("break-before: page;"));
+    }
+
+    #[test]
+    fn test_page_control_not_replayed_in_chorus_recall() {
+        // Page control directives inside a chorus must NOT appear in {chorus} recall.
+        let input = "\
+{start_of_chorus}\n\
+{new_page}\n\
+[G]La la la\n\
+{end_of_chorus}\n\
+Verse text\n\
+{chorus}";
+        let html = render(input);
+        // The initial chorus renders a page break.
+        assert!(html.contains("break-before: page;"));
+        // Count: only ONE page-break div should exist (from the original chorus,
+        // not from the recall).
+        let count = html.matches("break-before: page;").count();
+        assert_eq!(count, 1, "page break must not be replayed in chorus recall");
     }
 
     // -- image directive tests ------------------------------------------------
