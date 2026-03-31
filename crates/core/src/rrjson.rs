@@ -136,7 +136,7 @@ impl fmt::Display for ParseError {
 /// Returns a [`ParseError`] if the input is malformed.
 pub fn parse_rrjson(input: &str) -> Result<Value, ParseError> {
     let mut parser = Parser::new(input);
-    parser.skip_ws_and_comments();
+    parser.skip_ws_and_comments()?;
 
     // RRJSON: if the input doesn't start with '{' or '[', treat it as
     // bare key-value pairs (implicit object).
@@ -145,7 +145,7 @@ pub fn parse_rrjson(input: &str) -> Result<Value, ParseError> {
     }
 
     let value = parser.parse_value()?;
-    parser.skip_ws_and_comments();
+    parser.skip_ws_and_comments()?;
     if parser.pos < parser.input.len() {
         return Err(parser.error("unexpected content after value"));
     }
@@ -209,7 +209,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn skip_ws_and_comments(&mut self) {
+    fn skip_ws_and_comments(&mut self) -> Result<(), ParseError> {
         loop {
             // Skip whitespace
             while self.pos < self.input.len() {
@@ -234,13 +234,15 @@ impl<'a> Parser<'a> {
 
             // Skip /* block comments */
             if self.input[self.pos..].starts_with("/*") {
+                let open_pos = self.pos;
                 self.pos += 2;
                 if let Some(end) = self.input[self.pos..].find("*/") {
                     self.pos += end + 2;
                     continue;
                 } else {
-                    self.pos = self.input.len();
-                    break;
+                    // Record position of the opening /* for the error message.
+                    self.pos = open_pos;
+                    return Err(self.error("unterminated block comment"));
                 }
             }
 
@@ -257,12 +259,13 @@ impl<'a> Parser<'a> {
 
             break;
         }
+        Ok(())
     }
 
     // -- Value parsing --------------------------------------------------------
 
     fn parse_value(&mut self) -> Result<Value, ParseError> {
-        self.skip_ws_and_comments();
+        self.skip_ws_and_comments()?;
         match self.peek() {
             Some('{') => self.parse_object(),
             Some('[') => self.parse_array(),
@@ -285,7 +288,7 @@ impl<'a> Parser<'a> {
         self.expect('{')?;
         let mut entries = Vec::new();
 
-        self.skip_ws_and_comments();
+        self.skip_ws_and_comments()?;
         if self.peek() == Some('}') {
             self.advance();
             self.depth -= 1;
@@ -293,7 +296,7 @@ impl<'a> Parser<'a> {
         }
 
         loop {
-            self.skip_ws_and_comments();
+            self.skip_ws_and_comments()?;
 
             // Allow trailing comma before '}'
             if self.peek() == Some('}') {
@@ -301,7 +304,7 @@ impl<'a> Parser<'a> {
             }
 
             let key = self.parse_key()?;
-            self.skip_ws_and_comments();
+            self.skip_ws_and_comments()?;
 
             // Accept both ':' and '=' as key-value separator
             match self.peek() {
@@ -318,7 +321,7 @@ impl<'a> Parser<'a> {
             }
             self.insert_dotted_key(&mut entries, &key, value);
 
-            self.skip_ws_and_comments();
+            self.skip_ws_and_comments()?;
             match self.peek() {
                 Some(',') => {
                     self.advance();
@@ -342,7 +345,7 @@ impl<'a> Parser<'a> {
         self.expect('[')?;
         let mut items = Vec::new();
 
-        self.skip_ws_and_comments();
+        self.skip_ws_and_comments()?;
         if self.peek() == Some(']') {
             self.advance();
             self.depth -= 1;
@@ -350,7 +353,7 @@ impl<'a> Parser<'a> {
         }
 
         loop {
-            self.skip_ws_and_comments();
+            self.skip_ws_and_comments()?;
 
             // Allow trailing comma before ']'
             if self.peek() == Some(']') {
@@ -359,7 +362,7 @@ impl<'a> Parser<'a> {
 
             items.push(self.parse_value()?);
 
-            self.skip_ws_and_comments();
+            self.skip_ws_and_comments()?;
             match self.peek() {
                 Some(',') => {
                     self.advance();
@@ -519,7 +522,7 @@ impl<'a> Parser<'a> {
         let mut entries = Vec::new();
 
         loop {
-            self.skip_ws_and_comments();
+            self.skip_ws_and_comments()?;
             if self.pos >= self.input.len() {
                 break;
             }
@@ -535,7 +538,7 @@ impl<'a> Parser<'a> {
             }
 
             let key = self.parse_key()?;
-            self.skip_ws_and_comments();
+            self.skip_ws_and_comments()?;
 
             // Accept ':' or '='
             match self.peek() {
@@ -553,7 +556,7 @@ impl<'a> Parser<'a> {
             self.insert_dotted_key(&mut entries, &key, value);
 
             // Optional separator (comma, semicolon, or newline-separated)
-            self.skip_ws_and_comments();
+            self.skip_ws_and_comments()?;
             if self.peek() == Some(',') || self.peek() == Some(';') {
                 self.advance();
             }
@@ -703,6 +706,24 @@ mod tests {
         let input = "{/* comment */\"key\": \"value\"}";
         let v = parse_rrjson(input).unwrap();
         assert_eq!(v["key"], Value::String("value".to_string()));
+    }
+
+    #[test]
+    fn test_unterminated_block_comment() {
+        let input = "{/* this comment never closes\n\"key\": \"value\"}";
+        let err = parse_rrjson(input).unwrap_err();
+        assert!(
+            err.message.contains("unterminated block comment"),
+            "expected unterminated block comment error, got: {err}"
+        );
+        assert_eq!(err.line, 1);
+        assert_eq!(err.column, 2);
+    }
+
+    #[test]
+    fn test_unterminated_block_comment_at_eof() {
+        let err = parse_rrjson("/*").unwrap_err();
+        assert!(err.message.contains("unterminated block comment"));
     }
 
     #[test]
