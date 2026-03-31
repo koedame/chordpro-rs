@@ -1230,7 +1230,7 @@ pub fn parse_image_attributes(input: &str) -> ImageAttributes {
     let pairs = split_key_value_pairs(input);
 
     for (key, value) in pairs {
-        match key.as_str() {
+        match key.to_ascii_lowercase().as_str() {
             "src" => attrs.src = truncate_string(value, IMAGE_SRC_MAX_BYTES),
             "width" => attrs.width = Some(truncate_string(value, IMAGE_ATTR_MAX_BYTES)),
             "height" => attrs.height = Some(truncate_string(value, IMAGE_ATTR_MAX_BYTES)),
@@ -3116,6 +3116,23 @@ mod tests {
         let attrs = super::parse_image_attributes("  src=a.jpg   width=100  ");
         assert_eq!(attrs.src, "a.jpg");
         assert_eq!(attrs.width.as_deref(), Some("100"));
+    }
+
+    #[test]
+    fn parse_image_attributes_case_insensitive_keys() {
+        let attrs = super::parse_image_attributes("SRC=photo.jpg WIDTH=200 Height=100");
+        assert_eq!(attrs.src, "photo.jpg");
+        assert_eq!(attrs.width.as_deref(), Some("200"));
+        assert_eq!(attrs.height.as_deref(), Some("100"));
+    }
+
+    #[test]
+    fn parse_image_attributes_mixed_case_keys() {
+        let attrs = super::parse_image_attributes("Src=a.jpg Scale=0.5 Title=test Anchor=column");
+        assert_eq!(attrs.src, "a.jpg");
+        assert_eq!(attrs.scale.as_deref(), Some("0.5"));
+        assert_eq!(attrs.title.as_deref(), Some("test"));
+        assert_eq!(attrs.anchor.as_deref(), Some("column"));
     }
 
     #[test]
