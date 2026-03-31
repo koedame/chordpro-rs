@@ -128,6 +128,8 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
 
     // Tracks whether a multi-column div is currently open.
     let mut columns_open = false;
+    // Tracks whether we are inside an SVG delegate section.
+    let mut in_svg_section = false;
 
     // Stores the rendered HTML of the most recently defined chorus body
     // (everything between StartOfChorus and EndOfChorus, excluding the
@@ -139,12 +141,19 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
     for line in &song.lines {
         match line {
             Line::Lyrics(lyrics_line) => {
-                let mut target = String::new();
-                render_lyrics(lyrics_line, transpose_offset, &fmt_state, &mut target);
-                if let Some(buf) = chorus_buf.as_mut() {
-                    buf.push_str(&target);
+                if in_svg_section {
+                    // Inside SVG section: emit lyrics text as raw SVG content.
+                    let raw = lyrics_line.text();
+                    html.push_str(&raw);
+                    html.push('\n');
+                } else {
+                    let mut target = String::new();
+                    render_lyrics(lyrics_line, transpose_offset, &fmt_state, &mut target);
+                    if let Some(buf) = chorus_buf.as_mut() {
+                        buf.push_str(&target);
+                    }
+                    html.push_str(&target);
                 }
-                html.push_str(&target);
             }
             Line::Directive(directive) => {
                 if directive.kind.is_metadata() {
@@ -203,6 +212,14 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
                     }
                     DirectiveKind::NewPage | DirectiveKind::NewPhysicalPage => {
                         html.push_str("<div style=\"break-before: page;\"></div>\n");
+                    }
+                    DirectiveKind::StartOfSvg => {
+                        html.push_str("<div class=\"svg-section\">\n");
+                        in_svg_section = true;
+                    }
+                    DirectiveKind::EndOfSvg => {
+                        html.push_str("</div>\n");
+                        in_svg_section = false;
                     }
                     _ => {
                         let mut target = String::new();
@@ -1226,9 +1243,18 @@ mod delegate_tests {
     #[test]
     fn test_render_svg_section() {
         let html = render("{start_of_svg}\n<svg/>\n{end_of_svg}");
-        assert!(html.contains("<section class=\"svg\">"));
-        assert!(html.contains("SVG"));
-        assert!(html.contains("</section>"));
+        // SVG sections embed content directly (not in a section element)
+        assert!(html.contains("<div class=\"svg-section\">"));
+        assert!(html.contains("<svg/>"));
+        assert!(html.contains("</div>"));
+    }
+
+    #[test]
+    fn test_render_svg_inline_content() {
+        let svg = r#"<svg width="100" height="100"><circle cx="50" cy="50" r="40"/></svg>"#;
+        let input = format!("{{start_of_svg}}\n{svg}\n{{end_of_svg}}");
+        let html = render(&input);
+        assert!(html.contains(svg));
     }
 
     #[test]
