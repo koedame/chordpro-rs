@@ -145,6 +145,13 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
     let mut columns_open = false;
     // Tracks whether we are inside an SVG delegate section.
     let mut in_svg_section = false;
+    // Buffer for collecting ABC notation content when abc2svg rendering is enabled.
+    let abc2svg_enabled = config
+        .get_path("delegates.abc2svg")
+        .as_bool()
+        .unwrap_or(false);
+    let mut abc_buf: Option<String> = None;
+    let mut abc_label: Option<String> = None;
 
     // Stores the rendered HTML of the most recently defined chorus body
     // (everything between StartOfChorus and EndOfChorus, excluding the
@@ -168,6 +175,11 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                     let raw = lyrics_line.text();
                     html.push_str(&raw);
                     html.push('\n');
+                } else if let Some(ref mut buf) = abc_buf {
+                    // Inside ABC section with abc2svg enabled: collect content.
+                    let raw = lyrics_line.text();
+                    buf.push_str(&raw);
+                    buf.push('\n');
                 } else {
                     let mut target = String::new();
                     render_lyrics(lyrics_line, transpose_offset, &fmt_state, &mut target);
@@ -253,6 +265,16 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                         // TODO: NewPhysicalPage should eventually emit a
                         // different CSS hint for duplex printing scenarios.
                         html.push_str("<div style=\"break-before: page;\"></div>\n");
+                    }
+                    DirectiveKind::StartOfAbc if abc2svg_enabled => {
+                        abc_buf = Some(String::new());
+                        abc_label = directive.value.clone();
+                    }
+                    DirectiveKind::EndOfAbc if abc_buf.is_some() => {
+                        if let Some(abc_content) = abc_buf.take() {
+                            render_abc_with_fallback(&abc_content, &abc_label, &mut html);
+                            abc_label = None;
+                        }
                     }
                     DirectiveKind::StartOfSvg => {
                         html.push_str("<div class=\"svg-section\">\n");
@@ -681,6 +703,29 @@ fn render_directive_inner(directive: &chordpro_core::ast::Directive, html: &mut 
             }
         }
         _ => {}
+    }
+}
+
+/// Render ABC notation content using abc2svg, falling back to preformatted text.
+///
+/// When abc2svg is available and produces valid output, the SVG fragment is
+/// embedded inside a `<section class="abc">` element. When abc2svg is
+/// unavailable or fails, the raw ABC notation is rendered as preformatted text.
+fn render_abc_with_fallback(abc_content: &str, label: &Option<String>, html: &mut String) {
+    match chordpro_core::external_tool::invoke_abc2svg(abc_content) {
+        Ok(svg_fragment) => {
+            render_section_open("abc", "ABC", label, html);
+            html.push_str(&svg_fragment);
+            html.push('\n');
+            html.push_str("</section>\n");
+        }
+        Err(_) => {
+            render_section_open("abc", "ABC", label, html);
+            html.push_str("<pre>");
+            html.push_str(&escape(abc_content));
+            html.push_str("</pre>\n");
+            html.push_str("</section>\n");
+        }
     }
 }
 
@@ -1362,6 +1407,65 @@ Verse text\n\
         let html = render("{define: Am keys 0 3 7}");
         // Keyboard definitions don't produce SVG diagrams
         assert!(!html.contains("<svg"));
+    }
+
+    // -- abc2svg delegate rendering tests -----------------------------------------
+
+    #[test]
+    fn test_abc_section_without_delegate_config() {
+        // Default config has delegates.abc2svg=false, so ABC renders as text
+        let html = render("{start_of_abc}\nX:1\n{end_of_abc}");
+        assert!(html.contains("<section class=\"abc\">"));
+        assert!(html.contains("ABC"));
+        assert!(html.contains("</section>"));
+    }
+
+    #[test]
+    fn test_abc_section_fallback_preformatted() {
+        // With delegate enabled but abc2svg not available, falls back to <pre>
+        if chordpro_core::external_tool::has_abc2svg() {
+            return; // Skip on machines with abc2svg installed
+        }
+        let input = "{start_of_abc}\nX:1\nT:Test\nK:C\n{end_of_abc}";
+        let song = chordpro_core::parse(input).unwrap();
+        let config =
+            chordpro_core::config::Config::defaults().with_define("delegates.abc2svg=true");
+        let html = render_song_with_transpose(&song, 0, &config);
+        assert!(html.contains("<section class=\"abc\">"));
+        assert!(html.contains("<pre>"));
+        assert!(html.contains("X:1"));
+        assert!(html.contains("</pre>"));
+    }
+
+    #[test]
+    fn test_abc_section_with_label_delegate_fallback() {
+        if chordpro_core::external_tool::has_abc2svg() {
+            return;
+        }
+        let input = "{start_of_abc: Melody}\nX:1\n{end_of_abc}";
+        let song = chordpro_core::parse(input).unwrap();
+        let config =
+            chordpro_core::config::Config::defaults().with_define("delegates.abc2svg=true");
+        let html = render_song_with_transpose(&song, 0, &config);
+        assert!(html.contains("ABC: Melody"));
+        assert!(html.contains("<pre>"));
+    }
+
+    #[test]
+    #[ignore]
+    fn test_abc_section_renders_svg_with_abc2svg() {
+        // Requires abc2svg installed. Run with: cargo test -- --ignored
+        let input = "{start_of_abc}\nX:1\nT:Test\nM:4/4\nK:C\nCDEF|GABc|\n{end_of_abc}";
+        let song = chordpro_core::parse(input).unwrap();
+        let config =
+            chordpro_core::config::Config::defaults().with_define("delegates.abc2svg=true");
+        let html = render_song_with_transpose(&song, 0, &config);
+        assert!(html.contains("<section class=\"abc\">"));
+        assert!(
+            html.contains("<svg"),
+            "should contain rendered SVG from abc2svg"
+        );
+        assert!(html.contains("</section>"));
     }
 }
 

@@ -65,6 +65,16 @@ fn main() -> ExitCode {
         }
     }
 
+    // Auto-detect external delegate tools and enable them in config.
+    // This runs after user configs but before --define, so explicit
+    // --define delegates.abc2svg=false can still override.
+    if chordpro_core::external_tool::has_abc2svg() {
+        config = config.with_define("delegates.abc2svg=true");
+    }
+    if chordpro_core::external_tool::has_lilypond() {
+        config = config.with_define("delegates.lilypond=true");
+    }
+
     // Apply --define overrides (highest precedence)
     for define in &cli.defines {
         if !define.contains('=') {

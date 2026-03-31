@@ -349,6 +349,12 @@ const DEFAULT_CONFIG: &str = r#"{
     // Metadata
     metadata: {
         separator: "; "
+    },
+
+    // Delegate environments (external tool integration)
+    delegates: {
+        abc2svg: false,
+        lilypond: false
     }
 }"#;
 
