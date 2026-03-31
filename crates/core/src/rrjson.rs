@@ -114,6 +114,25 @@ impl core::ops::Index<usize> for Value {
     }
 }
 
+/// Writes a JSON-escaped string (including surrounding quotes) to the formatter.
+fn write_json_string(f: &mut fmt::Formatter<'_>, s: &str) -> fmt::Result {
+    write!(f, "\"")?;
+    for c in s.chars() {
+        match c {
+            '"' => write!(f, "\\\"")?,
+            '\\' => write!(f, "\\\\")?,
+            '\n' => write!(f, "\\n")?,
+            '\r' => write!(f, "\\r")?,
+            '\t' => write!(f, "\\t")?,
+            '\u{08}' => write!(f, "\\b")?,
+            '\u{0C}' => write!(f, "\\f")?,
+            c if c < '\u{20}' => write!(f, "\\u{:04x}", c as u32)?,
+            c => write!(f, "{c}")?,
+        }
+    }
+    write!(f, "\"")
+}
+
 impl fmt::Display for Value {
     /// Formats the value as valid JSON.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -121,29 +140,17 @@ impl fmt::Display for Value {
             Value::Null => write!(f, "null"),
             Value::Bool(b) => write!(f, "{b}"),
             Value::Number(n) => {
-                if n.fract() == 0.0 && n.is_finite() {
+                if n.fract() == 0.0
+                    && n.is_finite()
+                    && *n >= i64::MIN as f64
+                    && *n <= i64::MAX as f64
+                {
                     write!(f, "{}", *n as i64)
                 } else {
                     write!(f, "{n}")
                 }
             }
-            Value::String(s) => {
-                write!(f, "\"")?;
-                for c in s.chars() {
-                    match c {
-                        '"' => write!(f, "\\\"")?,
-                        '\\' => write!(f, "\\\\")?,
-                        '\n' => write!(f, "\\n")?,
-                        '\r' => write!(f, "\\r")?,
-                        '\t' => write!(f, "\\t")?,
-                        '\u{08}' => write!(f, "\\b")?,
-                        '\u{0C}' => write!(f, "\\f")?,
-                        c if c < '\u{20}' => write!(f, "\\u{:04x}", c as u32)?,
-                        c => write!(f, "{c}")?,
-                    }
-                }
-                write!(f, "\"")
-            }
+            Value::String(s) => write_json_string(f, s),
             Value::Array(items) => {
                 write!(f, "[")?;
                 for (i, item) in items.iter().enumerate() {
@@ -160,8 +167,8 @@ impl fmt::Display for Value {
                     if i > 0 {
                         write!(f, ",")?;
                     }
-                    // Key is always a JSON string
-                    write!(f, "\"{k}\":{v}")?;
+                    write_json_string(f, k)?;
+                    write!(f, ":{v}")?;
                 }
                 write!(f, "}}")
             }
@@ -1338,6 +1345,32 @@ mod tests {
     #[test]
     fn test_display_empty_object() {
         assert_eq!(Value::Object(vec![]).to_string(), "{}");
+    }
+
+    #[test]
+    fn test_display_number_large_f64() {
+        // Values outside i64 range should not be cast to i64
+        assert_eq!(Value::Number(1e20).to_string(), "100000000000000000000");
+        assert_eq!(Value::Number(-1e20).to_string(), "-100000000000000000000");
+        // Infinity and NaN use f64 display
+        assert_eq!(Value::Number(f64::INFINITY).to_string(), "inf");
+        assert_eq!(Value::Number(f64::NEG_INFINITY).to_string(), "-inf");
+    }
+
+    #[test]
+    fn test_display_object_key_escapes() {
+        let v = Value::Object(vec![
+            ("a\"b".to_string(), Value::Number(1.0)),
+            ("c\\d".to_string(), Value::Number(2.0)),
+            ("e\nf".to_string(), Value::Number(3.0)),
+        ]);
+        assert_eq!(v.to_string(), r#"{"a\"b":1,"c\\d":2,"e\nf":3}"#);
+    }
+
+    #[test]
+    fn test_display_object_key_control_chars() {
+        let v = Value::Object(vec![("\u{08}\u{0C}\u{01}".to_string(), Value::Null)]);
+        assert_eq!(v.to_string(), r#"{"\b\f\u0001":null}"#);
     }
 
     #[test]
