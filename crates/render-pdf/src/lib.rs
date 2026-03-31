@@ -1393,6 +1393,8 @@ const FONTS: [Font; 4] = [
 ///
 /// Characters are handled as follows:
 /// - ASCII (U+0000–U+007F): passed through (with `\`, `(`, `)` escaped).
+/// - WinAnsiEncoding 0x80–0x9F: Unicode characters that map to bytes 0x80–0x9F
+///   in WinAnsiEncoding (Euro sign, smart quotes, dashes, etc.).
 /// - Latin-1 Supplement (U+00A0–U+00FF): encoded as PDF octal escapes
 ///   (`\NNN`) for WinAnsiEncoding compatibility. This covers most accented
 ///   European characters (é, ü, ñ, ß, etc.).
@@ -1411,10 +1413,56 @@ fn pdf_escape(s: &str) -> String {
                 let byte = c as u32;
                 out.push_str(&format!("\\{byte:03o}"));
             }
-            _ => out.push('?'),
+            // WinAnsiEncoding 0x80–0x9F: Unicode characters that don't match
+            // their code points but have specific byte mappings.
+            _ => {
+                if let Some(byte) = winansi_byte(c) {
+                    out.push_str(&format!("\\{byte:03o}"));
+                } else {
+                    out.push('?');
+                }
+            }
         }
     }
     out
+}
+
+/// Map Unicode characters to WinAnsiEncoding bytes in the 0x80–0x9F range.
+///
+/// These characters have code points outside the Latin-1 Supplement range but
+/// are assigned specific byte values in WinAnsiEncoding. Common in song lyrics:
+/// smart quotes, em/en dashes, Euro sign, etc.
+fn winansi_byte(c: char) -> Option<u32> {
+    match c {
+        '\u{20AC}' => Some(0x80), // € Euro sign
+        '\u{201A}' => Some(0x82), // ‚ Single low-9 quotation mark
+        '\u{0192}' => Some(0x83), // ƒ Latin small f with hook
+        '\u{201E}' => Some(0x84), // „ Double low-9 quotation mark
+        '\u{2026}' => Some(0x85), // … Horizontal ellipsis
+        '\u{2020}' => Some(0x86), // † Dagger
+        '\u{2021}' => Some(0x87), // ‡ Double dagger
+        '\u{02C6}' => Some(0x88), // ˆ Modifier letter circumflex accent
+        '\u{2030}' => Some(0x89), // ‰ Per mille sign
+        '\u{0160}' => Some(0x8A), // Š Latin capital S with caron
+        '\u{2039}' => Some(0x8B), // ‹ Single left-pointing angle quotation
+        '\u{0152}' => Some(0x8C), // Œ Latin capital ligature OE
+        '\u{017D}' => Some(0x8E), // Ž Latin capital Z with caron
+        '\u{2018}' => Some(0x91), // ' Left single quotation mark
+        '\u{2019}' => Some(0x92), // ' Right single quotation mark
+        '\u{201C}' => Some(0x93), // " Left double quotation mark
+        '\u{201D}' => Some(0x94), // " Right double quotation mark
+        '\u{2022}' => Some(0x95), // • Bullet
+        '\u{2013}' => Some(0x96), // – En dash
+        '\u{2014}' => Some(0x97), // — Em dash
+        '\u{02DC}' => Some(0x98), // ˜ Small tilde
+        '\u{2122}' => Some(0x99), // ™ Trade mark sign
+        '\u{0161}' => Some(0x9A), // š Latin small s with caron
+        '\u{203A}' => Some(0x9B), // › Single right-pointing angle quotation
+        '\u{0153}' => Some(0x9C), // œ Latin small ligature oe
+        '\u{017E}' => Some(0x9E), // ž Latin small z with caron
+        '\u{0178}' => Some(0x9F), // Ÿ Latin capital Y with diaeresis
+        _ => None,
+    }
 }
 
 /// Format f32 without trailing zeros for compact PDF output.
@@ -1547,6 +1595,41 @@ mod tests {
         assert_eq!(pdf_escape("résumé"), "r\\351sum\\351");
         // Non-breaking space (U+00A0) → octal 240
         assert_eq!(pdf_escape("a\u{00A0}b"), "a\\240b");
+    }
+
+    #[test]
+    fn test_pdf_escape_winansi_0x80_range() {
+        // Euro sign (U+20AC → 0x80)
+        assert_eq!(pdf_escape("\u{20AC}"), "\\200");
+        // Left single quotation mark (U+2018 → 0x91)
+        assert_eq!(pdf_escape("\u{2018}"), "\\221");
+        // Right single quotation mark (U+2019 → 0x92)
+        assert_eq!(pdf_escape("\u{2019}"), "\\222");
+        // Left double quotation mark (U+201C → 0x93)
+        assert_eq!(pdf_escape("\u{201C}"), "\\223");
+        // Right double quotation mark (U+201D → 0x94)
+        assert_eq!(pdf_escape("\u{201D}"), "\\224");
+        // En dash (U+2013 → 0x96)
+        assert_eq!(pdf_escape("\u{2013}"), "\\226");
+        // Em dash (U+2014 → 0x97)
+        assert_eq!(pdf_escape("\u{2014}"), "\\227");
+        // Horizontal ellipsis (U+2026 → 0x85)
+        assert_eq!(pdf_escape("\u{2026}"), "\\205");
+        // Trade mark sign (U+2122 → 0x99)
+        assert_eq!(pdf_escape("\u{2122}"), "\\231");
+        // Bullet (U+2022 → 0x95)
+        assert_eq!(pdf_escape("\u{2022}"), "\\225");
+    }
+
+    #[test]
+    fn test_pdf_escape_winansi_mixed() {
+        // Smart quotes in lyrics: "Don't stop"
+        assert_eq!(
+            pdf_escape("\u{201C}Don\u{2019}t stop\u{201D}"),
+            "\\223Don\\222t stop\\224"
+        );
+        // Price with Euro sign: €50
+        assert_eq!(pdf_escape("\u{20AC}50"), "\\20050");
     }
 
     #[test]
