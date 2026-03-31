@@ -982,11 +982,11 @@ fn render_abc_with_fallback(abc_content: &str, label: &Option<String>, html: &mu
 
 /// Check whether an image `src` value is safe to emit in HTML.
 ///
-/// Uses an allowlist approach: only `http:`, `https:`, or scheme-less paths
-/// (relative or absolute filesystem paths) are permitted.  All other URI
-/// schemes (`javascript:`, `data:`, `file:`, `blob:`, `vbscript:`, etc.)
-/// are rejected, preventing code execution and local file loading when the
-/// generated HTML is viewed in a browser.
+/// Uses an allowlist approach: only `http:`, `https:`, or scheme-less
+/// *relative* paths are permitted.  Absolute filesystem paths (starting
+/// with `/`) and all other URI schemes (`javascript:`, `data:`, `file:`,
+/// `blob:`, `vbscript:`, etc.) are rejected, preventing code execution
+/// and local file loading when the generated HTML is viewed in a browser.
 fn is_safe_image_src(src: &str) -> bool {
     if src.is_empty() {
         return false;
@@ -995,6 +995,12 @@ fn is_safe_image_src(src: &str) -> bool {
     // Normalise for case-insensitive scheme comparison.  Strip leading
     // whitespace so that " javascript:…" is still caught.
     let normalised = src.trim_start().to_ascii_lowercase();
+
+    // Reject absolute filesystem paths (defense-in-depth, similar to
+    // is_safe_image_path in the PDF renderer).
+    if normalised.starts_with('/') {
+        return false;
+    }
 
     // If the src contains a colon before any slash, it has a URI scheme.
     // Only allow http: and https:.
@@ -1778,6 +1784,10 @@ Verse text\n\
         assert!(!is_safe_image_src("FILE:///etc/passwd"));
         assert!(!is_safe_image_src("blob:https://example.com/uuid"));
         assert!(!is_safe_image_src("mhtml:file://C:/page.mhtml"));
+
+        // Rejected: absolute filesystem paths
+        assert!(!is_safe_image_src("/etc/passwd"));
+        assert!(!is_safe_image_src("/home/user/photo.jpg"));
     }
 
     #[test]
