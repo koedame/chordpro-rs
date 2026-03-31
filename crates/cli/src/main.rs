@@ -27,6 +27,14 @@ struct Cli {
     /// Transpose all chords by N semitones (positive = up, negative = down).
     #[arg(short, long, default_value = "0")]
     transpose: i8,
+
+    /// Load a custom configuration file (may be specified multiple times).
+    #[arg(short = 'c', long = "config")]
+    configs: Vec<String>,
+
+    /// Set a config value at runtime (highest precedence). Format: key=value.
+    #[arg(short = 'D', long = "define")]
+    defines: Vec<String>,
 }
 
 /// Supported output formats.
@@ -42,6 +50,39 @@ enum Format {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+
+    // Build configuration: defaults → system → user → custom config files → defines
+    let mut config = chordpro_core::config::Config::defaults();
+
+    // Apply --config files in order
+    for config_path in &cli.configs {
+        match std::fs::read_to_string(config_path) {
+            Ok(text) => match chordpro_core::config::Config::parse(&text) {
+                Ok(overlay) => config = config.merge(overlay),
+                Err(e) => {
+                    eprintln!("error: {config_path}: {e}");
+                    return ExitCode::FAILURE;
+                }
+            },
+            Err(e) => {
+                eprintln!("error: {config_path}: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
+    // Apply --define overrides (highest precedence)
+    for define in &cli.defines {
+        if !define.contains('=') {
+            eprintln!("error: invalid --define syntax: {define} (expected key=value)");
+            return ExitCode::FAILURE;
+        }
+        config = config.with_define(define);
+    }
+
+    // Config is now built but not yet used by renderers.
+    // Future work will pass it to render functions.
+    let _ = config;
 
     let mut combined_text = String::new();
     let mut combined_bytes: Vec<u8> = Vec::new();

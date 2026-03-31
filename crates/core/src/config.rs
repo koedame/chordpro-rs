@@ -128,6 +128,39 @@ impl Config {
         &self.root
     }
 
+    /// Apply a single `key=value` define override.
+    ///
+    /// The key may be dot-separated (e.g., `pdf.chorus.indent=20`).
+    /// The value is parsed as RRJSON (so `20` becomes a number, `"hello"`
+    /// becomes a string, etc.). If the value cannot be parsed, it is
+    /// treated as a plain string.
+    #[must_use]
+    pub fn with_define(self, define: &str) -> Self {
+        let Some(eq_pos) = define.find('=') else {
+            return self;
+        };
+        let key = define[..eq_pos].trim();
+        let raw_value = define[eq_pos + 1..].trim();
+        if key.is_empty() {
+            return self;
+        }
+
+        // Try to parse the value as a JSON value; fall back to string.
+        let value = rrjson::parse_rrjson(&format!("{{\"_\": {raw_value}}}"))
+            .ok()
+            .and_then(|v| match v {
+                Value::Object(entries) => entries.into_iter().next().map(|(_, v)| v),
+                _ => None,
+            })
+            .unwrap_or_else(|| Value::String(raw_value.to_string()));
+
+        // Build a nested object from the dot-separated key
+        let overlay = build_nested_value(key, value);
+        Config {
+            root: deep_merge(self.root, overlay),
+        }
+    }
+
     /// Build a configuration by loading and merging from all sources.
     ///
     /// Loads: defaults → system → user → project → song-specific.
@@ -178,6 +211,19 @@ impl Config {
 
         config
     }
+}
+
+/// Build a nested `Value::Object` from a dot-separated key and a leaf value.
+///
+/// For example, `build_nested_value("a.b.c", Number(42))` produces:
+/// `{"a": {"b": {"c": 42}}}`
+fn build_nested_value(key: &str, value: Value) -> Value {
+    let segments: Vec<&str> = key.split('.').collect();
+    let mut result = value;
+    for segment in segments.into_iter().rev() {
+        result = Value::Object(vec![(segment.to_string(), result)]);
+    }
+    result
 }
 
 /// Read a file to a String, returning None if it doesn't exist or can't be read.
@@ -400,5 +446,62 @@ mod tests {
         assert_eq!(config.get("a"), &Value::Number(100.0));
         assert_eq!(config.get("b"), &Value::Number(20.0));
         assert_eq!(config.get("c"), &Value::Number(30.0));
+    }
+
+    // -- with_define tests ----------------------------------------------------
+
+    #[test]
+    fn test_define_simple_number() {
+        let config = Config::empty().with_define("key=42");
+        assert_eq!(config.get("key"), &Value::Number(42.0));
+    }
+
+    #[test]
+    fn test_define_string() {
+        let config = Config::empty().with_define(r#"key="hello""#);
+        assert_eq!(config.get("key"), &Value::String("hello".to_string()));
+    }
+
+    #[test]
+    fn test_define_dotted_key() {
+        let config = Config::empty().with_define("pdf.chorus.indent=20");
+        assert_eq!(config.get_path("pdf.chorus.indent"), &Value::Number(20.0));
+    }
+
+    #[test]
+    fn test_define_overrides_existing() {
+        let config = Config::defaults().with_define("pdf.margins.top=100");
+        assert_eq!(config.get_path("pdf.margins.top"), &Value::Number(100.0));
+        // Other margins should be unchanged
+        assert_eq!(config.get_path("pdf.margins.left"), &Value::Number(56.0));
+    }
+
+    #[test]
+    fn test_define_bool() {
+        let config = Config::empty().with_define("flag=true");
+        assert_eq!(config.get("flag"), &Value::Bool(true));
+    }
+
+    #[test]
+    fn test_define_unquoted_string_fallback() {
+        // Values that aren't valid JSON fall back to string
+        let config = Config::empty().with_define("key=hello world");
+        assert_eq!(config.get("key"), &Value::String("hello world".to_string()));
+    }
+
+    #[test]
+    fn test_define_no_equals_ignored() {
+        let config = Config::empty().with_define("noequalssign");
+        assert!(config.get("noequalssign").is_null());
+    }
+
+    #[test]
+    fn test_multiple_defines() {
+        let config = Config::empty()
+            .with_define("a=1")
+            .with_define("b=2")
+            .with_define("a=3");
+        assert_eq!(config.get("a"), &Value::Number(3.0));
+        assert_eq!(config.get("b"), &Value::Number(2.0));
     }
 }
