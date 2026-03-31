@@ -338,9 +338,11 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &C
         }
         // Render each song as a full document, then extract the <div class="song">...</div> body.
         let song_html = render_song_with_transpose(song, cli_transpose, config);
-        if let Some(start) = song_html.find("<div class=\"song\">") {
-            if let Some(end) = song_html.rfind("</div>\n</body>") {
-                html.push_str(&song_html[start..end + 6]); // include </div>
+        let song_start = "<div class=\"song\">";
+        let body_end = "</div>\n</body>";
+        if let Some(start) = song_html.find(song_start) {
+            if let Some(end) = song_html.rfind(body_end) {
+                html.push_str(&song_html[start..end + "</div>".len()]);
                 html.push('\n');
             }
         }
