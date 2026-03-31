@@ -11,6 +11,7 @@
 //!
 //! let data = DiagramData {
 //!     name: "Am".to_string(),
+//!     display_name: None,
 //!     strings: 6,
 //!     frets_shown: 5,
 //!     base_fret: 1,
@@ -25,8 +26,12 @@
 /// Data needed to render a chord diagram.
 #[derive(Debug, Clone)]
 pub struct DiagramData {
-    /// Chord name displayed above the diagram.
+    /// Chord name (identifier used for matching).
     pub name: String,
+    /// Display name override from `{define}` `display` attribute.
+    ///
+    /// When present, diagram titles should show this instead of `name`.
+    pub display_name: Option<String>,
     /// Number of strings (e.g., 6 for guitar, 4 for ukulele).
     pub strings: usize,
     /// Number of frets shown in the diagram.
@@ -37,6 +42,16 @@ pub struct DiagramData {
     pub frets: Vec<i32>,
     /// Optional finger numbers for each string (0 = none).
     pub fingers: Vec<u8>,
+}
+
+impl DiagramData {
+    /// Returns the title to display above the diagram.
+    ///
+    /// Uses the `display_name` override if present, otherwise falls back to `name`.
+    #[must_use]
+    pub fn title(&self) -> &str {
+        self.display_name.as_deref().unwrap_or(&self.name)
+    }
 }
 
 impl DiagramData {
@@ -106,6 +121,7 @@ impl DiagramData {
 
         Some(Self {
             name: name.to_string(),
+            display_name: None,
             strings: num_strings.max(frets.len()),
             frets_shown: 5,
             base_fret,
@@ -141,12 +157,12 @@ pub fn render_svg(data: &DiagramData) -> String {
          viewBox=\"0 0 {total_w} {total_h}\" class=\"chord-diagram\">\n"
     );
 
-    // Chord name
+    // Chord name (uses display override if present)
     let name_x = LEFT_MARGIN + grid_w / 2.0;
     svg.push_str(&format!(
         "<text x=\"{name_x}\" y=\"15\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"14\" font-weight=\"bold\">{}</text>\n",
-        escape_xml(&data.name)
+        escape_xml(data.title())
     ));
 
     // Nut or base-fret indicator
@@ -240,6 +256,7 @@ mod tests {
     fn test_render_svg_basic() {
         let data = DiagramData {
             name: "Am".to_string(),
+            display_name: None,
             strings: 6,
             frets_shown: 5,
             base_fret: 1,
@@ -260,6 +277,7 @@ mod tests {
     fn test_render_svg_barre_chord() {
         let data = DiagramData {
             name: "F".to_string(),
+            display_name: None,
             strings: 6,
             frets_shown: 5,
             base_fret: 1,
@@ -274,6 +292,7 @@ mod tests {
     fn test_render_svg_high_position() {
         let data = DiagramData {
             name: "Bm".to_string(),
+            display_name: None,
             strings: 6,
             frets_shown: 5,
             base_fret: 7,
@@ -338,5 +357,55 @@ mod tests {
     fn test_escape_xml() {
         assert_eq!(escape_xml("A&B"), "A&amp;B");
         assert_eq!(escape_xml("A<B>C"), "A&lt;B&gt;C");
+    }
+
+    #[test]
+    fn test_title_returns_display_name_when_set() {
+        let data = DiagramData {
+            name: "Am".to_string(),
+            display_name: Some("A minor".to_string()),
+            strings: 6,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![-1, 0, 2, 2, 1, 0],
+            fingers: vec![],
+        };
+        assert_eq!(data.title(), "A minor");
+    }
+
+    #[test]
+    fn test_title_falls_back_to_name() {
+        let data = DiagramData {
+            name: "Am".to_string(),
+            display_name: None,
+            strings: 6,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![-1, 0, 2, 2, 1, 0],
+            fingers: vec![],
+        };
+        assert_eq!(data.title(), "Am");
+    }
+
+    #[test]
+    fn test_render_svg_with_display_name() {
+        let data = DiagramData {
+            name: "Am".to_string(),
+            display_name: Some("A minor".to_string()),
+            strings: 6,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![-1, 0, 2, 2, 1, 0],
+            fingers: vec![],
+        };
+        let svg = render_svg(&data);
+        assert!(svg.contains("A minor"));
+        assert!(!svg.contains(">Am<"));
+    }
+
+    #[test]
+    fn test_from_raw_display_name_is_none() {
+        let data = DiagramData::from_raw_infer("Am", "base-fret 1 frets x 0 2 2 1 0").unwrap();
+        assert!(data.display_name.is_none());
     }
 }

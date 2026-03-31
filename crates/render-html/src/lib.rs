@@ -945,9 +945,10 @@ fn render_directive_inner(directive: &chordpro_core::ast::Directive, html: &mut 
             if let Some(ref value) = directive.value {
                 let def = chordpro_core::ast::ChordDefinition::parse_value(value);
                 if let Some(ref raw) = def.raw {
-                    if let Some(diagram) =
+                    if let Some(mut diagram) =
                         chordpro_core::chord_diagram::DiagramData::from_raw_infer(&def.name, raw)
                     {
+                        diagram.display_name = def.display.clone();
                         html.push_str("<div class=\"chord-diagram-container\">");
                         html.push_str(&chordpro_core::chord_diagram::render_svg(&diagram));
                         html.push_str("</div>\n");
