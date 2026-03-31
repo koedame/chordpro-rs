@@ -697,14 +697,7 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
     // Clamp to printable area (per-column width in multi-column layouts).
     let max_w = doc.column_width();
     let max_h = PAGE_H - doc.margin_top - doc.margin_bottom;
-    let (render_w, render_h) = if render_w > max_w {
-        let clamped_h = max_w / aspect;
-        (max_w, clamped_h.min(max_h))
-    } else if render_h > max_h {
-        (max_h * aspect, max_h)
-    } else {
-        (render_w, render_h)
-    };
+    let (render_w, render_h) = clamp_to_printable_area(render_w, render_h, max_w, max_h, aspect);
 
     doc.ensure_space(render_h + LINE_GAP);
 
@@ -731,6 +724,25 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
     doc.draw_image(img_idx, x, y, render_w, render_h);
     doc.advance_y(render_h);
     doc.newline(LINE_GAP);
+}
+
+/// Clamp rendered image dimensions to fit within the printable area while
+/// preserving the aspect ratio.
+///
+/// If width exceeds `max_w`, it is clamped and height is scaled down
+/// proportionally (then clamped to `max_h` if still too tall).
+/// If height exceeds `max_h`, it is clamped and width is scaled down
+/// proportionally (then clamped to `max_w` if still too wide).
+fn clamp_to_printable_area(w: f32, h: f32, max_w: f32, max_h: f32, aspect: f32) -> (f32, f32) {
+    if w > max_w {
+        let clamped_h = max_w / aspect;
+        (max_w, clamped_h.min(max_h))
+    } else if h > max_h {
+        let clamped_w = (max_h * aspect).min(max_w);
+        (clamped_w, clamped_w / aspect)
+    } else {
+        (w, h)
+    }
 }
 
 /// Parse a dimension value that may be an absolute number or a percentage.
@@ -3106,6 +3118,51 @@ mod jpeg_tests {
         let (w, h) = compute_image_dimensions(&attrs, 400.0, 300.0, 400.0 / 300.0);
         assert!((w - 400.0).abs() < 0.01);
         assert!((h - 300.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_clamp_to_printable_no_clamping_needed() {
+        let (w, h) = clamp_to_printable_area(200.0, 150.0, 500.0, 700.0, 200.0 / 150.0);
+        assert!((w - 200.0).abs() < 0.01);
+        assert!((h - 150.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_clamp_to_printable_width_exceeds() {
+        // 800x200 image, max 500x700 area, aspect 4.0
+        let (w, h) = clamp_to_printable_area(800.0, 200.0, 500.0, 700.0, 4.0);
+        assert!((w - 500.0).abs() < 0.01);
+        assert!((h - 125.0).abs() < 0.01); // 500 / 4.0
+    }
+
+    #[test]
+    fn test_clamp_to_printable_height_exceeds() {
+        // 200x800 image, max 500x700 area, aspect 0.25
+        let (w, h) = clamp_to_printable_area(200.0, 800.0, 500.0, 700.0, 0.25);
+        assert!((w - 175.0).abs() < 0.01); // 700 * 0.25
+        assert!((h - 700.0).abs() < 0.01); // 175 / 0.25
+    }
+
+    #[test]
+    fn test_clamp_to_printable_height_exceeds_extreme_aspect_reclamps_width() {
+        // Extreme wide image: aspect 4.0, height clamped to 700 would produce
+        // width 2800 which exceeds max_w 500. Width must be re-clamped.
+        let (w, h) = clamp_to_printable_area(2800.0, 700.0, 500.0, 700.0, 4.0);
+        // Width-clamping branch fires first (2800 > 500)
+        assert!((w - 500.0).abs() < 0.01);
+        assert!((h - 125.0).abs() < 0.01); // 500 / 4.0
+    }
+
+    #[test]
+    fn test_clamp_to_printable_height_clamp_triggers_width_reclamp() {
+        // Image that only exceeds height: 400x800 in 500x700 area, aspect 4.0
+        // height 800 > max_h 700, so height-clamping branch runs.
+        // max_h * aspect = 700 * 4.0 = 2800, which exceeds max_w 500.
+        // Width must be re-clamped to 500, height adjusted to 500 / 4.0 = 125.
+        let (w, h) = clamp_to_printable_area(400.0, 800.0, 500.0, 700.0, 4.0);
+        assert!(w <= 500.0, "width {} must not exceed max_w 500", w);
+        assert!((w - 500.0).abs() < 0.01);
+        assert!((h - 125.0).abs() < 0.01); // 500 / 4.0
     }
 
     #[test]
