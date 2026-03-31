@@ -585,6 +585,24 @@ fn sanitize_css_value(s: &str) -> String {
         .collect()
 }
 
+/// Sanitize a string for use as a CSS class name.
+///
+/// Only allows ASCII alphanumeric characters, hyphens, and underscores.
+/// All other characters are replaced with hyphens. Leading hyphens that would
+/// create an invalid CSS identifier are preserved since they follow the
+/// `section-` prefix.
+fn sanitize_css_class(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Directives
 // ---------------------------------------------------------------------------
@@ -623,9 +641,8 @@ fn render_directive_inner(directive: &chordpro_core::ast::Directive, html: &mut 
             render_section_open("textblock", "Textblock", &directive.value, html);
         }
         DirectiveKind::StartOfSection(section_name) => {
-            let escaped = escape(section_name);
-            let class = format!("section-{}", escaped);
-            let label = chordpro_core::capitalize(&escaped);
+            let class = format!("section-{}", sanitize_css_class(section_name));
+            let label = chordpro_core::capitalize(&escape(section_name));
             render_section_open(&class, &label, &directive.value, html);
         }
         DirectiveKind::EndOfChorus
@@ -959,6 +976,24 @@ mod tests {
         // cannot be broken.
         assert!(html.contains("&#39;"));
         assert!(!html.contains("onclick='alert"));
+    }
+
+    #[test]
+    fn test_custom_section_name_space_sanitized_in_class() {
+        // Spaces in section names must not create multiple CSS classes
+        let html = render("{start_of_foo bar}\ntext\n{end_of_foo bar}");
+        // Class should be "section-foo-bar", not "section-foo bar"
+        assert!(html.contains("section-foo-bar"));
+        assert!(!html.contains("class=\"section-foo bar\""));
+    }
+
+    #[test]
+    fn test_custom_section_name_special_chars_sanitized_in_class() {
+        let html = render("{start_of_a&b<c>d}\ntext\n{end_of_a&b<c>d}");
+        // Special characters replaced with hyphens in class name
+        assert!(html.contains("section-a-b-c-d"));
+        // Label still uses HTML escaping for display
+        assert!(html.contains("&amp;"));
     }
 }
 
