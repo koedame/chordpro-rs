@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Image Test</title>
+<style>
+body { font-family: serif; max-width: 800px; margin: 2em auto; padding: 0 1em; }
+h1 { margin-bottom: 0.2em; }
+h2 { margin-top: 0; font-weight: normal; color: #555; }
+.line { display: flex; flex-wrap: wrap; margin: 0.1em 0; }
+.chord-block { display: inline-flex; flex-direction: column; align-items: flex-start; }
+.chord { font-weight: bold; color: #b00; font-size: 0.9em; min-height: 1.2em; }
+.lyrics { white-space: pre; }
+.empty-line { height: 1em; }
+section { margin: 1em 0; }
+section > .section-label { font-weight: bold; font-style: italic; margin-bottom: 0.3em; }
+.comment { font-style: italic; color: #666; margin: 0.3em 0; }
+.comment-box { border: 1px solid #999; padding: 0.2em 0.5em; display: inline-block; margin: 0.3em 0; }
+.chorus-recall { margin: 1em 0; }
+.chorus-recall > .section-label { font-weight: bold; font-style: italic; margin-bottom: 0.3em; }
+</style>
+</head>
+<body>
+<div class="song">
+<h1>Image Test</h1>
+<div><img src="photo.jpg"></div>
+<div><img src="logo.png" width="200" height="100"></div>
+<div><img src="cover.jpg" alt="Album Cover" style="transform: scale(0.5);transform-origin: top left;"></div>
+<div style="text-align: center;"><img src="banner.jpg"></div>
+<div style="text-align: center;"><img src="full.jpg"></div>
+</div>
+</body>
+</html>
