@@ -1228,10 +1228,13 @@ impl PdfDocument {
             // Content stream
             let content = page_ops.join("\n");
             offsets.push(pdf.len());
+            // Per ISO 32000: /Length is the number of bytes between `stream\n`
+            // and the EOL marker before `endstream`. The `\n` preceding
+            // `endstream` is excluded from the length.
             let stream_obj = format!(
                 "{} 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
                 content_obj_num,
-                content.len() + 1, // +1 for trailing newline in stream
+                content.len(),
                 content
             );
             pdf.extend_from_slice(stream_obj.as_bytes());
@@ -1392,6 +1395,32 @@ mod tests {
         // Should contain the title text in the content stream
         let content = String::from_utf8_lossy(&bytes);
         assert!(content.contains("Amazing Grace"));
+    }
+
+    #[test]
+    fn test_stream_length_matches_content() {
+        let song = chordpro_core::parse("{title: Test}\n[Am]Hello").unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+
+        // Find all /Length N declarations and verify they match the actual
+        // stream content between "stream\n" and "\nendstream".
+        for length_match in content.match_indices("/Length ") {
+            let after = &content[length_match.0 + 8..];
+            let end = after.find(' ').or_else(|| after.find('>')).unwrap();
+            let declared_len: usize = after[..end].trim().parse().unwrap();
+
+            // Find the stream start after this /Length
+            let stream_start_offset =
+                length_match.0 + content[length_match.0..].find("stream\n").unwrap() + 7;
+            let endstream_offset =
+                length_match.0 + content[length_match.0..].find("\nendstream").unwrap();
+            let actual_len = endstream_offset - stream_start_offset;
+            assert_eq!(
+                declared_len, actual_len,
+                "/Length {declared_len} does not match actual stream size {actual_len}"
+            );
+        }
     }
 
     #[test]
