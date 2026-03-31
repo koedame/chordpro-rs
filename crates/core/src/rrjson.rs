@@ -573,18 +573,34 @@ impl<'a> Parser<'a> {
             let first = &key[..dot_pos];
             let rest = &key[dot_pos + 1..];
 
-            // Find or create the nested object
-            let nested = entries.iter_mut().find(|(k, _)| k == first).map(|(_, v)| v);
+            // Find existing entry with the same key.
+            let existing = entries.iter_mut().find(|(k, _)| k == first);
 
-            if let Some(Value::Object(inner)) = nested {
-                self.insert_dotted_key(inner, rest, value);
-            } else {
-                let mut inner = Vec::new();
-                self.insert_dotted_key(&mut inner, rest, value);
-                entries.push((first.to_string(), Value::Object(inner)));
+            match existing {
+                Some((_, Value::Object(inner))) => {
+                    // Existing object: recurse into it.
+                    self.insert_dotted_key(inner, rest, value);
+                }
+                Some((_, existing_val)) => {
+                    // Existing non-object (scalar): replace with an object.
+                    let mut inner = Vec::new();
+                    self.insert_dotted_key(&mut inner, rest, value);
+                    *existing_val = Value::Object(inner);
+                }
+                None => {
+                    // No existing entry: create a new nested object.
+                    let mut inner = Vec::new();
+                    self.insert_dotted_key(&mut inner, rest, value);
+                    entries.push((first.to_string(), Value::Object(inner)));
+                }
             }
         } else {
-            entries.push((key.to_string(), value));
+            // Leaf key: replace existing entry or append new one.
+            if let Some((_, existing_val)) = entries.iter_mut().find(|(k, _)| k == key) {
+                *existing_val = value;
+            } else {
+                entries.push((key.to_string(), value));
+            }
         }
     }
 }
@@ -757,6 +773,39 @@ mod tests {
         let v = parse_rrjson(input).unwrap();
         assert_eq!(v["pdf"]["chorus"]["indent"], Value::Number(20.0));
         assert_eq!(v["pdf"]["chorus"]["bar"], Value::Number(10.0));
+    }
+
+    #[test]
+    fn test_dotted_key_overwrites_scalar() {
+        // a = 1 then a.b = 2 should replace scalar with object
+        let input = "a = 1\na.b = 2";
+        let v = parse_rrjson(input).unwrap();
+        assert_eq!(v["a"]["b"], Value::Number(2.0));
+    }
+
+    #[test]
+    fn test_scalar_overwrites_dotted_key() {
+        // a.b = 1 then a = 2 should replace object with scalar
+        let input = "a.b = 1\na = 2";
+        let v = parse_rrjson(input).unwrap();
+        assert_eq!(v["a"], Value::Number(2.0));
+    }
+
+    #[test]
+    fn test_dotted_key_merges_siblings() {
+        // a.b = 1 then a.c = 2 should merge into same object
+        let input = "a.b = 1\na.c = 2";
+        let v = parse_rrjson(input).unwrap();
+        assert_eq!(v["a"]["b"], Value::Number(1.0));
+        assert_eq!(v["a"]["c"], Value::Number(2.0));
+    }
+
+    #[test]
+    fn test_dotted_key_deep_overwrite() {
+        // a.b.c = 1 then a.b = 2 should replace nested object
+        let input = "a.b.c = 1\na.b = 2";
+        let v = parse_rrjson(input).unwrap();
+        assert_eq!(v["a"]["b"], Value::Number(2.0));
     }
 
     #[test]
