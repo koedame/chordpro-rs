@@ -8,6 +8,7 @@ description = "PDF renderer for ChordPro documents"
 
 [dependencies]
 chordpro-core = { path = "../core" }
+flate2 = { version = "1", default-features = false, features = ["zlib"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2", default-features = false }

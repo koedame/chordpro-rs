@@ -1,8 +1,7 @@
 //! PDF renderer for ChordPro documents.
 //!
 //! Converts a parsed ChordPro AST into a PDF document using built-in PDF
-//! Type1 fonts (Helvetica family). No external dependencies — the PDF is
-//! generated directly from raw PDF object structures.
+//! Type1 fonts (Helvetica family). Uses `flate2` for PNG image decompression.
 //!
 //! Supports multi-page output: content automatically flows to new pages when
 //! the current page overflows, and `{new_page}` / `{new_physical_page}`
@@ -12,6 +11,11 @@ use chordpro_core::ast::{CommentStyle, DirectiveKind, ImageAttributes, Line, Lyr
 use chordpro_core::config::Config;
 use chordpro_core::inline_markup::TextSpan;
 use chordpro_core::transpose::transpose_chord;
+
+use flate2::Compression;
+use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
+use std::io::{Read as IoRead, Write as IoWrite};
 
 // ---------------------------------------------------------------------------
 // Formatting state
@@ -640,12 +644,12 @@ fn read_image_file(path: &str) -> Option<Vec<u8>> {
     }
 }
 
-/// Render an `{image}` directive by embedding a JPEG file into the PDF.
+/// Render an `{image}` directive by embedding an image file into the PDF.
 ///
-/// Only JPEG files (`.jpg` / `.jpeg` extension) are currently supported.
-/// The image is read from disk, validated, and embedded as a DCTDecode
-/// XObject.  If the file cannot be read, has no recognisable JPEG header,
-/// is not a JPEG extension, is a symlink, or exceeds [`MAX_IMAGE_FILE_SIZE`],
+/// Supported formats: JPEG (`.jpg`/`.jpeg`) and PNG (`.png`).
+/// The image is read from disk, validated, and embedded as an XObject.
+/// If the file cannot be read, has no recognisable header, has an
+/// unsupported extension, is a symlink, or exceeds [`MAX_IMAGE_FILE_SIZE`],
 /// the directive is silently skipped.
 ///
 /// The `anchor` attribute controls horizontal alignment: `"line"` (default)
@@ -666,37 +670,50 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
         return;
     }
 
-    // Only support JPEG files for now.
     let src_lower = attrs.src.to_ascii_lowercase();
-    if !src_lower.ends_with(".jpg") && !src_lower.ends_with(".jpeg") {
+    let is_jpeg = src_lower.ends_with(".jpg") || src_lower.ends_with(".jpeg");
+    let is_png = src_lower.ends_with(".png");
+    if !is_jpeg && !is_png {
         return;
     }
 
     // Read the image file, rejecting symlinks and oversized files.
-    // On Unix, we use O_NOFOLLOW to atomically prevent symlink traversal,
-    // then fstat the fd for size — eliminating the TOCTOU window between
-    // the symlink check and the read.
     let data = match read_image_file(&attrs.src) {
         Some(d) => d,
         None => return,
     };
 
-    let (pixel_w, pixel_h, components) = match parse_jpeg_dimensions(&data) {
-        Some(dims) => dims,
-        None => return,
+    // Parse image dimensions and embed based on format.
+    let (pixel_w, pixel_h, img_idx) = if is_jpeg {
+        let (w, h, components) = match parse_jpeg_dimensions(&data) {
+            Some(dims) => dims,
+            None => return,
+        };
+        if w == 0 || h == 0 {
+            return;
+        }
+        let idx = doc.embed_jpeg(data, w, h, components);
+        (w, h, idx)
+    } else {
+        let info = match parse_png(&data) {
+            Some(info) => info,
+            None => return,
+        };
+        if info.width == 0 || info.height == 0 {
+            return;
+        }
+        let w = info.width;
+        let h = info.height;
+        let idx = doc.embed_png(info);
+        (w, h, idx)
     };
 
-    if pixel_w == 0 || pixel_h == 0 {
-        return;
-    }
-
     // Clamp native pixel dimensions for rendering, but preserve originals
-    // for the PDF XObject metadata (which must match the actual JPEG stream).
+    // for the PDF XObject metadata (which must match the actual stream).
     let clamped_w = pixel_w.min(MAX_IMAGE_PIXELS);
     let clamped_h = pixel_h.min(MAX_IMAGE_PIXELS);
 
     // Compute rendered dimensions in PDF points (1 pt = 1/72 inch).
-    // Default: use pixel dimensions as points (1 pixel = 1 point).
     let native_w = clamped_w as f32;
     let native_h = clamped_h as f32;
     let aspect = native_w / native_h;
@@ -710,21 +727,14 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
 
     doc.ensure_space(render_h + LINE_GAP);
 
-    let img_idx = doc.embed_jpeg(data, pixel_w, pixel_h, components);
-
     // Compute horizontal position based on the anchor attribute.
     let x = match attrs.anchor.as_deref() {
         Some("column") => {
-            // Center within the current column's printable area.
             let col_left = doc.margin_left();
             let col_w = doc.column_width();
             col_left + (col_w - render_w) / 2.0
         }
-        Some("paper") => {
-            // Center on the full page width.
-            (PAGE_W - render_w) / 2.0
-        }
-        // "line" or unrecognised/absent: left-aligned at column margin.
+        Some("paper") => (PAGE_W - render_w) / 2.0,
         _ => doc.margin_left(),
     };
 
@@ -1022,6 +1032,352 @@ fn parse_jpeg_dimensions(data: &[u8]) -> Option<(u32, u32, u8)> {
     None
 }
 
+// ---------------------------------------------------------------------------
+// PNG parsing
+// ---------------------------------------------------------------------------
+
+/// PNG file signature (8 bytes).
+const PNG_SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
+
+/// Parsed PNG image data ready for PDF embedding.
+struct PngInfo {
+    /// Image width in pixels.
+    width: u32,
+    /// Image height in pixels.
+    height: u32,
+    /// Bit depth per channel.
+    bit_depth: u8,
+    /// Number of color channels in the output stream (after alpha removal).
+    /// 1 = grayscale, 3 = RGB.  Indexed images are expanded to RGB.
+    colors: u8,
+    /// Zlib-compressed pixel data for the main image (alpha stripped if present).
+    idat_data: Vec<u8>,
+    /// PLTE chunk data for indexed color images (color type 3).
+    palette: Option<Vec<u8>>,
+    /// Zlib-compressed alpha channel data (for color types 4 and 6).
+    smask: Option<Vec<u8>>,
+}
+
+/// Parse a PNG file and prepare its data for PDF embedding.
+///
+/// Extracts dimensions from the IHDR chunk, concatenates IDAT chunks, and
+/// handles alpha separation for color types 4 (gray+alpha) and 6 (RGBA).
+///
+/// Returns `None` if the data is not a valid PNG or cannot be processed.
+fn parse_png(data: &[u8]) -> Option<PngInfo> {
+    // Verify PNG signature.
+    if data.len() < 8 || data[..8] != PNG_SIGNATURE {
+        return None;
+    }
+
+    // Parse IHDR (must be the first chunk after the signature).
+    if data.len() < 8 + 4 + 4 + 13 {
+        return None;
+    }
+    let ihdr_len = u32::from_be_bytes([data[8], data[9], data[10], data[11]]) as usize;
+    if ihdr_len < 13 {
+        return None;
+    }
+    let chunk_type = &data[12..16];
+    if chunk_type != b"IHDR" {
+        return None;
+    }
+    let width = u32::from_be_bytes([data[16], data[17], data[18], data[19]]);
+    let height = u32::from_be_bytes([data[20], data[21], data[22], data[23]]);
+    let bit_depth = data[24];
+    let color_type = data[25];
+
+    // Collect IDAT chunks and optionally PLTE.
+    let mut idat_chunks: Vec<u8> = Vec::new();
+    let mut palette: Option<Vec<u8>> = None;
+    let mut pos = 8; // skip signature
+
+    while pos + 12 <= data.len() {
+        let chunk_len =
+            u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        let ctype = &data[pos + 4..pos + 8];
+
+        // Guard against malformed chunk lengths.
+        if pos + 12 + chunk_len > data.len() + 4 {
+            break;
+        }
+        let chunk_data_start = pos + 8;
+        let chunk_data_end = chunk_data_start + chunk_len;
+        if chunk_data_end > data.len() {
+            break;
+        }
+
+        if ctype == b"IDAT" {
+            idat_chunks.extend_from_slice(&data[chunk_data_start..chunk_data_end]);
+        } else if ctype == b"PLTE" {
+            palette = Some(data[chunk_data_start..chunk_data_end].to_vec());
+        } else if ctype == b"IEND" {
+            break;
+        }
+
+        // 4 (length) + 4 (type) + chunk_len + 4 (CRC)
+        pos += 12 + chunk_len;
+    }
+
+    if idat_chunks.is_empty() {
+        return None;
+    }
+
+    let has_alpha = color_type == 4 || color_type == 6;
+
+    if has_alpha {
+        // Decompress IDAT, separate color and alpha, recompress both.
+        separate_alpha(&idat_chunks, width, height, bit_depth, color_type)
+    } else {
+        // Color types 0 (gray), 2 (RGB), 3 (indexed): IDAT passthrough.
+        let colors = match color_type {
+            0 => 1, // grayscale
+            3 => 3, // indexed → presented as RGB via palette lookup in PDF
+            _ => 3, // RGB
+        };
+        Some(PngInfo {
+            width,
+            height,
+            bit_depth,
+            colors,
+            idat_data: idat_chunks,
+            palette,
+            smask: None,
+        })
+    }
+}
+
+/// Decompress PNG IDAT data and separate color from alpha channels.
+///
+/// For color type 4 (gray+alpha), splits into 1-channel gray + 1-channel alpha.
+/// For color type 6 (RGBA), splits into 3-channel RGB + 1-channel alpha.
+///
+/// Both output streams are zlib-compressed with PNG sub-filter byte prefixes
+/// suitable for PDF `/FlateDecode` with `/Predictor 15`.
+fn separate_alpha(
+    idat_data: &[u8],
+    width: u32,
+    height: u32,
+    bit_depth: u8,
+    color_type: u8,
+) -> Option<PngInfo> {
+    // Decompress the IDAT zlib stream.
+    let mut decoder = ZlibDecoder::new(idat_data);
+    let mut raw = Vec::new();
+    if decoder.read_to_end(&mut raw).is_err() {
+        return None;
+    }
+
+    let w = width as usize;
+    let h = height as usize;
+    let bytes_per_sample = if bit_depth == 16 { 2 } else { 1 };
+
+    // Channels in the raw decompressed data (including alpha).
+    let (color_channels, alpha_channels) = match color_type {
+        4 => (1, 1), // gray + alpha
+        6 => (3, 1), // RGB + alpha
+        _ => return None,
+    };
+    let total_channels = color_channels + alpha_channels;
+    let src_stride = 1 + w * total_channels * bytes_per_sample; // +1 for filter byte
+
+    if raw.len() < h * src_stride {
+        return None;
+    }
+
+    // Un-filter all rows at once, then separate channels.
+    let bpp = total_channels * bytes_per_sample;
+    let row_bytes = w * total_channels * bytes_per_sample;
+    let mut decoded = vec![0u8; h * row_bytes];
+
+    for row in 0..h {
+        let src_start = row * src_stride;
+        let filter = raw[src_start];
+        let src_row = &raw[src_start + 1..src_start + src_stride];
+        let dst_start = row * row_bytes;
+
+        decoded[dst_start..dst_start + row_bytes].copy_from_slice(src_row);
+
+        match filter {
+            0 => {} // None
+            1 => {
+                // Sub
+                for i in bpp..row_bytes {
+                    decoded[dst_start + i] =
+                        decoded[dst_start + i].wrapping_add(decoded[dst_start + i - bpp]);
+                }
+            }
+            2 => {
+                // Up
+                if row > 0 {
+                    let prev_start = (row - 1) * row_bytes;
+                    for i in 0..row_bytes {
+                        decoded[dst_start + i] =
+                            decoded[dst_start + i].wrapping_add(decoded[prev_start + i]);
+                    }
+                }
+            }
+            3 => {
+                // Average
+                let prev_start = if row > 0 { (row - 1) * row_bytes } else { 0 };
+                for i in 0..row_bytes {
+                    let left = if i >= bpp {
+                        decoded[dst_start + i - bpp]
+                    } else {
+                        0
+                    };
+                    let up = if row > 0 { decoded[prev_start + i] } else { 0 };
+                    decoded[dst_start + i] =
+                        decoded[dst_start + i].wrapping_add(((left as u16 + up as u16) / 2) as u8);
+                }
+            }
+            4 => {
+                // Paeth
+                let prev_start = if row > 0 { (row - 1) * row_bytes } else { 0 };
+                for i in 0..row_bytes {
+                    let left = if i >= bpp {
+                        decoded[dst_start + i - bpp] as i16
+                    } else {
+                        0
+                    };
+                    let up = if row > 0 {
+                        decoded[prev_start + i] as i16
+                    } else {
+                        0
+                    };
+                    let up_left = if i >= bpp && row > 0 {
+                        decoded[prev_start + i - bpp] as i16
+                    } else {
+                        0
+                    };
+                    decoded[dst_start + i] =
+                        decoded[dst_start + i].wrapping_add(paeth_predictor(left, up, up_left));
+                }
+            }
+            _ => return None,
+        }
+    }
+
+    // Separate color and alpha channels, writing with filter 0 (None).
+    let color_stride = 1 + w * color_channels * bytes_per_sample;
+    let alpha_stride = 1 + w * bytes_per_sample;
+    let mut color_raw = Vec::with_capacity(h * color_stride);
+    let mut alpha_raw = Vec::with_capacity(h * alpha_stride);
+
+    for row in 0..h {
+        color_raw.push(0); // filter byte = None
+        alpha_raw.push(0); // filter byte = None
+        let row_start = row * row_bytes;
+        for x in 0..w {
+            let pixel_start = row_start + x * total_channels * bytes_per_sample;
+            // Color channels
+            for c in 0..color_channels {
+                let offset = pixel_start + c * bytes_per_sample;
+                color_raw.extend_from_slice(&decoded[offset..offset + bytes_per_sample]);
+            }
+            // Alpha channel
+            let alpha_offset = pixel_start + color_channels * bytes_per_sample;
+            alpha_raw.extend_from_slice(&decoded[alpha_offset..alpha_offset + bytes_per_sample]);
+        }
+    }
+
+    // Recompress both streams with zlib.
+    let idat_data = zlib_compress(&color_raw)?;
+    let smask = zlib_compress(&alpha_raw)?;
+
+    Some(PngInfo {
+        width,
+        height,
+        bit_depth,
+        colors: color_channels as u8,
+        idat_data,
+        palette: None,
+        smask: Some(smask),
+    })
+}
+
+/// Paeth predictor function used by PNG filter type 4.
+fn paeth_predictor(a: i16, b: i16, c: i16) -> u8 {
+    let p = a + b - c;
+    let pa = (p - a).unsigned_abs();
+    let pb = (p - b).unsigned_abs();
+    let pc = (p - c).unsigned_abs();
+    if pa <= pb && pa <= pc {
+        a as u8
+    } else if pb <= pc {
+        b as u8
+    } else {
+        c as u8
+    }
+}
+
+/// Compress data with zlib (deflate).
+fn zlib_compress(data: &[u8]) -> Option<Vec<u8>> {
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    if encoder.write_all(data).is_err() {
+        return None;
+    }
+    encoder.finish().ok()
+}
+
+// ---------------------------------------------------------------------------
+// Embedded image types
+// ---------------------------------------------------------------------------
+
+/// Format-specific data for an embedded image.
+enum ImageFormat {
+    /// Raw JPEG data — embedded with `/DCTDecode` (passthrough, no re-encoding).
+    Jpeg {
+        /// Raw JPEG file bytes.
+        data: Vec<u8>,
+        /// Number of color components (1 = gray, 3 = RGB, 4 = CMYK).
+        components: u8,
+    },
+    /// PNG image data — IDAT chunks concatenated, embedded with `/FlateDecode`.
+    Png {
+        /// Concatenated raw IDAT chunk payloads (zlib-compressed pixel data).
+        idat_data: Vec<u8>,
+        /// Bit depth (typically 8).
+        bit_depth: u8,
+        /// Number of color channels (1 = gray, 3 = RGB) after alpha removal.
+        colors: u8,
+        /// PLTE chunk data for indexed color images (color type 3).
+        palette: Option<Vec<u8>>,
+        /// Zlib-compressed alpha channel for images with transparency.
+        /// Stored as a separate `/FlateDecode` stream for the PDF SMask.
+        smask: Option<Vec<u8>>,
+    },
+}
+
+/// An embedded image with its pixel dimensions and format-specific data.
+struct EmbeddedImage {
+    /// Image width in pixels.
+    width: u32,
+    /// Image height in pixels.
+    height: u32,
+    /// Format-specific data.
+    format: ImageFormat,
+}
+
+impl EmbeddedImage {
+    /// Returns the number of PDF objects this image will produce.
+    ///
+    /// JPEG images and PNG images without alpha need 1 object (the XObject).
+    /// PNG images with an alpha channel need 2 objects (XObject + SMask).
+    fn num_pdf_objects(&self) -> usize {
+        match &self.format {
+            ImageFormat::Jpeg { .. } => 1,
+            ImageFormat::Png { smask, .. } => {
+                if smask.is_some() {
+                    2
+                } else {
+                    1
+                }
+            }
+        }
+    }
+}
+
 /// Accumulates content across multiple pages and builds the final PDF.
 ///
 /// Each page has its own content stream. When the Y cursor drops below the
@@ -1036,8 +1392,8 @@ struct PdfDocument {
     num_columns: u32,
     /// Current column index (0-based).
     current_column: u32,
-    /// Embedded JPEG images: (raw JPEG data, width, height, color components).
-    images: Vec<(Vec<u8>, u32, u32, u8)>,
+    /// Embedded images (JPEG or PNG).
+    images: Vec<EmbeddedImage>,
     /// Layout margins (in points), overridable via config.
     margin_top: f32,
     margin_bottom: f32,
@@ -1260,7 +1616,31 @@ impl PdfDocument {
     /// (JPEG passthrough) so no re-encoding is needed.
     fn embed_jpeg(&mut self, data: Vec<u8>, width: u32, height: u32, components: u8) -> usize {
         let idx = self.images.len();
-        self.images.push((data, width, height, components));
+        self.images.push(EmbeddedImage {
+            width,
+            height,
+            format: ImageFormat::Jpeg { data, components },
+        });
+        idx
+    }
+
+    /// Store a PNG image and return its index for later drawing.
+    ///
+    /// The IDAT data is stored as zlib-compressed bytes; the PDF will use
+    /// `/FlateDecode` with PNG predictor parameters.
+    fn embed_png(&mut self, info: PngInfo) -> usize {
+        let idx = self.images.len();
+        self.images.push(EmbeddedImage {
+            width: info.width,
+            height: info.height,
+            format: ImageFormat::Png {
+                idat_data: info.idat_data,
+                bit_depth: info.bit_depth,
+                colors: info.colors,
+                palette: info.palette,
+                smask: info.smask,
+            },
+        });
         idx
     }
 
@@ -1333,14 +1713,18 @@ impl PdfDocument {
             .collect::<Vec<_>>()
             .join(" ");
 
-        // Image XObject references for the Resources dict
+        // Image XObject references for the Resources dict.
+        // Each image is referenced as /Im{i+1}. We compute the actual object
+        // number by accumulating num_pdf_objects() for each preceding image.
         let image_obj_base = 3 + FONTS.len(); // first image object number
         let xobject_refs = if num_images > 0 {
-            let refs: String = (0..num_images)
-                .map(|i| format!("/Im{} {} 0 R", i + 1, image_obj_base + i))
-                .collect::<Vec<_>>()
-                .join(" ");
-            format!(" /XObject << {refs} >>")
+            let mut refs = Vec::new();
+            let mut obj_offset = 0;
+            for (i, img) in self.images.iter().enumerate() {
+                refs.push(format!("/Im{} {} 0 R", i + 1, image_obj_base + obj_offset));
+                obj_offset += img.num_pdf_objects();
+            }
+            format!(" /XObject << {} >>", refs.join(" "))
         } else {
             String::new()
         };
@@ -1351,8 +1735,9 @@ impl PdfDocument {
             "/ProcSet [/PDF /Text]"
         };
 
-        // Kids: page objects start after fonts + image XObjects
-        let page_obj_start = 3 + FONTS.len() + num_images;
+        // Kids: page objects start after fonts + all image-related objects.
+        let total_image_objects: usize = self.images.iter().map(|img| img.num_pdf_objects()).sum();
+        let page_obj_start = 3 + FONTS.len() + total_image_objects;
         let kids: String = (0..num_pages)
             .map(|i| format!("{} 0 R", page_obj_start + i * 2))
             .collect::<Vec<_>>()
@@ -1381,26 +1766,97 @@ impl PdfDocument {
             pdf.extend_from_slice(obj.as_bytes());
         }
 
-        // Image XObject streams (JPEG passthrough via /DCTDecode)
-        for (img_data, img_w, img_h, img_components) in &self.images {
-            offsets.push(pdf.len());
-            let obj_num = offsets.len();
-            let color_space = match img_components {
-                1 => "/DeviceGray",
-                4 => "/DeviceCMYK",
-                _ => "/DeviceRGB",
-            };
-            let header = format!(
-                "{} 0 obj\n<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace {} /BitsPerComponent 8 /Filter /DCTDecode /Length {} >>\nstream\n",
-                obj_num,
-                img_w,
-                img_h,
-                color_space,
-                img_data.len()
-            );
-            pdf.extend_from_slice(header.as_bytes());
-            pdf.extend_from_slice(img_data);
-            pdf.extend_from_slice(b"\nendstream\nendobj\n");
+        // Image XObject streams
+        for img in &self.images {
+            match &img.format {
+                ImageFormat::Jpeg { data, components } => {
+                    offsets.push(pdf.len());
+                    let obj_num = offsets.len();
+                    let color_space = match components {
+                        1 => "/DeviceGray",
+                        4 => "/DeviceCMYK",
+                        _ => "/DeviceRGB",
+                    };
+                    let header = format!(
+                        "{} 0 obj\n<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace {} /BitsPerComponent 8 /Filter /DCTDecode /Length {} >>\nstream\n",
+                        obj_num,
+                        img.width,
+                        img.height,
+                        color_space,
+                        data.len()
+                    );
+                    pdf.extend_from_slice(header.as_bytes());
+                    pdf.extend_from_slice(data);
+                    pdf.extend_from_slice(b"\nendstream\nendobj\n");
+                }
+                ImageFormat::Png {
+                    idat_data,
+                    bit_depth,
+                    colors,
+                    palette,
+                    smask,
+                } => {
+                    // If there is an SMask, write it first so we know its
+                    // object number when writing the main image.
+                    let smask_obj_num = if smask.is_some() {
+                        offsets.push(pdf.len());
+                        let sobj = offsets.len();
+                        let smask_data = smask.as_ref().expect("checked above");
+                        let smask_header = format!(
+                            "{} 0 obj\n<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceGray /BitsPerComponent {} /Filter /FlateDecode /DecodeParms << /Predictor 15 /Colors 1 /BitsPerComponent {} /Columns {} >> /Length {} >>\nstream\n",
+                            sobj,
+                            img.width,
+                            img.height,
+                            bit_depth,
+                            bit_depth,
+                            img.width,
+                            smask_data.len()
+                        );
+                        pdf.extend_from_slice(smask_header.as_bytes());
+                        pdf.extend_from_slice(smask_data);
+                        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+                        Some(sobj)
+                    } else {
+                        None
+                    };
+
+                    offsets.push(pdf.len());
+                    let obj_num = offsets.len();
+
+                    let color_space = match (colors, palette) {
+                        (_, Some(pal)) => {
+                            // Indexed color: /ColorSpace [/Indexed /DeviceRGB N <hex>]
+                            let num_entries = pal.len() / 3;
+                            let max_idx = if num_entries > 0 { num_entries - 1 } else { 0 };
+                            let hex: String = pal.iter().map(|b| format!("{b:02x}")).collect();
+                            format!("[/Indexed /DeviceRGB {} <{}>]", max_idx, hex)
+                        }
+                        (1, None) => "/DeviceGray".to_string(),
+                        _ => "/DeviceRGB".to_string(),
+                    };
+
+                    let smask_ref = smask_obj_num
+                        .map(|n| format!(" /SMask {} 0 R", n))
+                        .unwrap_or_default();
+
+                    let header = format!(
+                        "{} 0 obj\n<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace {} /BitsPerComponent {} /Filter /FlateDecode /DecodeParms << /Predictor 15 /Colors {} /BitsPerComponent {} /Columns {} >>{} /Length {} >>\nstream\n",
+                        obj_num,
+                        img.width,
+                        img.height,
+                        color_space,
+                        bit_depth,
+                        colors,
+                        bit_depth,
+                        img.width,
+                        smask_ref,
+                        idat_data.len()
+                    );
+                    pdf.extend_from_slice(header.as_bytes());
+                    pdf.extend_from_slice(idat_data);
+                    pdf.extend_from_slice(b"\nendstream\nendobj\n");
+                }
+            }
         }
 
         // Page + content stream pairs
@@ -3326,5 +3782,297 @@ mod jpeg_tests {
         assert_eq!(fmt_f32(3.25), "3.25");
         assert_eq!(fmt_f32(0.0), "0");
         assert_eq!(fmt_f32(-5.5), "-5.5");
+    }
+}
+
+#[cfg(test)]
+mod png_tests {
+    use super::*;
+
+    /// Build a minimal valid PNG file with the given pixel data.
+    ///
+    /// `color_type`: 0=gray, 2=RGB, 4=gray+alpha, 6=RGBA
+    /// `pixels`: raw pixel data (row-major, no filter bytes — filter 0 is added).
+    fn build_png(width: u32, height: u32, bit_depth: u8, color_type: u8, pixels: &[u8]) -> Vec<u8> {
+        let channels: usize = match color_type {
+            0 => 1,
+            2 => 3,
+            4 => 2,
+            6 => 4,
+            _ => panic!("unsupported color type"),
+        };
+        let bytes_per_sample = if bit_depth == 16 { 2 } else { 1 };
+        let row_bytes = width as usize * channels * bytes_per_sample;
+
+        // Build raw data with filter byte 0 (None) per row.
+        let mut raw = Vec::new();
+        for row in 0..height as usize {
+            raw.push(0); // filter None
+            let start = row * row_bytes;
+            raw.extend_from_slice(&pixels[start..start + row_bytes]);
+        }
+
+        // Compress with zlib.
+        let idat_payload = zlib_compress(&raw).expect("compression should succeed");
+
+        let mut png = Vec::new();
+        png.extend_from_slice(&PNG_SIGNATURE);
+
+        // IHDR
+        let mut ihdr = Vec::new();
+        ihdr.extend_from_slice(&width.to_be_bytes());
+        ihdr.extend_from_slice(&height.to_be_bytes());
+        ihdr.push(bit_depth);
+        ihdr.push(color_type);
+        ihdr.push(0); // compression
+        ihdr.push(0); // filter
+        ihdr.push(0); // interlace
+        write_png_chunk(&mut png, b"IHDR", &ihdr);
+
+        // IDAT
+        write_png_chunk(&mut png, b"IDAT", &idat_payload);
+
+        // IEND
+        write_png_chunk(&mut png, b"IEND", &[]);
+
+        png
+    }
+
+    /// Build a minimal indexed PNG (color type 3) with a PLTE chunk.
+    fn build_indexed_png(width: u32, height: u32, palette: &[u8], indices: &[u8]) -> Vec<u8> {
+        let row_bytes = width as usize;
+
+        let mut raw = Vec::new();
+        for row in 0..height as usize {
+            raw.push(0); // filter None
+            let start = row * row_bytes;
+            raw.extend_from_slice(&indices[start..start + row_bytes]);
+        }
+
+        let idat_payload = zlib_compress(&raw).expect("compression should succeed");
+
+        let mut png = Vec::new();
+        png.extend_from_slice(&PNG_SIGNATURE);
+
+        // IHDR
+        let mut ihdr = Vec::new();
+        ihdr.extend_from_slice(&width.to_be_bytes());
+        ihdr.extend_from_slice(&height.to_be_bytes());
+        ihdr.push(8); // bit depth
+        ihdr.push(3); // color type indexed
+        ihdr.push(0);
+        ihdr.push(0);
+        ihdr.push(0);
+        write_png_chunk(&mut png, b"IHDR", &ihdr);
+
+        // PLTE
+        write_png_chunk(&mut png, b"PLTE", palette);
+
+        // IDAT
+        write_png_chunk(&mut png, b"IDAT", &idat_payload);
+
+        // IEND
+        write_png_chunk(&mut png, b"IEND", &[]);
+
+        png
+    }
+
+    fn write_png_chunk(out: &mut Vec<u8>, chunk_type: &[u8; 4], data: &[u8]) {
+        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        out.extend_from_slice(chunk_type);
+        out.extend_from_slice(data);
+        // CRC32 over type + data
+        let mut crc_data = Vec::new();
+        crc_data.extend_from_slice(chunk_type);
+        crc_data.extend_from_slice(data);
+        let crc = crc32(&crc_data);
+        out.extend_from_slice(&crc.to_be_bytes());
+    }
+
+    /// Simple CRC-32 (PNG uses CRC-32/ISO-3309).
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc: u32 = 0xFFFF_FFFF;
+        for &byte in data {
+            crc ^= byte as u32;
+            for _ in 0..8 {
+                if crc & 1 != 0 {
+                    crc = (crc >> 1) ^ 0xEDB8_8320;
+                } else {
+                    crc >>= 1;
+                }
+            }
+        }
+        !crc
+    }
+
+    #[test]
+    fn test_parse_png_rgb() {
+        // 2x2 RGB image (color type 2)
+        let pixels = vec![
+            255, 0, 0, 0, 255, 0, // row 0: red, green
+            0, 0, 255, 255, 255, 255, // row 1: blue, white
+        ];
+        let png = build_png(2, 2, 8, 2, &pixels);
+        let info = parse_png(&png).expect("should parse");
+        assert_eq!(info.width, 2);
+        assert_eq!(info.height, 2);
+        assert_eq!(info.bit_depth, 8);
+        assert_eq!(info.colors, 3);
+        assert!(info.palette.is_none());
+        assert!(info.smask.is_none());
+    }
+
+    #[test]
+    fn test_parse_png_grayscale() {
+        // 3x1 grayscale image (color type 0)
+        let pixels = vec![0, 128, 255];
+        let png = build_png(3, 1, 8, 0, &pixels);
+        let info = parse_png(&png).expect("should parse");
+        assert_eq!(info.width, 3);
+        assert_eq!(info.height, 1);
+        assert_eq!(info.colors, 1);
+        assert!(info.smask.is_none());
+    }
+
+    #[test]
+    fn test_parse_png_rgba_separates_alpha() {
+        // 2x1 RGBA image (color type 6)
+        let pixels = vec![
+            255, 0, 0, 128, // red, alpha 128
+            0, 255, 0, 255, // green, alpha 255
+        ];
+        let png = build_png(2, 1, 8, 6, &pixels);
+        let info = parse_png(&png).expect("should parse RGBA");
+        assert_eq!(info.width, 2);
+        assert_eq!(info.height, 1);
+        assert_eq!(info.colors, 3); // RGB after alpha removal
+        assert!(info.smask.is_some());
+
+        // Verify the color data by decompressing the IDAT.
+        let mut decoder = ZlibDecoder::new(info.idat_data.as_slice());
+        let mut color = Vec::new();
+        decoder.read_to_end(&mut color).unwrap();
+        // Row: filter(0) + R G B R G B
+        assert_eq!(color, vec![0, 255, 0, 0, 0, 255, 0]);
+
+        // Verify alpha data.
+        let mut decoder = ZlibDecoder::new(info.smask.as_ref().unwrap().as_slice());
+        let mut alpha = Vec::new();
+        decoder.read_to_end(&mut alpha).unwrap();
+        // Row: filter(0) + alpha alpha
+        assert_eq!(alpha, vec![0, 128, 255]);
+    }
+
+    #[test]
+    fn test_parse_png_gray_alpha() {
+        // 2x1 gray+alpha image (color type 4)
+        let pixels = vec![
+            100, 200, // gray 100, alpha 200
+            50, 100, // gray 50, alpha 100
+        ];
+        let png = build_png(2, 1, 8, 4, &pixels);
+        let info = parse_png(&png).expect("should parse gray+alpha");
+        assert_eq!(info.colors, 1); // grayscale after alpha removal
+        assert!(info.smask.is_some());
+
+        let mut decoder = ZlibDecoder::new(info.idat_data.as_slice());
+        let mut color = Vec::new();
+        decoder.read_to_end(&mut color).unwrap();
+        assert_eq!(color, vec![0, 100, 50]);
+
+        let mut decoder = ZlibDecoder::new(info.smask.as_ref().unwrap().as_slice());
+        let mut alpha = Vec::new();
+        decoder.read_to_end(&mut alpha).unwrap();
+        assert_eq!(alpha, vec![0, 200, 100]);
+    }
+
+    #[test]
+    fn test_parse_png_indexed() {
+        // 2x1 indexed image with 2-color palette
+        let palette = vec![255, 0, 0, 0, 0, 255]; // red, blue
+        let indices = vec![0, 1]; // pixel 0 = red, pixel 1 = blue
+        let png = build_indexed_png(2, 1, &palette, &indices);
+        let info = parse_png(&png).expect("should parse indexed");
+        assert_eq!(info.colors, 3); // presented as RGB via palette
+        assert!(info.palette.is_some());
+        assert_eq!(info.palette.as_ref().unwrap(), &palette);
+    }
+
+    #[test]
+    fn test_parse_png_invalid_signature() {
+        assert!(parse_png(b"not a png").is_none());
+        assert!(parse_png(&[]).is_none());
+    }
+
+    #[test]
+    fn test_parse_png_no_idat() {
+        let mut png = Vec::new();
+        png.extend_from_slice(&PNG_SIGNATURE);
+        // IHDR only, no IDAT
+        let mut ihdr = Vec::new();
+        ihdr.extend_from_slice(&2u32.to_be_bytes());
+        ihdr.extend_from_slice(&2u32.to_be_bytes());
+        ihdr.push(8);
+        ihdr.push(2); // RGB
+        ihdr.extend_from_slice(&[0, 0, 0]);
+        write_png_chunk(&mut png, b"IHDR", &ihdr);
+        write_png_chunk(&mut png, b"IEND", &[]);
+        assert!(parse_png(&png).is_none());
+    }
+
+    #[test]
+    fn test_embedded_image_num_objects_jpeg() {
+        let img = EmbeddedImage {
+            width: 10,
+            height: 10,
+            format: ImageFormat::Jpeg {
+                data: vec![],
+                components: 3,
+            },
+        };
+        assert_eq!(img.num_pdf_objects(), 1);
+    }
+
+    #[test]
+    fn test_embedded_image_num_objects_png_no_alpha() {
+        let img = EmbeddedImage {
+            width: 10,
+            height: 10,
+            format: ImageFormat::Png {
+                idat_data: vec![],
+                bit_depth: 8,
+                colors: 3,
+                palette: None,
+                smask: None,
+            },
+        };
+        assert_eq!(img.num_pdf_objects(), 1);
+    }
+
+    #[test]
+    fn test_embedded_image_num_objects_png_with_alpha() {
+        let img = EmbeddedImage {
+            width: 10,
+            height: 10,
+            format: ImageFormat::Png {
+                idat_data: vec![],
+                bit_depth: 8,
+                colors: 3,
+                palette: None,
+                smask: Some(vec![1, 2, 3]),
+            },
+        };
+        assert_eq!(img.num_pdf_objects(), 2);
+    }
+
+    #[test]
+    fn test_paeth_predictor() {
+        // Standard cases from the PNG specification.
+        // Paeth(a, b, c): p = a + b - c
+        assert_eq!(paeth_predictor(0, 0, 0), 0);
+        // a=10, b=20, c=15: p=15, pa=5, pb=5, pc=0 → c (pc smallest)
+        assert_eq!(paeth_predictor(10, 20, 15), 15);
+        // a=10, b=10, c=10: p=10, pa=0, pb=0, pc=0 → a (pa<=pb and pa<=pc)
+        assert_eq!(paeth_predictor(10, 10, 10), 10);
     }
 }
