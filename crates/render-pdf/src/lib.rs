@@ -934,7 +934,8 @@ impl PdfDocument {
         }
         let usable_width = PAGE_W - self.margin_left - self.margin_right;
         let total_gaps = (self.num_columns - 1) as f32 * COLUMN_GAP;
-        let col_width = (usable_width - total_gaps) / self.num_columns as f32;
+        // Clamp to zero so that extreme column counts don't produce negative widths.
+        let col_width = ((usable_width - total_gaps) / self.num_columns as f32).max(0.0);
         let result = self.margin_left + self.current_column as f32 * (col_width + COLUMN_GAP);
         debug_assert!(
             result.is_finite(),
@@ -1937,6 +1938,22 @@ mod column_tests {
         // Second column should be offset
         doc.current_column = 1;
         assert!(doc.margin_left() > MARGIN_LEFT);
+    }
+
+    #[test]
+    fn test_margin_left_all_column_counts_positive() {
+        for n in 1..=MAX_COLUMNS {
+            let mut doc = PdfDocument::new();
+            doc.set_columns(n);
+            for col in 0..n {
+                doc.current_column = col;
+                let m = doc.margin_left();
+                assert!(
+                    m >= 0.0 && m.is_finite(),
+                    "margin_left() must be non-negative and finite for columns={n}, col={col}, got {m}"
+                );
+            }
+        }
     }
 
     #[test]
