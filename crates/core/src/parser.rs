@@ -205,7 +205,13 @@ impl Parser {
     /// skips to the next line to continue. The returned [`ParseResult`]
     /// contains the partial AST (all successfully parsed lines) and a
     /// list of all errors encountered.
-    pub fn parse_lenient(mut self) -> ParseResult {
+    pub fn parse_lenient(self) -> ParseResult {
+        self.parse_lenient_limited(0)
+    }
+
+    /// Like [`parse_lenient`](Self::parse_lenient), but stops collecting errors
+    /// after `max_errors` have been recorded. Set to `0` to disable the limit.
+    pub fn parse_lenient_limited(mut self, max_errors: usize) -> ParseResult {
         let mut song = Song::new();
         let mut errors = Vec::new();
 
@@ -218,7 +224,9 @@ impl Parser {
                     song.lines.push(line);
                 }
                 Err(e) => {
-                    errors.push(e);
+                    if max_errors == 0 || errors.len() < max_errors {
+                        errors.push(e);
+                    }
                     // Skip to the next line to recover.
                     self.skip_to_next_line();
                 }
@@ -864,12 +872,21 @@ pub struct ParseOptions {
     ///
     /// Default: 10 MB (10 × 1024 × 1024 bytes).
     pub max_input_size: usize,
+
+    /// Maximum number of errors to collect in lenient parsing mode.
+    /// Once this limit is reached, additional errors are silently discarded
+    /// to prevent unbounded memory growth from highly malformed input.
+    /// Set to `0` to disable the limit.
+    ///
+    /// Default: 1000.
+    pub max_errors: usize,
 }
 
 impl Default for ParseOptions {
     fn default() -> Self {
         Self {
             max_input_size: 10 * 1024 * 1024, // 10 MB
+            max_errors: 1000,
         }
     }
 }
@@ -944,7 +961,7 @@ pub fn parse_lenient_with_options(input: &str, options: &ParseOptions) -> ParseR
         };
     }
     let tokens = Lexer::new(input).tokenize();
-    Parser::new(tokens).parse_lenient()
+    Parser::new(tokens).parse_lenient_limited(options.max_errors)
 }
 
 // ---------------------------------------------------------------------------
@@ -1162,7 +1179,7 @@ pub fn parse_multi_lenient_with_options(input: &str, options: &ParseOptions) -> 
         .into_iter()
         .map(|segment| {
             let tokens = Lexer::new(segment).tokenize();
-            Parser::new(tokens).parse_lenient()
+            Parser::new(tokens).parse_lenient_limited(options.max_errors)
         })
         .collect();
 
@@ -1302,6 +1319,7 @@ mod tests {
     fn input_within_limit_succeeds() {
         let opts = ParseOptions {
             max_input_size: 100,
+            ..Default::default()
         };
         let result = parse_with_options("{title: Test}", &opts);
         assert!(result.is_ok());
@@ -1309,7 +1327,10 @@ mod tests {
 
     #[test]
     fn input_exceeding_limit_fails() {
-        let opts = ParseOptions { max_input_size: 10 };
+        let opts = ParseOptions {
+            max_input_size: 10,
+            ..Default::default()
+        };
         let result = parse_with_options("{title: This is too long}", &opts);
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -1318,7 +1339,10 @@ mod tests {
 
     #[test]
     fn zero_limit_disables_check() {
-        let opts = ParseOptions { max_input_size: 0 };
+        let opts = ParseOptions {
+            max_input_size: 0,
+            ..Default::default()
+        };
         let result = parse_with_options("{title: Any size is fine}", &opts);
         assert!(result.is_ok());
     }
@@ -1327,6 +1351,7 @@ mod tests {
     fn default_limit_is_10mb() {
         let opts = ParseOptions::default();
         assert_eq!(opts.max_input_size, 10 * 1024 * 1024);
+        assert_eq!(opts.max_errors, 1000);
     }
 
     // -- Empty input --------------------------------------------------------
@@ -2676,11 +2701,38 @@ mod tests {
 
     #[test]
     fn parse_lenient_size_limit() {
-        let opts = ParseOptions { max_input_size: 10 };
+        let opts = ParseOptions {
+            max_input_size: 10,
+            ..Default::default()
+        };
         let result = parse_lenient_with_options("this input is too long", &opts);
         assert!(result.has_errors());
         assert_eq!(result.errors.len(), 1);
         assert!(result.errors[0].message.contains("exceeds maximum"));
+    }
+
+    #[test]
+    fn parse_lenient_max_errors_limits_collection() {
+        // Generate input with many errors (unclosed directives)
+        let input: String = (0..100).map(|_| "{unclosed\n").collect();
+        let opts = ParseOptions {
+            max_errors: 5,
+            ..Default::default()
+        };
+        let result = parse_lenient_with_options(&input, &opts);
+        assert!(result.has_errors());
+        assert_eq!(result.errors.len(), 5);
+    }
+
+    #[test]
+    fn parse_lenient_zero_max_errors_disables_limit() {
+        let input: String = (0..20).map(|_| "{unclosed\n").collect();
+        let opts = ParseOptions {
+            max_errors: 0,
+            ..Default::default()
+        };
+        let result = parse_lenient_with_options(&input, &opts);
+        assert_eq!(result.errors.len(), 20);
     }
 
     #[test]
