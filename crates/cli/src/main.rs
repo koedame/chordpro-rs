@@ -54,18 +54,12 @@ fn main() -> ExitCode {
     // Build configuration: defaults → system → user → custom config files → defines
     let mut config = chordpro_core::config::Config::defaults();
 
-    // Apply --config files in order
-    for config_path in &cli.configs {
-        match std::fs::read_to_string(config_path) {
-            Ok(text) => match chordpro_core::config::Config::parse(&text) {
-                Ok(overlay) => config = config.merge(overlay),
-                Err(e) => {
-                    eprintln!("error: {config_path}: {e}");
-                    return ExitCode::FAILURE;
-                }
-            },
+    // Apply --config files/presets in order (preset names resolved first)
+    for config_name in &cli.configs {
+        match chordpro_core::config::Config::resolve(config_name) {
+            Ok(overlay) => config = config.merge(overlay),
             Err(e) => {
-                eprintln!("error: {config_path}: {e}");
+                eprintln!("error: {e}");
                 return ExitCode::FAILURE;
             }
         }

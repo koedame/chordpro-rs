@@ -128,6 +128,41 @@ impl Config {
         &self.root
     }
 
+    /// Load a built-in preset configuration by short name.
+    ///
+    /// Returns `None` if the name does not match a built-in preset.
+    ///
+    /// Currently supported presets: `"guitar"`, `"ukulele"`.
+    #[must_use]
+    pub fn preset(name: &str) -> Option<Self> {
+        let rrjson = match name.to_ascii_lowercase().as_str() {
+            "guitar" => PRESET_GUITAR,
+            "ukulele" => PRESET_UKULELE,
+            _ => return None,
+        };
+        Some(Self {
+            root: rrjson::parse_rrjson(rrjson).expect("built-in preset is valid RRJSON"),
+        })
+    }
+
+    /// Resolve a config name: try as a preset first, then as a file path.
+    ///
+    /// Returns `Ok(Config)` on success, or an error string on failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error message if the name is not a preset and the file
+    /// cannot be read or parsed.
+    pub fn resolve(name: &str) -> Result<Self, String> {
+        // Try preset first
+        if let Some(preset) = Self::preset(name) {
+            return Ok(preset);
+        }
+        // Try as a file path
+        let text = std::fs::read_to_string(name).map_err(|e| format!("{name}: {e}"))?;
+        Self::parse(&text).map_err(|e| format!("{name}: {e}"))
+    }
+
     /// Apply a single `key=value` define override.
     ///
     /// The key may be dot-separated (e.g., `pdf.chorus.indent=20`).
@@ -317,6 +352,36 @@ const DEFAULT_CONFIG: &str = r#"{
     }
 }"#;
 
+// ---------------------------------------------------------------------------
+// Built-in preset configurations
+// ---------------------------------------------------------------------------
+
+/// Guitar preset configuration (standard tuning, 6 strings).
+static PRESET_GUITAR: &str = r#"{
+    instrument: {
+        type: "guitar",
+        description: "Guitar, standard tuning"
+    },
+    tuning: ["E2", "A2", "D3", "G3", "B3", "E4"],
+    diagrams: {
+        strings: 6,
+        frets: 5
+    }
+}"#;
+
+/// Ukulele preset configuration (standard tuning, 4 strings).
+static PRESET_UKULELE: &str = r#"{
+    instrument: {
+        type: "ukulele",
+        description: "Ukulele, standard tuning"
+    },
+    tuning: ["G4", "C4", "E4", "A4"],
+    diagrams: {
+        strings: 4,
+        frets: 5
+    }
+}"#;
+
 // ===========================================================================
 // Tests
 // ===========================================================================
@@ -503,5 +568,82 @@ mod tests {
             .with_define("a=3");
         assert_eq!(config.get("a"), &Value::Number(3.0));
         assert_eq!(config.get("b"), &Value::Number(2.0));
+    }
+
+    // -- Preset tests ---------------------------------------------------------
+
+    #[test]
+    fn test_preset_guitar() {
+        let config = Config::preset("guitar").expect("guitar preset should exist");
+        assert_eq!(
+            config.get_path("instrument.type"),
+            &Value::String("guitar".to_string())
+        );
+        assert_eq!(config.get_path("diagrams.strings"), &Value::Number(6.0));
+    }
+
+    #[test]
+    fn test_preset_ukulele() {
+        let config = Config::preset("ukulele").expect("ukulele preset should exist");
+        assert_eq!(
+            config.get_path("instrument.type"),
+            &Value::String("ukulele".to_string())
+        );
+        assert_eq!(config.get_path("diagrams.strings"), &Value::Number(4.0));
+    }
+
+    #[test]
+    fn test_preset_case_insensitive() {
+        assert!(Config::preset("Guitar").is_some());
+        assert!(Config::preset("UKULELE").is_some());
+    }
+
+    #[test]
+    fn test_preset_unknown_returns_none() {
+        assert!(Config::preset("banjo").is_none());
+    }
+
+    #[test]
+    fn test_preset_merges_with_defaults() {
+        let config = Config::defaults().merge(Config::preset("guitar").unwrap());
+        // Should have both default settings and guitar instrument
+        assert!(!config.get("pdf").is_null());
+        assert_eq!(
+            config.get_path("instrument.type"),
+            &Value::String("guitar".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_preset() {
+        let config = Config::resolve("guitar").expect("guitar should resolve");
+        assert_eq!(
+            config.get_path("instrument.type"),
+            &Value::String("guitar".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_nonexistent_file() {
+        let result = Config::resolve("/nonexistent/file.json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_guitar_tuning_has_6_strings() {
+        let config = Config::preset("guitar").unwrap();
+        match config.get("tuning") {
+            Value::Array(arr) => assert_eq!(arr.len(), 6),
+            _ => panic!("tuning should be an array"),
+        }
+    }
+
+    #[test]
+    fn test_ukulele_tuning_has_4_strings() {
+        let config = Config::preset("ukulele").unwrap();
+        match config.get("tuning") {
+            Value::Array(arr) => assert_eq!(arr.len(), 4),
+            _ => panic!("tuning should be an array"),
+        }
     }
 }
