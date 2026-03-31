@@ -23,6 +23,7 @@
 use crate::rrjson::{self, NULL, Value};
 
 use std::fmt;
+use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -260,15 +261,16 @@ impl Config {
         let mut config = Self::defaults();
 
         // System config
-        if let Some(text) = read_file_if_exists("/etc/chordpro.json") {
+        let system_path = PathBuf::from("/etc/chordpro.json");
+        if let Some(text) = read_file_if_exists(&system_path) {
             if let Ok(sys) = Self::parse(&text) {
                 config = config.merge(sys);
             }
         }
 
-        // User config
-        if let Some(home) = home_dir() {
-            let user_path = format!("{home}/.config/chordpro/chordpro.json");
+        // User config: respect XDG_CONFIG_HOME, fall back to $HOME/.config
+        if let Some(config_dir) = config_dir() {
+            let user_path = config_dir.join("chordpro").join("chordpro.json");
             if let Some(text) = read_file_if_exists(&user_path) {
                 if let Ok(user) = Self::parse(&text) {
                     config = config.merge(user);
@@ -278,7 +280,7 @@ impl Config {
 
         // Project config
         if let Some(dir) = project_dir {
-            let project_path = format!("{dir}/chordpro.json");
+            let project_path = PathBuf::from(dir).join("chordpro.json");
             if let Some(text) = read_file_if_exists(&project_path) {
                 if let Ok(proj) = Self::parse(&text) {
                     config = config.merge(proj);
@@ -288,7 +290,7 @@ impl Config {
 
         // Song-specific config
         if let Some(path) = song_config {
-            if let Some(text) = read_file_if_exists(path) {
+            if let Some(text) = read_file_if_exists(Path::new(path)) {
                 if let Ok(song) = Self::parse(&text) {
                     config = config.merge(song);
                 }
@@ -323,15 +325,27 @@ fn build_nested_value(key: &str, value: Value) -> Option<Value> {
 }
 
 /// Read a file to a String, returning None if it doesn't exist or can't be read.
-fn read_file_if_exists(path: &str) -> Option<String> {
+fn read_file_if_exists(path: &Path) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
-/// Get the user's home directory.
-fn home_dir() -> Option<String> {
-    std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .ok()
+/// Get the user's home directory as a `PathBuf`.
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
+/// Get the XDG config directory, respecting `XDG_CONFIG_HOME` and falling
+/// back to `$HOME/.config`.
+fn config_dir() -> Option<PathBuf> {
+    if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
+        let path = PathBuf::from(xdg);
+        if path.is_absolute() {
+            return Some(path);
+        }
+    }
+    home_dir().map(|h| h.join(".config"))
 }
 
 // ---------------------------------------------------------------------------
