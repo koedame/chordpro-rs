@@ -8,7 +8,7 @@ use chordpro_core::inline_markup::{SpanAttributes, TextSpan};
 use chordpro_core::transpose::transpose_chord;
 
 /// Maximum number of CSS columns allowed.
-/// Matches [`MAX_COLUMNS`](crate) in the PDF renderer.
+/// Matches `MAX_COLUMNS` in the PDF renderer.
 const MAX_COLUMNS: u32 = 32;
 
 // ---------------------------------------------------------------------------
