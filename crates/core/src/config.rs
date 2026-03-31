@@ -263,8 +263,12 @@ impl Config {
         // System config
         let system_path = PathBuf::from("/etc/chordpro.json");
         if let Some(text) = read_file_if_exists(&system_path) {
-            if let Ok(sys) = Self::parse(&text) {
-                config = config.merge(sys);
+            match Self::parse(&text) {
+                Ok(sys) => config = config.merge(sys),
+                Err(e) => eprintln!(
+                    "warning: failed to parse config file {}: {e}",
+                    system_path.display()
+                ),
             }
         }
 
@@ -272,8 +276,12 @@ impl Config {
         if let Some(config_dir) = config_dir() {
             let user_path = config_dir.join("chordpro").join("chordpro.json");
             if let Some(text) = read_file_if_exists(&user_path) {
-                if let Ok(user) = Self::parse(&text) {
-                    config = config.merge(user);
+                match Self::parse(&text) {
+                    Ok(user) => config = config.merge(user),
+                    Err(e) => eprintln!(
+                        "warning: failed to parse config file {}: {e}",
+                        user_path.display()
+                    ),
                 }
             }
         }
@@ -282,8 +290,12 @@ impl Config {
         if let Some(dir) = project_dir {
             let project_path = PathBuf::from(dir).join("chordpro.json");
             if let Some(text) = read_file_if_exists(&project_path) {
-                if let Ok(proj) = Self::parse(&text) {
-                    config = config.merge(proj);
+                match Self::parse(&text) {
+                    Ok(proj) => config = config.merge(proj),
+                    Err(e) => eprintln!(
+                        "warning: failed to parse config file {}: {e}",
+                        project_path.display()
+                    ),
                 }
             }
         }
@@ -291,8 +303,9 @@ impl Config {
         // Song-specific config
         if let Some(path) = song_config {
             if let Some(text) = read_file_if_exists(Path::new(path)) {
-                if let Ok(song) = Self::parse(&text) {
-                    config = config.merge(song);
+                match Self::parse(&text) {
+                    Ok(song) => config = config.merge(song),
+                    Err(e) => eprintln!("warning: failed to parse config file {path}: {e}"),
                 }
             }
         }
