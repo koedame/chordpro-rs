@@ -547,7 +547,7 @@ impl Parser {
                 DirectiveKind::Comment => CommentStyle::Normal,
                 DirectiveKind::CommentItalic => CommentStyle::Italic,
                 DirectiveKind::CommentBox => CommentStyle::Boxed,
-                _ => unreachable!(),
+                _ => CommentStyle::Normal,
             };
             let text = value.unwrap_or_default();
             return Ok(Line::Comment(style, text));
