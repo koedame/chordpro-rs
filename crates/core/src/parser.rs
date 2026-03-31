@@ -1190,21 +1190,6 @@ pub fn parse_multi_lenient_with_options(input: &str, options: &ParseOptions) -> 
 // Image attribute parsing
 // ---------------------------------------------------------------------------
 
-/// Parses the value string of an `{image}` directive into [`ImageAttributes`].
-///
-/// The value string is expected to contain `key=value` pairs separated by
-/// whitespace. Quoted values (e.g., `title="Album Cover"`) are supported.
-/// Unknown keys are silently ignored.
-///
-/// # Examples
-///
-/// ```
-/// # use chordpro_core::parser::parse_image_attributes;
-/// # use chordpro_core::ast::ImageAttributes;
-/// let attrs = parse_image_attributes("src=photo.jpg width=200");
-/// assert_eq!(attrs.src, "photo.jpg");
-/// assert_eq!(attrs.width.as_deref(), Some("200"));
-/// ```
 /// Maximum byte length for the `src` attribute value.
 const IMAGE_SRC_MAX_BYTES: usize = 4096;
 
@@ -1224,6 +1209,21 @@ fn truncate_string(s: String, max_bytes: usize) -> String {
     s[..end].to_string()
 }
 
+/// Parses the value string of an `{image}` directive into [`ImageAttributes`].
+///
+/// The value string is expected to contain `key=value` pairs separated by
+/// whitespace. Quoted values (e.g., `title="Album Cover"`) are supported.
+/// Unknown keys are silently ignored.
+///
+/// # Examples
+///
+/// ```
+/// # use chordpro_core::parser::parse_image_attributes;
+/// # use chordpro_core::ast::ImageAttributes;
+/// let attrs = parse_image_attributes("src=photo.jpg width=200");
+/// assert_eq!(attrs.src, "photo.jpg");
+/// assert_eq!(attrs.width.as_deref(), Some("200"));
+/// ```
 #[must_use]
 pub fn parse_image_attributes(input: &str) -> ImageAttributes {
     let mut attrs = ImageAttributes::default();
