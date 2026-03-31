@@ -8,7 +8,7 @@
 //! the current page overflows, and `{new_page}` / `{new_physical_page}`
 //! directives trigger explicit page breaks.
 
-use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
+use chordpro_core::ast::{CommentStyle, DirectiveKind, ImageAttributes, Line, LyricsLine, Song};
 use chordpro_core::inline_markup::TextSpan;
 use chordpro_core::transpose::transpose_chord;
 
@@ -512,7 +512,107 @@ fn render_directive(directive: &chordpro_core::ast::Directive, doc: &mut PdfDocu
             }
         }
     }
+
+    if let DirectiveKind::Image(ref attrs) = directive.kind {
+        render_image(attrs, doc);
+        return;
+    }
+
     render_section_label(directive, doc);
+}
+
+/// Render an `{image}` directive by embedding a JPEG file into the PDF.
+///
+/// Only JPEG files (`.jpg` / `.jpeg` extension) are supported. If the file
+/// cannot be read, has no recognisable JPEG header, or is not a JPEG
+/// extension, the directive is silently skipped.
+fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
+    if attrs.src.is_empty() {
+        return;
+    }
+
+    // Only support JPEG files for now.
+    let src_lower = attrs.src.to_ascii_lowercase();
+    if !src_lower.ends_with(".jpg") && !src_lower.ends_with(".jpeg") {
+        return;
+    }
+
+    let data = match std::fs::read(&attrs.src) {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+
+    let (pixel_w, pixel_h) = match parse_jpeg_dimensions(&data) {
+        Some(dims) => dims,
+        None => return,
+    };
+
+    if pixel_w == 0 || pixel_h == 0 {
+        return;
+    }
+
+    // Compute rendered dimensions in PDF points (1 pt = 1/72 inch).
+    // Default: use pixel dimensions as points (1 pixel = 1 point).
+    let native_w = pixel_w as f32;
+    let native_h = pixel_h as f32;
+    let aspect = native_w / native_h;
+
+    let (render_w, render_h) = compute_image_dimensions(attrs, native_w, native_h, aspect);
+
+    // Clamp to printable area.
+    let max_w = PAGE_W - MARGIN_LEFT - MARGIN_RIGHT;
+    let (render_w, render_h) = if render_w > max_w {
+        (max_w, max_w / aspect)
+    } else {
+        (render_w, render_h)
+    };
+
+    doc.ensure_space(render_h + LINE_GAP);
+
+    let img_idx = doc.embed_jpeg(data, pixel_w, pixel_h);
+    let x = doc.margin_left();
+    // PDF images are placed with the origin at the bottom-left corner.
+    let y = doc.y() - render_h;
+    doc.draw_image(img_idx, x, y, render_w, render_h);
+    doc.advance_y(render_h);
+    doc.newline(LINE_GAP);
+}
+
+/// Compute the rendered width and height of an image based on the directive
+/// attributes (`width`, `height`, `scale`).
+///
+/// Priority: explicit width/height > scale > native dimensions.
+fn compute_image_dimensions(
+    attrs: &ImageAttributes,
+    native_w: f32,
+    native_h: f32,
+    aspect: f32,
+) -> (f32, f32) {
+    let parsed_w = attrs
+        .width
+        .as_deref()
+        .and_then(|v| v.trim().parse::<f32>().ok());
+    let parsed_h = attrs
+        .height
+        .as_deref()
+        .and_then(|v| v.trim().parse::<f32>().ok());
+    let parsed_scale = attrs
+        .scale
+        .as_deref()
+        .and_then(|v| v.trim().parse::<f32>().ok());
+
+    match (parsed_w, parsed_h) {
+        (Some(w), Some(h)) => (w, h),
+        (Some(w), None) => (w, w / aspect),
+        (None, Some(h)) => (h * aspect, h),
+        (None, None) => {
+            if let Some(s) = parsed_scale {
+                (native_w * s, native_h * s)
+            } else {
+                (native_w, native_h)
+            }
+        }
+    }
 }
 
 /// Render a chord diagram directly into the PDF content stream.
@@ -639,6 +739,70 @@ const MARGIN_RIGHT: f32 = 56.0;
 /// Gap between columns in points.
 const COLUMN_GAP: f32 = 20.0;
 
+// ---------------------------------------------------------------------------
+// JPEG header parsing
+// ---------------------------------------------------------------------------
+
+/// Parse JPEG dimensions from raw file data by locating a SOF0 or SOF2 marker.
+///
+/// JPEG files consist of a sequence of markers. This function scans for
+/// `0xFF 0xC0` (SOF0, baseline DCT) or `0xFF 0xC2` (SOF2, progressive DCT)
+/// and reads the image height (2 bytes at marker+3) and width (2 bytes at
+/// marker+5).
+///
+/// Returns `None` if the data is too short or no SOF marker is found.
+fn parse_jpeg_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    // Minimum valid JPEG: SOI (2 bytes) + at least one marker segment
+    if data.len() < 4 {
+        return None;
+    }
+    // Verify JPEG SOI marker
+    if data[0] != 0xFF || data[1] != 0xD8 {
+        return None;
+    }
+
+    let mut i = 2;
+    while i + 1 < data.len() {
+        if data[i] != 0xFF {
+            // Not a valid marker prefix — skip byte
+            i += 1;
+            continue;
+        }
+        let marker = data[i + 1];
+
+        // Skip padding 0xFF bytes
+        if marker == 0xFF {
+            i += 1;
+            continue;
+        }
+
+        // SOF0 (baseline) or SOF2 (progressive)
+        if marker == 0xC0 || marker == 0xC2 {
+            // Need at least 7 more bytes after the marker: length(2) + precision(1) + height(2) + width(2)
+            if i + 9 > data.len() {
+                return None;
+            }
+            let height = u16::from_be_bytes([data[i + 5], data[i + 6]]) as u32;
+            let width = u16::from_be_bytes([data[i + 7], data[i + 8]]) as u32;
+            return Some((width, height));
+        }
+
+        // SOS marker — image data follows, no more headers to scan
+        if marker == 0xDA {
+            return None;
+        }
+
+        // Other markers: skip using the length field
+        if i + 3 >= data.len() {
+            return None;
+        }
+        let length = u16::from_be_bytes([data[i + 2], data[i + 3]]) as usize;
+        i += 2 + length;
+    }
+
+    None
+}
+
 /// Accumulates content across multiple pages and builds the final PDF.
 ///
 /// Each page has its own content stream. When the Y cursor drops below the
@@ -653,6 +817,8 @@ struct PdfDocument {
     num_columns: u32,
     /// Current column index (0-based).
     current_column: u32,
+    /// Embedded JPEG images: (raw JPEG data, width in pixels, height in pixels).
+    images: Vec<(Vec<u8>, u32, u32)>,
 }
 
 impl PdfDocument {
@@ -663,6 +829,7 @@ impl PdfDocument {
             y: PAGE_H - MARGIN_TOP,
             num_columns: 1,
             current_column: 0,
+            images: Vec::new(),
         }
     }
 
@@ -813,6 +980,35 @@ impl PdfDocument {
         ));
     }
 
+    /// Store a JPEG image and return its index for later drawing.
+    ///
+    /// The raw JPEG bytes are stored as-is; the PDF will use `/DCTDecode`
+    /// (JPEG passthrough) so no re-encoding is needed.
+    fn embed_jpeg(&mut self, data: Vec<u8>, width: u32, height: u32) -> usize {
+        let idx = self.images.len();
+        self.images.push((data, width, height));
+        idx
+    }
+
+    /// Draw a previously embedded image at the given position and size.
+    ///
+    /// Emits PDF `cm` (concat matrix) and `Do` (paint XObject) operators
+    /// wrapped in `q`/`Q` (save/restore graphics state).
+    fn draw_image(&mut self, img_idx: usize, x: f32, y: f32, w: f32, h: f32) {
+        let name = format!("/Im{}", img_idx + 1);
+        let ops = self.current_page_mut();
+        ops.push("q".to_string());
+        ops.push(format!(
+            "{} 0 0 {} {} {} cm",
+            fmt_f32(w),
+            fmt_f32(h),
+            fmt_f32(x),
+            fmt_f32(y)
+        ));
+        ops.push(format!("{name} Do"));
+        ops.push("Q".to_string());
+    }
+
     /// Returns a mutable reference to the current page's operations.
     fn current_page_mut(&mut self) -> &mut Vec<String> {
         // pages always has at least one element (initialized in new())
@@ -837,6 +1033,7 @@ impl PdfDocument {
     /// Build the complete multi-page PDF document.
     fn build_pdf(&self) -> Vec<u8> {
         let num_pages = self.pages.len();
+        let num_images = self.images.len();
         let mut offsets: Vec<usize> = Vec::new();
         let mut pdf = Vec::<u8>::new();
 
@@ -855,17 +1052,38 @@ impl PdfDocument {
             .map(|(i, _)| format!("{} {} 0 R", FONTS[i].pdf_name(), i + 3))
             .collect::<Vec<_>>()
             .join(" ");
-        // Kids: page objects start at object 3+FONTS.len()
-        let page_obj_start = 3 + FONTS.len();
+
+        // Image XObject references for the Resources dict
+        let image_obj_base = 3 + FONTS.len(); // first image object number
+        let xobject_refs = if num_images > 0 {
+            let refs: String = (0..num_images)
+                .map(|i| format!("/Im{} {} 0 R", i + 1, image_obj_base + i))
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!(" /XObject << {refs} >>")
+        } else {
+            String::new()
+        };
+
+        let procset = if num_images > 0 {
+            "/ProcSet [/PDF /Text /ImageB /ImageC]"
+        } else {
+            "/ProcSet [/PDF /Text]"
+        };
+
+        // Kids: page objects start after fonts + image XObjects
+        let page_obj_start = 3 + FONTS.len() + num_images;
         let kids: String = (0..num_pages)
             .map(|i| format!("{} 0 R", page_obj_start + i * 2))
             .collect::<Vec<_>>()
             .join(" ");
         let obj2 = format!(
-            "2 0 obj\n<< /Type /Pages /MediaBox [0 0 {} {}] /Resources << /Font << {} >> /ProcSet [/PDF /Text] >> /Kids [{}] /Count {} >>\nendobj\n",
+            "2 0 obj\n<< /Type /Pages /MediaBox [0 0 {} {}] /Resources << /Font << {} >>{} {} >> /Kids [{}] /Count {} >>\nendobj\n",
             fmt_f32(PAGE_W),
             fmt_f32(PAGE_H),
             font_refs,
+            xobject_refs,
+            procset,
             kids,
             num_pages
         );
@@ -881,6 +1099,22 @@ impl PdfDocument {
                 font.base_name()
             );
             pdf.extend_from_slice(obj.as_bytes());
+        }
+
+        // Image XObject streams (JPEG passthrough via /DCTDecode)
+        for (img_data, img_w, img_h) in &self.images {
+            offsets.push(pdf.len());
+            let obj_num = offsets.len();
+            let header = format!(
+                "{} 0 obj\n<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {} >>\nstream\n",
+                obj_num,
+                img_w,
+                img_h,
+                img_data.len()
+            );
+            pdf.extend_from_slice(header.as_bytes());
+            pdf.extend_from_slice(img_data);
+            pdf.extend_from_slice(b"\nendstream\nendobj\n");
         }
 
         // Page + content stream pairs
@@ -1672,5 +1906,209 @@ mod chord_diagram_pdf_tests {
         let bytes = render_song(&song);
         assert!(bytes.starts_with(b"%PDF-1.4"));
         assert!(bytes.ends_with(b"%%EOF\n"));
+    }
+}
+
+#[cfg(test)]
+mod jpeg_tests {
+    use super::*;
+
+    /// Build a minimal valid JPEG byte sequence with a SOF0 marker.
+    ///
+    /// This is not a displayable image but contains a structurally correct
+    /// JPEG header that `parse_jpeg_dimensions` can parse.
+    fn minimal_jpeg(width: u16, height: u16) -> Vec<u8> {
+        let mut data = Vec::new();
+        // SOI marker
+        data.extend_from_slice(&[0xFF, 0xD8]);
+        // APP0 marker (minimal, 2-byte length = 2 means no payload beyond length)
+        data.extend_from_slice(&[0xFF, 0xE0, 0x00, 0x02]);
+        // SOF0 marker
+        data.extend_from_slice(&[0xFF, 0xC0]);
+        // Length: 8 bytes (length field itself + precision + height + width + components)
+        data.extend_from_slice(&[0x00, 0x08]);
+        // Precision: 8 bits
+        data.push(0x08);
+        // Height (big-endian)
+        data.extend_from_slice(&height.to_be_bytes());
+        // Width (big-endian)
+        data.extend_from_slice(&width.to_be_bytes());
+        // Number of components: 0 (invalid for real JPEG, but sufficient for parsing)
+        data.push(0x00);
+        data
+    }
+
+    #[test]
+    fn test_parse_jpeg_dimensions_basic() {
+        let jpeg = minimal_jpeg(640, 480);
+        let dims = parse_jpeg_dimensions(&jpeg);
+        assert_eq!(dims, Some((640, 480)));
+    }
+
+    #[test]
+    fn test_parse_jpeg_dimensions_square() {
+        let jpeg = minimal_jpeg(100, 100);
+        let dims = parse_jpeg_dimensions(&jpeg);
+        assert_eq!(dims, Some((100, 100)));
+    }
+
+    #[test]
+    fn test_parse_jpeg_dimensions_too_short() {
+        assert_eq!(parse_jpeg_dimensions(&[0xFF]), None);
+        assert_eq!(parse_jpeg_dimensions(&[]), None);
+    }
+
+    #[test]
+    fn test_parse_jpeg_dimensions_not_jpeg() {
+        // PNG signature
+        assert_eq!(
+            parse_jpeg_dimensions(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A]),
+            None
+        );
+    }
+
+    #[test]
+    fn test_parse_jpeg_dimensions_sof2_progressive() {
+        let mut data = Vec::new();
+        // SOI
+        data.extend_from_slice(&[0xFF, 0xD8]);
+        // APP0 with minimal length
+        data.extend_from_slice(&[0xFF, 0xE0, 0x00, 0x02]);
+        // SOF2 (progressive DCT)
+        data.extend_from_slice(&[0xFF, 0xC2]);
+        data.extend_from_slice(&[0x00, 0x08]);
+        data.push(0x08);
+        data.extend_from_slice(&300_u16.to_be_bytes()); // height
+        data.extend_from_slice(&400_u16.to_be_bytes()); // width
+        data.push(0x00);
+        let dims = parse_jpeg_dimensions(&data);
+        assert_eq!(dims, Some((400, 300)));
+    }
+
+    #[test]
+    fn test_image_directive_nonexistent_file_no_crash() {
+        let input = "{image: src=nonexistent_file_that_does_not_exist.jpg}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        // Should produce a valid PDF without crashing
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert!(bytes.ends_with(b"%%EOF\n"));
+    }
+
+    #[test]
+    fn test_image_directive_non_jpeg_skipped() {
+        let input = "{image: src=photo.png}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert!(bytes.ends_with(b"%%EOF\n"));
+    }
+
+    #[test]
+    fn test_embed_jpeg_produces_xobject() {
+        let jpeg = minimal_jpeg(320, 240);
+        let mut doc = PdfDocument::new();
+        let idx = doc.embed_jpeg(jpeg, 320, 240);
+        assert_eq!(idx, 0);
+        doc.draw_image(idx, 56.0, 700.0, 320.0, 240.0);
+        let pdf = doc.build_pdf();
+        let content = String::from_utf8_lossy(&pdf);
+        // The PDF should contain image XObject references
+        assert!(content.contains("/XObject"));
+        assert!(content.contains("/Im1"));
+        assert!(content.contains("/DCTDecode"));
+        assert!(content.contains("/Subtype /Image"));
+    }
+
+    #[test]
+    fn test_embed_multiple_jpegs() {
+        let jpeg1 = minimal_jpeg(100, 50);
+        let jpeg2 = minimal_jpeg(200, 150);
+        let mut doc = PdfDocument::new();
+        let idx1 = doc.embed_jpeg(jpeg1, 100, 50);
+        let idx2 = doc.embed_jpeg(jpeg2, 200, 150);
+        assert_eq!(idx1, 0);
+        assert_eq!(idx2, 1);
+        doc.draw_image(idx1, 56.0, 700.0, 100.0, 50.0);
+        doc.draw_image(idx2, 56.0, 600.0, 200.0, 150.0);
+        let pdf = doc.build_pdf();
+        let content = String::from_utf8_lossy(&pdf);
+        assert!(content.contains("/Im1"));
+        assert!(content.contains("/Im2"));
+    }
+
+    #[test]
+    fn test_no_images_no_xobject_dict() {
+        let doc = PdfDocument::new();
+        let pdf = doc.build_pdf();
+        let content = String::from_utf8_lossy(&pdf);
+        // Without images, there should be no XObject dictionary
+        assert!(!content.contains("/XObject"));
+    }
+
+    #[test]
+    fn test_draw_image_emits_cm_do_operators() {
+        let jpeg = minimal_jpeg(50, 50);
+        let mut doc = PdfDocument::new();
+        let idx = doc.embed_jpeg(jpeg, 50, 50);
+        doc.draw_image(idx, 100.0, 200.0, 50.0, 50.0);
+        let ops = &doc.pages[0];
+        assert!(ops.iter().any(|op| op == "q"));
+        assert!(ops.iter().any(|op| op.contains("cm")));
+        assert!(ops.iter().any(|op| op.contains("/Im1 Do")));
+        assert!(ops.iter().any(|op| op == "Q"));
+    }
+
+    #[test]
+    fn test_compute_image_dimensions_explicit_width() {
+        let attrs = ImageAttributes {
+            src: "test.jpg".to_string(),
+            width: Some("200".to_string()),
+            height: None,
+            scale: None,
+            title: None,
+            anchor: None,
+        };
+        let (w, h) = compute_image_dimensions(&attrs, 400.0, 300.0, 400.0 / 300.0);
+        assert!((w - 200.0).abs() < 0.01);
+        assert!((h - 150.0).abs() < 0.01); // preserves aspect ratio
+    }
+
+    #[test]
+    fn test_compute_image_dimensions_explicit_height() {
+        let attrs = ImageAttributes {
+            src: "test.jpg".to_string(),
+            width: None,
+            height: Some("100".to_string()),
+            scale: None,
+            title: None,
+            anchor: None,
+        };
+        let (w, h) = compute_image_dimensions(&attrs, 400.0, 200.0, 2.0);
+        assert!((w - 200.0).abs() < 0.01);
+        assert!((h - 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_image_dimensions_scale() {
+        let attrs = ImageAttributes {
+            src: "test.jpg".to_string(),
+            width: None,
+            height: None,
+            scale: Some("0.5".to_string()),
+            title: None,
+            anchor: None,
+        };
+        let (w, h) = compute_image_dimensions(&attrs, 400.0, 300.0, 400.0 / 300.0);
+        assert!((w - 200.0).abs() < 0.01);
+        assert!((h - 150.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_image_dimensions_native() {
+        let attrs = ImageAttributes::default();
+        let (w, h) = compute_image_dimensions(&attrs, 800.0, 600.0, 800.0 / 600.0);
+        assert!((w - 800.0).abs() < 0.01);
+        assert!((h - 600.0).abs() < 0.01);
     }
 }
