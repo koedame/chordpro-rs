@@ -528,9 +528,10 @@ fn render_directive(directive: &chordpro_core::ast::Directive, doc: &mut PdfDocu
         if let Some(ref value) = directive.value {
             let def = chordpro_core::ast::ChordDefinition::parse_value(value);
             if let Some(ref raw) = def.raw {
-                if let Some(diagram) =
+                if let Some(mut diagram) =
                     chordpro_core::chord_diagram::DiagramData::from_raw_infer(&def.name, raw)
                 {
+                    diagram.display_name = def.display.clone();
                     render_chord_diagram_pdf(&diagram, doc);
                     return;
                 }
@@ -855,8 +856,8 @@ fn render_chord_diagram_pdf(
     // PDF Y is bottom-up, so top of diagram is at doc.y
     let top_y = doc.y();
 
-    // Chord name
-    doc.text_at(&data.name, Font::HelveticaBold, 9.0, base_x, top_y);
+    // Chord name (uses display override if present)
+    doc.text_at(data.title(), Font::HelveticaBold, 9.0, base_x, top_y);
 
     let grid_top = top_y - 15.0; // below the name
 
