@@ -541,10 +541,16 @@ fn render_directive(directive: &chordpro_core::ast::Directive, doc: &mut PdfDocu
 
 /// Check whether an image path is safe to open.
 ///
-/// Rejects absolute paths and paths containing `..` components to prevent
-/// directory traversal attacks. Only relative paths that stay within (or
-/// below) the current working directory are accepted.
+/// Rejects empty paths, paths containing null bytes, absolute paths, and
+/// paths containing `..` components to prevent directory traversal attacks.
+/// Only relative paths that stay within (or below) the current working
+/// directory are accepted.
 fn is_safe_image_path(path: &str) -> bool {
+    // Reject empty paths and paths with null bytes (defense-in-depth).
+    if path.is_empty() || path.contains('\0') {
+        return false;
+    }
+
     let p = std::path::Path::new(path);
 
     // Reject absolute paths (Unix `/…` and Windows `C:\…`).
@@ -3099,6 +3105,17 @@ mod jpeg_tests {
         assert!(is_safe_image_path("photo.jpg"));
         assert!(is_safe_image_path("images/photo.jpg"));
         assert!(is_safe_image_path("sub/dir/photo.jpg"));
+    }
+
+    #[test]
+    fn test_safe_image_path_rejects_empty() {
+        assert!(!is_safe_image_path(""));
+    }
+
+    #[test]
+    fn test_safe_image_path_rejects_null_bytes() {
+        assert!(!is_safe_image_path("photo\0.jpg"));
+        assert!(!is_safe_image_path("images/photo.jpg\0../../etc/shadow"));
     }
 
     #[test]
