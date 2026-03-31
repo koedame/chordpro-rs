@@ -950,8 +950,7 @@ mod tests {
 
     #[test]
     fn test_custom_section_name_single_quotes_escaped() {
-        let html =
-            render("{start_of_x' onclick='alert(1)}\ntext\n{end_of_x' onclick='alert(1)}");
+        let html = render("{start_of_x' onclick='alert(1)}\ntext\n{end_of_x' onclick='alert(1)}");
         // The `'` must be escaped to `&#39;` so single-quote attribute boundaries
         // cannot be broken.
         assert!(html.contains("&#39;"));
