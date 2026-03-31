@@ -25,20 +25,24 @@ struct ElementStyle {
 
 impl ElementStyle {
     /// Generate a CSS `style` attribute string, or empty if no styles are set.
+    ///
+    /// All values are passed through [`sanitize_css_value`] to prevent CSS
+    /// injection via crafted directive values.
     fn to_css(&self) -> String {
         let mut css = String::new();
         if let Some(ref font) = self.font {
-            css.push_str(&format!("font-family: {};", font));
+            css.push_str(&format!("font-family: {};", sanitize_css_value(font)));
         }
         if let Some(ref size) = self.size {
-            if size.chars().all(|c| c.is_ascii_digit()) {
-                css.push_str(&format!("font-size: {}pt;", size));
+            let safe = sanitize_css_value(size);
+            if safe.chars().all(|c| c.is_ascii_digit()) {
+                css.push_str(&format!("font-size: {}pt;", safe));
             } else {
-                css.push_str(&format!("font-size: {};", size));
+                css.push_str(&format!("font-size: {};", safe));
             }
         }
         if let Some(ref colour) = self.colour {
-            css.push_str(&format!("color: {};", colour));
+            css.push_str(&format!("color: {};", sanitize_css_value(colour)));
         }
         css
     }
@@ -1117,6 +1121,22 @@ mod transpose_tests {
         let html = render("Plain text");
         // lyrics span should not have a style attribute
         assert!(!html.contains("<span class=\"lyrics\" style="));
+    }
+
+    #[test]
+    fn test_formatting_directive_css_injection_prevented() {
+        let html = render("{textcolour: red; position: fixed; z-index: 9999}\nHello");
+        // Semicolons stripped — no additional CSS property injection.
+        assert!(!html.contains(";position"));
+        assert!(!html.contains("; position"));
+        assert!(html.contains("color:"));
+    }
+
+    #[test]
+    fn test_formatting_directive_url_injection_prevented() {
+        let html = render("{textcolour: red; background-image: url('https://evil.com/')}\nHello");
+        // Parentheses and semicolons stripped.
+        assert!(!html.contains("url("));
     }
 
     // -- column layout tests --------------------------------------------------
