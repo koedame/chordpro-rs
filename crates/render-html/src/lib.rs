@@ -680,7 +680,7 @@ fn render_image(attrs: &chordpro_core::ast::ImageAttributes, html: &mut String) 
         // Scale as a CSS transform
         style.push_str(&format!(
             "transform: scale({});transform-origin: top left;",
-            escape(scale)
+            sanitize_css_value(scale)
         ));
     }
 
@@ -1405,6 +1405,17 @@ mod delegate_tests {
         // Single HTML document wrapper
         assert_eq!(html.matches("<!DOCTYPE html>").count(), 1);
         assert_eq!(html.matches("</html>").count(), 1);
+    }
+
+    #[test]
+    fn test_image_scale_css_injection_prevented() {
+        // The scale parameter must be sanitized as a CSS value to prevent
+        // injection of arbitrary CSS properties via parentheses and semicolons.
+        let html = render("{image: src=photo.jpg scale=0.5); position: fixed; z-index: 9999}");
+        assert!(!html.contains("position"));
+        assert!(!html.contains("z-index"));
+        // Dangerous characters should be stripped by sanitize_css_value
+        assert!(!html.contains("position: fixed"));
     }
 
     #[test]
