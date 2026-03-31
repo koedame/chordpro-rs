@@ -667,26 +667,29 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
         return;
     }
 
-    // Clamp native pixel dimensions to prevent extreme default sizes.
-    let pixel_w = pixel_w.min(MAX_IMAGE_PIXELS);
-    let pixel_h = pixel_h.min(MAX_IMAGE_PIXELS);
+    // Clamp native pixel dimensions for rendering, but preserve originals
+    // for the PDF XObject metadata (which must match the actual JPEG stream).
+    let clamped_w = pixel_w.min(MAX_IMAGE_PIXELS);
+    let clamped_h = pixel_h.min(MAX_IMAGE_PIXELS);
 
     // Compute rendered dimensions in PDF points (1 pt = 1/72 inch).
     // Default: use pixel dimensions as points (1 pixel = 1 point).
-    let native_w = pixel_w as f32;
-    let native_h = pixel_h as f32;
+    let native_w = clamped_w as f32;
+    let native_h = clamped_h as f32;
     let aspect = native_w / native_h;
 
     let (render_w, render_h) = compute_image_dimensions(attrs, native_w, native_h, aspect);
 
     // Clamp to printable area (per-column width in multi-column layouts).
     let max_w = doc.column_width();
-    let max_h = PAGE_H - MARGIN_TOP - MARGIN_BOTTOM;
+    let max_h = PAGE_H - doc.margin_top - doc.margin_bottom;
     let (render_w, render_h) = if render_w > max_w {
         let clamped_h = max_w / aspect;
         (max_w, clamped_h.min(max_h))
+    } else if render_h > max_h {
+        (max_h * aspect, max_h)
     } else {
-        (render_w, render_h.min(max_h))
+        (render_w, render_h)
     };
 
     doc.ensure_space(render_h + LINE_GAP);
@@ -2628,6 +2631,30 @@ mod jpeg_tests {
         assert!(content.contains("/Im1"));
         assert!(content.contains("/DCTDecode"));
         assert!(content.contains("/Subtype /Image"));
+    }
+
+    #[test]
+    fn test_xobject_uses_actual_pixel_dimensions() {
+        // Even if pixel dimensions exceed MAX_IMAGE_PIXELS, the XObject
+        // /Width and /Height must reflect the actual JPEG stream data.
+        let large_w: u32 = 20_000;
+        let large_h: u32 = 15_000;
+        let jpeg = minimal_jpeg_with_components(large_w as u16, large_h as u16, 3);
+        let mut doc = PdfDocument::new();
+        let idx = doc.embed_jpeg(jpeg, large_w, large_h, 3);
+        doc.draw_image(idx, 56.0, 700.0, 100.0, 75.0);
+        let pdf = doc.build_pdf();
+        let content = String::from_utf8_lossy(&pdf);
+        let width_str = format!("/Width {large_w}");
+        let height_str = format!("/Height {large_h}");
+        assert!(
+            content.contains(&width_str),
+            "XObject must contain actual width {large_w}"
+        );
+        assert!(
+            content.contains(&height_str),
+            "XObject must contain actual height {large_h}"
+        );
     }
 
     #[test]
