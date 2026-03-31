@@ -729,8 +729,36 @@ fn render_abc_with_fallback(abc_content: &str, label: &Option<String>, html: &mu
     }
 }
 
+/// Check whether an image `src` value is safe to emit in HTML.
+///
+/// Rejects empty sources and dangerous URI schemes that could execute code or
+/// load unexpected external resources when the generated HTML is viewed.
+fn is_safe_image_src(src: &str) -> bool {
+    if src.is_empty() {
+        return false;
+    }
+
+    // Normalise for case-insensitive scheme comparison.  Strip leading
+    // whitespace so that " javascript:…" is still caught.
+    let normalised = src.trim_start().to_ascii_lowercase();
+
+    // Reject known dangerous URI schemes.
+    if normalised.starts_with("javascript:")
+        || normalised.starts_with("data:")
+        || normalised.starts_with("vbscript:")
+    {
+        return false;
+    }
+
+    true
+}
+
 /// Render an `{image}` directive as an HTML `<img>` element.
 fn render_image(attrs: &chordpro_core::ast::ImageAttributes, html: &mut String) {
+    if !is_safe_image_src(&attrs.src) {
+        return;
+    }
+
     let mut style = String::new();
     let mut img_attrs = format!("src=\"{}\"", escape(&attrs.src));
 
@@ -1390,6 +1418,61 @@ Verse text\n\
     fn test_image_with_scale() {
         let html = render("{image: src=photo.jpg scale=0.5}");
         assert!(html.contains("scale(0.5)"));
+    }
+
+    #[test]
+    fn test_image_empty_src_skipped() {
+        let html = render("{image: src=}");
+        assert!(
+            !html.contains("<img"),
+            "empty src should not produce an img element"
+        );
+    }
+
+    #[test]
+    fn test_image_javascript_uri_rejected() {
+        let html = render("{image: src=javascript:alert(1)}");
+        assert!(!html.contains("<img"), "javascript: URI must be rejected");
+    }
+
+    #[test]
+    fn test_image_data_uri_rejected() {
+        let html = render("{image: src=data:text/html,<script>alert(1)</script>}");
+        assert!(!html.contains("<img"), "data: URI must be rejected");
+    }
+
+    #[test]
+    fn test_image_vbscript_uri_rejected() {
+        let html = render("{image: src=vbscript:MsgBox}");
+        assert!(!html.contains("<img"), "vbscript: URI must be rejected");
+    }
+
+    #[test]
+    fn test_image_javascript_uri_case_insensitive() {
+        let html = render("{image: src=JaVaScRiPt:alert(1)}");
+        assert!(
+            !html.contains("<img"),
+            "scheme check must be case-insensitive"
+        );
+    }
+
+    #[test]
+    fn test_image_safe_relative_path_allowed() {
+        let html = render("{image: src=images/photo.jpg}");
+        assert!(html.contains("<img src=\"images/photo.jpg\""));
+    }
+
+    #[test]
+    fn test_is_safe_image_src() {
+        assert!(is_safe_image_src("photo.jpg"));
+        assert!(is_safe_image_src("images/photo.jpg"));
+        assert!(is_safe_image_src("https://example.com/photo.jpg"));
+        assert!(!is_safe_image_src(""));
+        assert!(!is_safe_image_src("javascript:alert(1)"));
+        assert!(!is_safe_image_src("JAVASCRIPT:alert(1)"));
+        assert!(!is_safe_image_src("  javascript:alert(1)"));
+        assert!(!is_safe_image_src("data:image/png;base64,abc"));
+        assert!(!is_safe_image_src("vbscript:MsgBox"));
     }
 
     // -- chord diagram tests --------------------------------------------------
