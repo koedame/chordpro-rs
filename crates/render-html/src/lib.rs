@@ -7,6 +7,10 @@ use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
 use chordpro_core::inline_markup::{SpanAttributes, TextSpan};
 use chordpro_core::transpose::transpose_chord;
 
+/// Maximum number of CSS columns allowed.
+/// Matches [`MAX_COLUMNS`](crate) in the PDF renderer.
+const MAX_COLUMNS: u32 = 32;
+
 // ---------------------------------------------------------------------------
 // Formatting state
 // ---------------------------------------------------------------------------
@@ -198,7 +202,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
                             .as_deref()
                             .and_then(|v| v.trim().parse().ok())
                             .unwrap_or(1)
-                            .clamp(1, 32);
+                            .clamp(1, MAX_COLUMNS);
                         if columns_open {
                             html.push_str("</div>\n");
                             columns_open = false;

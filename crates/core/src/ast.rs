@@ -675,7 +675,7 @@ pub enum DirectiveKind {
     /// `{columns}` / `{col}` — sets the number of columns.
     Columns,
 
-    // -- Font, size, and color directives -----------------------------------
+    // -- Extended font, size, and color directives --------------------------
     /// `{titlefont}` — sets the font for song titles.
     TitleFont,
     /// `{titlesize}` — sets the font size for song titles.
