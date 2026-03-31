@@ -112,6 +112,7 @@ Song {
                                         bass_note: None,
                                     },
                                 ),
+                                display: None,
                             },
                         ),
                         text: "La la la",

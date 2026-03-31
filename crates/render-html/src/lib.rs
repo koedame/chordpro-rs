@@ -396,9 +396,9 @@ fn render_lyrics(
         if let Some(chord) = &segment.chord {
             let display_name = if transpose_offset != 0 {
                 let transposed = transpose_chord(chord, transpose_offset);
-                transposed.name
+                transposed.display_name().to_string()
             } else {
-                chord.name.clone()
+                chord.display_name().to_string()
             };
             let chord_css = fmt_state.chord.to_css();
             if chord_css.is_empty() {

@@ -120,6 +120,7 @@ pub fn transpose_chord(chord: &Chord, semitones: i8) -> Chord {
             Chord {
                 name: new_name,
                 detail: Some(new_detail),
+                display: chord.display.clone(),
             }
         }
         None => chord.clone(),
@@ -320,6 +321,7 @@ mod tests {
         let chord = Chord {
             name: "N.C.".to_string(),
             detail: None,
+            display: None,
         };
         let t = transpose_chord(&chord, 5);
         assert_eq!(t.name, "N.C.");

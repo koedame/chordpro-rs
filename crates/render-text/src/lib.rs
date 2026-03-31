@@ -215,12 +215,12 @@ fn render_lyrics(lyrics_line: &LyricsLine, transpose_offset: i8, output: &mut Ve
         let chord_name = if transpose_offset != 0 {
             if let Some(chord) = &segment.chord {
                 transposed = transpose_chord(chord, transpose_offset);
-                transposed.name.as_str()
+                transposed.display_name()
             } else {
                 ""
             }
         } else {
-            segment.chord.as_ref().map_or("", |c| c.name.as_str())
+            segment.chord.as_ref().map_or("", |c| c.display_name())
         };
         let text = &segment.text;
 

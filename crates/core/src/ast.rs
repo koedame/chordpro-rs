@@ -354,6 +354,10 @@ pub struct Chord {
     pub name: String,
     /// The parsed chord components, if the chord notation was recognized.
     pub detail: Option<crate::chord::ChordDetail>,
+    /// An alternative display name set by `{define}` with `display` attribute.
+    ///
+    /// When present, renderers should show this instead of `name`.
+    pub display: Option<String>,
 }
 
 impl Chord {
@@ -366,13 +370,26 @@ impl Chord {
     pub fn new(name: impl Into<String>) -> Self {
         let name = name.into();
         let detail = crate::chord::parse_chord(&name);
-        Self { name, detail }
+        Self {
+            name,
+            detail,
+            display: None,
+        }
+    }
+
+    /// Returns the display name for this chord.
+    ///
+    /// If a `display` attribute was set (via `{define}`), returns that.
+    /// Otherwise returns the raw `name`.
+    #[must_use]
+    pub fn display_name(&self) -> &str {
+        self.display.as_deref().unwrap_or(&self.name)
     }
 }
 
 impl core::fmt::Display for Chord {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(&self.name)
+        f.write_str(self.display_name())
     }
 }
 

@@ -74,6 +74,7 @@ Song {
                                         bass_note: None,
                                     },
                                 ),
+                                display: None,
                             },
                         ),
                         text: "After grid",
