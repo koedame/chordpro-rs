@@ -679,8 +679,8 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
 
     let (render_w, render_h) = compute_image_dimensions(attrs, native_w, native_h, aspect);
 
-    // Clamp to printable area.
-    let max_w = PAGE_W - doc.margin_left - doc.margin_right;
+    // Clamp to printable area (per-column width in multi-column layouts).
+    let max_w = doc.column_width();
     let max_h = PAGE_H - MARGIN_TOP - MARGIN_BOTTOM;
     let (render_w, render_h) = if render_w > max_w {
         let clamped_h = max_w / aspect;
@@ -698,7 +698,7 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
         Some("column") => {
             // Center within the current column's printable area.
             let col_left = doc.margin_left();
-            let col_w = (PAGE_W - doc.margin_left - doc.margin_right) / doc.num_columns as f32;
+            let col_w = doc.column_width();
             col_left + (col_w - render_w) / 2.0
         }
         Some("paper") => {
@@ -1053,16 +1053,26 @@ impl PdfDocument {
         if self.num_columns <= 1 {
             return self.margin_left;
         }
-        let usable_width = PAGE_W - self.margin_left - self.margin_right;
-        let total_gaps = (self.num_columns - 1) as f32 * COLUMN_GAP;
-        // Clamp to zero so that extreme column counts don't produce negative widths.
-        let col_width = ((usable_width - total_gaps) / self.num_columns as f32).max(0.0);
+        let col_width = self.column_width();
         let result = self.margin_left + self.current_column as f32 * (col_width + COLUMN_GAP);
         debug_assert!(
             result.is_finite(),
             "margin_left() produced non-finite value"
         );
         result
+    }
+
+    /// Returns the width of a single column in points.
+    ///
+    /// For single-column layouts this equals the full printable width.
+    /// For multi-column layouts it accounts for inter-column gaps.
+    fn column_width(&self) -> f32 {
+        let usable_width = PAGE_W - self.margin_left - self.margin_right;
+        if self.num_columns <= 1 {
+            return usable_width;
+        }
+        let total_gaps = (self.num_columns - 1) as f32 * COLUMN_GAP;
+        ((usable_width - total_gaps) / self.num_columns as f32).max(0.0)
     }
 
     /// Set the number of columns (clamped to 1..=[`MAX_COLUMNS`]). Resets to column 0.
@@ -2681,6 +2691,50 @@ mod jpeg_tests {
             (tx - expected_x).abs() < 0.01,
             "expected tx ~{expected_x}, got {tx}"
         );
+    }
+
+    #[test]
+    fn test_anchor_column_centers_in_column_multicolumn() {
+        // In a 2-column layout, anchor=column should center the image within
+        // the column width that accounts for COLUMN_GAP, matching the formula
+        // used by margin_left() and column_width().
+        let mut doc = PdfDocument::new();
+        doc.set_columns(2);
+        // Column 0
+        let col_w = doc.column_width();
+        let col_left = doc.margin_left();
+
+        let render_w: f32 = 100.0;
+        let expected_x = col_left + (col_w - render_w) / 2.0;
+
+        let jpeg = minimal_jpeg(100, 100);
+        let idx = doc.embed_jpeg(jpeg, 100, 100);
+        doc.draw_image(idx, expected_x, 500.0, render_w, 100.0);
+        let cm_op = doc.pages[0]
+            .iter()
+            .find(|op| op.contains("cm"))
+            .expect("cm operator");
+        let tx: f32 = cm_op.split_whitespace().nth(4).unwrap().parse().unwrap();
+        assert!(
+            (tx - expected_x).abs() < 0.01,
+            "expected tx ~{expected_x}, got {tx}"
+        );
+    }
+
+    #[test]
+    fn test_column_width_single_column() {
+        let doc = PdfDocument::new();
+        let expected = PAGE_W - doc.margin_left - doc.margin_right;
+        assert!((doc.column_width() - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_column_width_multi_column() {
+        let mut doc = PdfDocument::new();
+        doc.set_columns(2);
+        let usable = PAGE_W - doc.margin_left - doc.margin_right;
+        let expected = (usable - COLUMN_GAP) / 2.0;
+        assert!((doc.column_width() - expected).abs() < 0.01);
     }
 
     #[test]
