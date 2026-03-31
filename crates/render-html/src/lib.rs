@@ -982,8 +982,11 @@ fn render_abc_with_fallback(abc_content: &str, label: &Option<String>, html: &mu
 
 /// Check whether an image `src` value is safe to emit in HTML.
 ///
-/// Rejects empty sources and dangerous URI schemes that could execute code or
-/// load unexpected external resources when the generated HTML is viewed.
+/// Uses an allowlist approach: only `http:`, `https:`, or scheme-less paths
+/// (relative or absolute filesystem paths) are permitted.  All other URI
+/// schemes (`javascript:`, `data:`, `file:`, `blob:`, `vbscript:`, etc.)
+/// are rejected, preventing code execution and local file loading when the
+/// generated HTML is viewed in a browser.
 fn is_safe_image_src(src: &str) -> bool {
     if src.is_empty() {
         return false;
@@ -993,12 +996,14 @@ fn is_safe_image_src(src: &str) -> bool {
     // whitespace so that " javascript:…" is still caught.
     let normalised = src.trim_start().to_ascii_lowercase();
 
-    // Reject known dangerous URI schemes.
-    if normalised.starts_with("javascript:")
-        || normalised.starts_with("data:")
-        || normalised.starts_with("vbscript:")
-    {
-        return false;
+    // If the src contains a colon before any slash, it has a URI scheme.
+    // Only allow http: and https:.
+    if let Some(colon_pos) = normalised.find(':') {
+        let before_colon = &normalised[..colon_pos];
+        // A scheme must appear before any slash (e.g. "http:" not "path/to:file").
+        if !before_colon.contains('/') {
+            return before_colon == "http" || before_colon == "https";
+        }
     }
 
     true
@@ -1748,15 +1753,31 @@ Verse text\n\
 
     #[test]
     fn test_is_safe_image_src() {
+        // Allowed: relative paths
         assert!(is_safe_image_src("photo.jpg"));
         assert!(is_safe_image_src("images/photo.jpg"));
+        assert!(is_safe_image_src("path/to:file.jpg")); // colon after slash is not a scheme
+
+        // Allowed: http/https
+        assert!(is_safe_image_src("http://example.com/photo.jpg"));
         assert!(is_safe_image_src("https://example.com/photo.jpg"));
+        assert!(is_safe_image_src("HTTP://EXAMPLE.COM/PHOTO.JPG"));
+
+        // Rejected: empty
         assert!(!is_safe_image_src(""));
+
+        // Rejected: dangerous schemes (denylist is now implicit via allowlist)
         assert!(!is_safe_image_src("javascript:alert(1)"));
         assert!(!is_safe_image_src("JAVASCRIPT:alert(1)"));
         assert!(!is_safe_image_src("  javascript:alert(1)"));
         assert!(!is_safe_image_src("data:image/png;base64,abc"));
         assert!(!is_safe_image_src("vbscript:MsgBox"));
+
+        // Rejected: file/blob/mhtml schemes (previously allowed)
+        assert!(!is_safe_image_src("file:///etc/passwd"));
+        assert!(!is_safe_image_src("FILE:///etc/passwd"));
+        assert!(!is_safe_image_src("blob:https://example.com/uuid"));
+        assert!(!is_safe_image_src("mhtml:file://C:/page.mhtml"));
     }
 
     #[test]
