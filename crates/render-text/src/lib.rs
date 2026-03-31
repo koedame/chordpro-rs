@@ -313,6 +313,9 @@ fn render_directive(directive: &chordpro_core::ast::Directive, output: &mut Vec<
             let label = chordpro_core::capitalize(section_name);
             render_section_header(&label, &directive.value, output);
         }
+        DirectiveKind::Image(attrs) => {
+            output.push(format!("[Image: {}]", attrs.src));
+        }
         // End-of-section, metadata, and unknown directives produce no output.
         _ => {}
     }
@@ -925,6 +928,20 @@ mod delegate_tests {
         // "hello世界 " = 5 + 4 + 1 = 10, "Am" = 2 → pad chord by 8
         // "test" = 4, "G" = 1 → pad chord by 3
         assert_eq!(output, "Am        G\nhello世界 test\n");
+    }
+
+    #[test]
+    fn test_render_image_placeholder() {
+        let input = "{image: src=photo.jpg}";
+        let output = render(input);
+        assert!(output.contains("[Image: photo.jpg]"));
+    }
+
+    #[test]
+    fn test_render_image_placeholder_with_path() {
+        let input = "{image: src=images/cover.png width=200}";
+        let output = render(input);
+        assert!(output.contains("[Image: images/cover.png]"));
     }
 
     #[test]
