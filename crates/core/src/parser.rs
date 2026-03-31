@@ -3634,4 +3634,46 @@ mod delegate_tests {
     fn parser_new_panics_on_empty_tokens() {
         let _parser = Parser::new(Vec::new());
     }
+
+    // -- Multi-song input size limits -----------------------------------------
+
+    #[test]
+    fn multi_song_oversized_input_rejected() {
+        let opts = ParseOptions {
+            max_input_size: 10,
+            ..Default::default()
+        };
+        let input = "{title: A}\n{new_song}\n{title: B}";
+        let result = parse_multi_with_options(input, &opts);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("exceeds maximum"));
+    }
+
+    #[test]
+    fn multi_song_lenient_oversized_input_rejected() {
+        let opts = ParseOptions {
+            max_input_size: 10,
+            ..Default::default()
+        };
+        let input = "{title: A}\n{new_song}\n{title: B}";
+        let result = parse_multi_lenient_with_options(input, &opts);
+        assert_eq!(result.results.len(), 1);
+        assert!(
+            result.results[0].errors[0]
+                .message
+                .contains("exceeds maximum")
+        );
+    }
+
+    #[test]
+    fn multi_song_within_limit_succeeds() {
+        let opts = ParseOptions {
+            max_input_size: 1000,
+            ..Default::default()
+        };
+        let input = "{title: A}\n{new_song}\n{title: B}";
+        let result = parse_multi_with_options(input, &opts);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 2);
+    }
 }
