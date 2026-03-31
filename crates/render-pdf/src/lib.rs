@@ -658,7 +658,7 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
         None => return,
     };
 
-    let (pixel_w, pixel_h) = match parse_jpeg_dimensions(&data) {
+    let (pixel_w, pixel_h, components) = match parse_jpeg_dimensions(&data) {
         Some(dims) => dims,
         None => return,
     };
@@ -691,7 +691,7 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
 
     doc.ensure_space(render_h + LINE_GAP);
 
-    let img_idx = doc.embed_jpeg(data, pixel_w, pixel_h);
+    let img_idx = doc.embed_jpeg(data, pixel_w, pixel_h, components);
 
     // Compute horizontal position based on the anchor attribute.
     let x = match attrs.anchor.as_deref() {
@@ -908,15 +908,17 @@ const COLUMN_GAP: f32 = 20.0;
 // JPEG header parsing
 // ---------------------------------------------------------------------------
 
-/// Parse JPEG dimensions from raw file data by locating a Start of Frame marker.
+/// Parse JPEG dimensions and component count from raw file data by locating a
+/// Start of Frame marker.
 ///
 /// JPEG files consist of a sequence of markers. This function scans for any
 /// valid SOF marker (SOF0–SOF3, SOF5–SOF7, SOF9–SOF11, SOF13–SOF15) and reads
-/// the image height (2 bytes at marker+3) and width (2 bytes at marker+5).
-/// All SOF markers share the same segment layout.
+/// the image height (2 bytes at marker+3), width (2 bytes at marker+5), and
+/// number of color components (1 byte at marker+7).
 ///
-/// Returns `None` if the data is too short or no SOF marker is found.
-fn parse_jpeg_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+/// Returns `(width, height, components)` or `None` if the data is too short
+/// or no SOF marker is found.
+fn parse_jpeg_dimensions(data: &[u8]) -> Option<(u32, u32, u8)> {
     // Minimum valid JPEG: SOI (2 bytes) + at least one marker segment
     if data.len() < 4 {
         return None;
@@ -944,13 +946,15 @@ fn parse_jpeg_dimensions(data: &[u8]) -> Option<(u32, u32)> {
         // Any SOF marker (SOF0–SOF3, SOF5–SOF7, SOF9–SOF11, SOF13–SOF15).
         // Excludes 0xC4 (DHT), 0xC8 (JPG reserved), and 0xCC (DAC).
         if matches!(marker, 0xC0..=0xC3 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF) {
-            // Need at least 7 more bytes after the marker: length(2) + precision(1) + height(2) + width(2)
-            if i + 9 > data.len() {
+            // Need at least 8 more bytes after the marker:
+            // length(2) + precision(1) + height(2) + width(2) + components(1)
+            if i + 10 > data.len() {
                 return None;
             }
             let height = u16::from_be_bytes([data[i + 5], data[i + 6]]) as u32;
             let width = u16::from_be_bytes([data[i + 7], data[i + 8]]) as u32;
-            return Some((width, height));
+            let components = data[i + 9];
+            return Some((width, height, components));
         }
 
         // SOS marker — image data follows, no more headers to scan
@@ -983,8 +987,8 @@ struct PdfDocument {
     num_columns: u32,
     /// Current column index (0-based).
     current_column: u32,
-    /// Embedded JPEG images: (raw JPEG data, width in pixels, height in pixels).
-    images: Vec<(Vec<u8>, u32, u32)>,
+    /// Embedded JPEG images: (raw JPEG data, width, height, color components).
+    images: Vec<(Vec<u8>, u32, u32, u8)>,
     /// Layout margins (in points), overridable via config.
     margin_top: f32,
     margin_bottom: f32,
@@ -1205,9 +1209,9 @@ impl PdfDocument {
     ///
     /// The raw JPEG bytes are stored as-is; the PDF will use `/DCTDecode`
     /// (JPEG passthrough) so no re-encoding is needed.
-    fn embed_jpeg(&mut self, data: Vec<u8>, width: u32, height: u32) -> usize {
+    fn embed_jpeg(&mut self, data: Vec<u8>, width: u32, height: u32, components: u8) -> usize {
         let idx = self.images.len();
-        self.images.push((data, width, height));
+        self.images.push((data, width, height, components));
         idx
     }
 
@@ -1329,14 +1333,20 @@ impl PdfDocument {
         }
 
         // Image XObject streams (JPEG passthrough via /DCTDecode)
-        for (img_data, img_w, img_h) in &self.images {
+        for (img_data, img_w, img_h, img_components) in &self.images {
             offsets.push(pdf.len());
             let obj_num = offsets.len();
+            let color_space = match img_components {
+                1 => "/DeviceGray",
+                4 => "/DeviceCMYK",
+                _ => "/DeviceRGB",
+            };
             let header = format!(
-                "{} 0 obj\n<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {} >>\nstream\n",
+                "{} 0 obj\n<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace {} /BitsPerComponent 8 /Filter /DCTDecode /Length {} >>\nstream\n",
                 obj_num,
                 img_w,
                 img_h,
+                color_space,
                 img_data.len()
             );
             pdf.extend_from_slice(header.as_bytes());
@@ -2436,7 +2446,13 @@ mod jpeg_tests {
     ///
     /// This is not a displayable image but contains a structurally correct
     /// JPEG header that `parse_jpeg_dimensions` can parse.
+    /// Uses 3 color components (RGB) by default.
     fn minimal_jpeg(width: u16, height: u16) -> Vec<u8> {
+        minimal_jpeg_with_components(width, height, 3)
+    }
+
+    /// Build a minimal JPEG with a specific number of color components.
+    fn minimal_jpeg_with_components(width: u16, height: u16, components: u8) -> Vec<u8> {
         let mut data = Vec::new();
         // SOI marker
         data.extend_from_slice(&[0xFF, 0xD8]);
@@ -2452,8 +2468,8 @@ mod jpeg_tests {
         data.extend_from_slice(&height.to_be_bytes());
         // Width (big-endian)
         data.extend_from_slice(&width.to_be_bytes());
-        // Number of components: 0 (invalid for real JPEG, but sufficient for parsing)
-        data.push(0x00);
+        // Number of components
+        data.push(components);
         data
     }
 
@@ -2461,14 +2477,14 @@ mod jpeg_tests {
     fn test_parse_jpeg_dimensions_basic() {
         let jpeg = minimal_jpeg(640, 480);
         let dims = parse_jpeg_dimensions(&jpeg);
-        assert_eq!(dims, Some((640, 480)));
+        assert_eq!(dims, Some((640, 480, 3)));
     }
 
     #[test]
     fn test_parse_jpeg_dimensions_square() {
         let jpeg = minimal_jpeg(100, 100);
         let dims = parse_jpeg_dimensions(&jpeg);
-        assert_eq!(dims, Some((100, 100)));
+        assert_eq!(dims, Some((100, 100, 3)));
     }
 
     #[test]
@@ -2499,9 +2515,9 @@ mod jpeg_tests {
         data.push(0x08);
         data.extend_from_slice(&300_u16.to_be_bytes()); // height
         data.extend_from_slice(&400_u16.to_be_bytes()); // width
-        data.push(0x00);
+        data.push(0x00); // components
         let dims = parse_jpeg_dimensions(&data);
-        assert_eq!(dims, Some((400, 300)));
+        assert_eq!(dims, Some((400, 300, 0)));
     }
 
     /// Build a minimal valid JPEG byte sequence with an arbitrary SOF marker.
@@ -2521,31 +2537,31 @@ mod jpeg_tests {
     #[test]
     fn test_parse_jpeg_dimensions_sof1_extended_sequential() {
         let data = minimal_jpeg_with_sof(0xC1, 800, 600);
-        assert_eq!(parse_jpeg_dimensions(&data), Some((800, 600)));
+        assert_eq!(parse_jpeg_dimensions(&data), Some((800, 600, 0)));
     }
 
     #[test]
     fn test_parse_jpeg_dimensions_sof3_lossless() {
         let data = minimal_jpeg_with_sof(0xC3, 1024, 768);
-        assert_eq!(parse_jpeg_dimensions(&data), Some((1024, 768)));
+        assert_eq!(parse_jpeg_dimensions(&data), Some((1024, 768, 0)));
     }
 
     #[test]
     fn test_parse_jpeg_dimensions_sof9_arithmetic_sequential() {
         let data = minimal_jpeg_with_sof(0xC9, 320, 240);
-        assert_eq!(parse_jpeg_dimensions(&data), Some((320, 240)));
+        assert_eq!(parse_jpeg_dimensions(&data), Some((320, 240, 0)));
     }
 
     #[test]
     fn test_parse_jpeg_dimensions_sof10_arithmetic_progressive() {
         let data = minimal_jpeg_with_sof(0xCA, 1920, 1080);
-        assert_eq!(parse_jpeg_dimensions(&data), Some((1920, 1080)));
+        assert_eq!(parse_jpeg_dimensions(&data), Some((1920, 1080, 0)));
     }
 
     #[test]
     fn test_parse_jpeg_dimensions_sof11_arithmetic_lossless() {
         let data = minimal_jpeg_with_sof(0xCB, 256, 256);
-        assert_eq!(parse_jpeg_dimensions(&data), Some((256, 256)));
+        assert_eq!(parse_jpeg_dimensions(&data), Some((256, 256, 0)));
     }
 
     #[test]
@@ -2560,7 +2576,7 @@ mod jpeg_tests {
             let data = minimal_jpeg_with_sof(marker, 500, 400);
             assert_eq!(
                 parse_jpeg_dimensions(&data),
-                Some((500, 400)),
+                Some((500, 400, 0)),
                 "SOF marker 0x{marker:02X} should be recognized"
             );
         }
@@ -2602,7 +2618,7 @@ mod jpeg_tests {
     fn test_embed_jpeg_produces_xobject() {
         let jpeg = minimal_jpeg(320, 240);
         let mut doc = PdfDocument::new();
-        let idx = doc.embed_jpeg(jpeg, 320, 240);
+        let idx = doc.embed_jpeg(jpeg, 320, 240, 3);
         assert_eq!(idx, 0);
         doc.draw_image(idx, 56.0, 700.0, 320.0, 240.0);
         let pdf = doc.build_pdf();
@@ -2619,8 +2635,8 @@ mod jpeg_tests {
         let jpeg1 = minimal_jpeg(100, 50);
         let jpeg2 = minimal_jpeg(200, 150);
         let mut doc = PdfDocument::new();
-        let idx1 = doc.embed_jpeg(jpeg1, 100, 50);
-        let idx2 = doc.embed_jpeg(jpeg2, 200, 150);
+        let idx1 = doc.embed_jpeg(jpeg1, 100, 50, 3);
+        let idx2 = doc.embed_jpeg(jpeg2, 200, 150, 3);
         assert_eq!(idx1, 0);
         assert_eq!(idx2, 1);
         doc.draw_image(idx1, 56.0, 700.0, 100.0, 50.0);
@@ -2629,6 +2645,59 @@ mod jpeg_tests {
         let content = String::from_utf8_lossy(&pdf);
         assert!(content.contains("/Im1"));
         assert!(content.contains("/Im2"));
+    }
+
+    #[test]
+    fn test_embed_jpeg_grayscale_uses_device_gray() {
+        let jpeg = minimal_jpeg_with_components(100, 100, 1);
+        let mut doc = PdfDocument::new();
+        let idx = doc.embed_jpeg(jpeg, 100, 100, 1);
+        doc.draw_image(idx, 56.0, 700.0, 100.0, 100.0);
+        let pdf = doc.build_pdf();
+        let content = String::from_utf8_lossy(&pdf);
+        assert!(
+            content.contains("/ColorSpace /DeviceGray"),
+            "grayscale JPEG should use /DeviceGray"
+        );
+        assert!(
+            !content.contains("/ColorSpace /DeviceRGB"),
+            "grayscale JPEG should not use /DeviceRGB"
+        );
+    }
+
+    #[test]
+    fn test_embed_jpeg_rgb_uses_device_rgb() {
+        let jpeg = minimal_jpeg_with_components(100, 100, 3);
+        let mut doc = PdfDocument::new();
+        let idx = doc.embed_jpeg(jpeg, 100, 100, 3);
+        doc.draw_image(idx, 56.0, 700.0, 100.0, 100.0);
+        let pdf = doc.build_pdf();
+        let content = String::from_utf8_lossy(&pdf);
+        assert!(
+            content.contains("/ColorSpace /DeviceRGB"),
+            "RGB JPEG should use /DeviceRGB"
+        );
+    }
+
+    #[test]
+    fn test_embed_jpeg_cmyk_uses_device_cmyk() {
+        let jpeg = minimal_jpeg_with_components(100, 100, 4);
+        let mut doc = PdfDocument::new();
+        let idx = doc.embed_jpeg(jpeg, 100, 100, 4);
+        doc.draw_image(idx, 56.0, 700.0, 100.0, 100.0);
+        let pdf = doc.build_pdf();
+        let content = String::from_utf8_lossy(&pdf);
+        assert!(
+            content.contains("/ColorSpace /DeviceCMYK"),
+            "CMYK JPEG should use /DeviceCMYK"
+        );
+    }
+
+    #[test]
+    fn test_parse_jpeg_dimensions_grayscale_component_count() {
+        let jpeg = minimal_jpeg_with_components(200, 150, 1);
+        let dims = parse_jpeg_dimensions(&jpeg);
+        assert_eq!(dims, Some((200, 150, 1)));
     }
 
     #[test]
@@ -2644,7 +2713,7 @@ mod jpeg_tests {
     fn test_draw_image_emits_cm_do_operators() {
         let jpeg = minimal_jpeg(50, 50);
         let mut doc = PdfDocument::new();
-        let idx = doc.embed_jpeg(jpeg, 50, 50);
+        let idx = doc.embed_jpeg(jpeg, 50, 50, 3);
         doc.draw_image(idx, 100.0, 200.0, 50.0, 50.0);
         let ops = &doc.pages[0];
         assert!(ops.iter().any(|op| op == "q"));
@@ -2658,7 +2727,7 @@ mod jpeg_tests {
         // anchor=line (default) should place image at margin_left.
         let mut doc = PdfDocument::new();
         let jpeg = minimal_jpeg(100, 100);
-        let idx = doc.embed_jpeg(jpeg, 100, 100);
+        let idx = doc.embed_jpeg(jpeg, 100, 100, 3);
         let x = doc.margin_left();
         doc.draw_image(idx, x, 500.0, 100.0, 100.0);
         let cm_op = doc.pages[0]
@@ -2680,7 +2749,7 @@ mod jpeg_tests {
         let expected_x = (PAGE_W - render_w) / 2.0;
         let mut doc = PdfDocument::new();
         let jpeg = minimal_jpeg(200, 100);
-        let idx = doc.embed_jpeg(jpeg, 200, 100);
+        let idx = doc.embed_jpeg(jpeg, 200, 100, 3);
         doc.draw_image(idx, expected_x, 500.0, render_w, 100.0);
         let cm_op = doc.pages[0]
             .iter()
@@ -2708,7 +2777,7 @@ mod jpeg_tests {
         let expected_x = col_left + (col_w - render_w) / 2.0;
 
         let jpeg = minimal_jpeg(100, 100);
-        let idx = doc.embed_jpeg(jpeg, 100, 100);
+        let idx = doc.embed_jpeg(jpeg, 100, 100, 3);
         doc.draw_image(idx, expected_x, 500.0, render_w, 100.0);
         let cm_op = doc.pages[0]
             .iter()
