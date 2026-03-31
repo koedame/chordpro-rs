@@ -580,11 +580,20 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
         return;
     }
 
-    // Check file size before reading to avoid excessive memory allocation.
-    match std::fs::metadata(&attrs.src) {
-        Ok(meta) if meta.len() > MAX_IMAGE_FILE_SIZE => return,
+    // Reject symbolic links to prevent symlink-based path traversal.
+    // Use symlink_metadata (lstat) so we inspect the link itself, not its
+    // target.
+    let meta = match std::fs::symlink_metadata(&attrs.src) {
+        Ok(m) => m,
         Err(_) => return,
-        _ => {}
+    };
+    if meta.file_type().is_symlink() {
+        return;
+    }
+
+    // Check file size before reading to avoid excessive memory allocation.
+    if meta.len() > MAX_IMAGE_FILE_SIZE {
+        return;
     }
 
     let data = match std::fs::read(&attrs.src) {
@@ -2494,6 +2503,37 @@ mod jpeg_tests {
         assert!(!is_safe_image_path("../photo.jpg"));
         assert!(!is_safe_image_path("images/../../etc/shadow.jpeg"));
         assert!(!is_safe_image_path("sub/../../../photo.jpg"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_symlink_image_is_rejected() {
+        use std::os::unix::fs::symlink;
+
+        let dir = std::env::temp_dir().join("chordpro_symlink_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+
+        let target = dir.join("real.jpg");
+        std::fs::write(&target, b"\xFF\xD8\xFF").expect("write target");
+        let link = dir.join("link.jpg");
+        symlink(&target, &link).expect("create symlink");
+
+        // Change to the temp dir so the relative path resolves.
+        let saved_dir = std::env::current_dir().expect("get cwd");
+        std::env::set_current_dir(&dir).expect("set cwd");
+
+        let song = chordpro_core::parse("{title: T}\n{image: src=link.jpg}").expect("parse");
+        let pdf = render_song(&song);
+        let content = String::from_utf8_lossy(&pdf);
+        // Image must NOT be embedded because src is a symlink.
+        assert!(
+            !content.contains("/Subtype /Image"),
+            "symlink images must be rejected"
+        );
+
+        std::env::set_current_dir(&saved_dir).expect("restore cwd");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
