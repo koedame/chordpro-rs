@@ -35,16 +35,17 @@ jobs:
       id-token: write
       actions: read
     steps:
+      # Use CLAUDE_PAT so that git pushes by Claude trigger CI workflows.
+      # GITHUB_TOKEN pushes do not trigger other workflows (GitHub anti-loop).
       - uses: actions/checkout@v6
         with:
+          token: ${{ secrets.CLAUDE_PAT }}
           fetch-depth: 1
 
       - uses: anthropics/claude-code-action@v1
         id: claude
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Use PAT so that Claude's pushes trigger CI workflows
-          # (GITHUB_TOKEN pushes do not trigger other workflows)
           github_token: ${{ secrets.CLAUDE_PAT }}
           track_progress: true
           claude_args: "--allowedTools Edit,Write,Read,Bash"
@@ -58,17 +59,3 @@ jobs:
             - Title: concise, imperative mood
             - Body: include `Closes #N` referencing the issue number
             - Follow all rules in CLAUDE.md and .claude/rules/
-
-      # Re-trigger CI on the PR branch after Claude pushes commits.
-      # GITHUB_TOKEN pushes don't trigger workflows, so we explicitly
-      # dispatch CI using CLAUDE_PAT.
-      - name: Re-trigger CI if on a PR branch
-        if: github.event.issue.pull_request
-        env:
-          GH_TOKEN: ${{ secrets.CLAUDE_PAT }}
-        run: |
-          PR_NUMBER="${{ github.event.issue.number || github.event.pull_request.number }}"
-          HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName -q .headRefName)
-          if [ -n "$HEAD_REF" ]; then
-            gh workflow run ci.yml --ref "$HEAD_REF" || true
-          fi
