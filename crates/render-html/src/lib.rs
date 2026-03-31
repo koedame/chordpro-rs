@@ -618,6 +618,20 @@ fn render_directive_inner(directive: &chordpro_core::ast::Directive, html: &mut 
         DirectiveKind::Image(attrs) => {
             render_image(attrs, html);
         }
+        DirectiveKind::Define => {
+            if let Some(ref value) = directive.value {
+                let def = chordpro_core::ast::ChordDefinition::parse_value(value);
+                if let Some(ref raw) = def.raw {
+                    if let Some(diagram) =
+                        chordpro_core::chord_diagram::DiagramData::from_raw(&def.name, raw, 6)
+                    {
+                        html.push_str("<div class=\"chord-diagram-container\">");
+                        html.push_str(&chordpro_core::chord_diagram::render_svg(&diagram));
+                        html.push_str("</div>\n");
+                    }
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -1233,6 +1247,23 @@ mod transpose_tests {
     fn test_image_with_scale() {
         let html = render("{image: src=photo.jpg scale=0.5}");
         assert!(html.contains("scale(0.5)"));
+    }
+
+    // -- chord diagram tests --------------------------------------------------
+
+    #[test]
+    fn test_define_renders_svg_diagram() {
+        let html = render("{define: Am base-fret 1 frets x 0 2 2 1 0}");
+        assert!(html.contains("<svg"));
+        assert!(html.contains("Am"));
+        assert!(html.contains("chord-diagram"));
+    }
+
+    #[test]
+    fn test_define_keyboard_no_diagram() {
+        let html = render("{define: Am keys 0 3 7}");
+        // Keyboard definitions don't produce SVG diagrams
+        assert!(!html.contains("<svg"));
     }
 }
 

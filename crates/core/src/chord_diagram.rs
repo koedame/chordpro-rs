@@ -1,0 +1,307 @@
+//! SVG chord diagram generator.
+//!
+//! Generates inline SVG chord diagram strings from chord definition data.
+//! The diagrams show fret positions, open/muted strings, and barres for
+//! fretted string instruments.
+//!
+//! # Examples
+//!
+//! ```
+//! use chordpro_core::chord_diagram::{DiagramData, render_svg};
+//!
+//! let data = DiagramData {
+//!     name: "Am".to_string(),
+//!     strings: 6,
+//!     frets_shown: 5,
+//!     base_fret: 1,
+//!     frets: vec![-1, 0, 2, 2, 1, 0],
+//!     fingers: vec![],
+//! };
+//! let svg = render_svg(&data);
+//! assert!(svg.contains("<svg"));
+//! assert!(svg.contains("Am"));
+//! ```
+
+/// Data needed to render a chord diagram.
+#[derive(Debug, Clone)]
+pub struct DiagramData {
+    /// Chord name displayed above the diagram.
+    pub name: String,
+    /// Number of strings (e.g., 6 for guitar, 4 for ukulele).
+    pub strings: usize,
+    /// Number of frets shown in the diagram.
+    pub frets_shown: usize,
+    /// The base fret (1 = open position, >1 shows fret number).
+    pub base_fret: u32,
+    /// Fret values for each string: -1 = muted (x), 0 = open, 1+ = fret number.
+    pub frets: Vec<i32>,
+    /// Optional finger numbers for each string (0 = none).
+    pub fingers: Vec<u8>,
+}
+
+impl DiagramData {
+    /// Parse fretted chord data from a `ChordDefinition` raw string.
+    ///
+    /// Expected format: `base-fret N frets f1 f2 ... [fingers g1 g2 ...]`
+    /// where fret values are numbers or `x`/`X` for muted strings.
+    #[must_use]
+    pub fn from_raw(name: &str, raw: &str, num_strings: usize) -> Option<Self> {
+        let mut base_fret: u32 = 1;
+        let mut frets: Vec<i32> = Vec::new();
+        let mut fingers: Vec<u8> = Vec::new();
+
+        let tokens: Vec<&str> = raw.split_whitespace().collect();
+        let mut i = 0;
+        while i < tokens.len() {
+            match tokens[i] {
+                "base-fret" => {
+                    if i + 1 < tokens.len() {
+                        base_fret = tokens[i + 1].parse().unwrap_or(1);
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                }
+                "frets" => {
+                    i += 1;
+                    while i < tokens.len() && tokens[i] != "fingers" && tokens[i] != "display" {
+                        let val = match tokens[i].to_ascii_lowercase().as_str() {
+                            "x" | "n" => -1,
+                            s => s.parse::<i32>().unwrap_or(-1),
+                        };
+                        frets.push(val);
+                        i += 1;
+                    }
+                }
+                "fingers" => {
+                    i += 1;
+                    while i < tokens.len() && tokens[i] != "display" {
+                        fingers.push(tokens[i].parse().unwrap_or(0));
+                        i += 1;
+                    }
+                }
+                _ => {
+                    i += 1;
+                }
+            }
+        }
+
+        if frets.is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            name: name.to_string(),
+            strings: num_strings.max(frets.len()),
+            frets_shown: 5,
+            base_fret,
+            frets,
+            fingers,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SVG rendering constants
+// ---------------------------------------------------------------------------
+
+const CELL_W: f32 = 16.0;
+const CELL_H: f32 = 20.0;
+const TOP_MARGIN: f32 = 30.0;
+const LEFT_MARGIN: f32 = 20.0;
+const DOT_RADIUS: f32 = 5.0;
+const OPEN_RADIUS: f32 = 4.0;
+
+/// Render a chord diagram as an inline SVG string.
+#[must_use]
+pub fn render_svg(data: &DiagramData) -> String {
+    let num_strings = data.strings;
+    let num_frets = data.frets_shown;
+    let grid_w = (num_strings - 1) as f32 * CELL_W;
+    let grid_h = num_frets as f32 * CELL_H;
+    let total_w = grid_w + LEFT_MARGIN * 2.0;
+    let total_h = grid_h + TOP_MARGIN + 30.0;
+
+    let mut svg = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{total_w}\" height=\"{total_h}\" \
+         viewBox=\"0 0 {total_w} {total_h}\" class=\"chord-diagram\">\n"
+    );
+
+    // Chord name
+    let name_x = LEFT_MARGIN + grid_w / 2.0;
+    svg.push_str(&format!(
+        "<text x=\"{name_x}\" y=\"15\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"14\" font-weight=\"bold\">{}</text>\n",
+        escape_xml(&data.name)
+    ));
+
+    // Nut or base-fret indicator
+    let nut_y = TOP_MARGIN;
+    if data.base_fret == 1 {
+        svg.push_str(&format!(
+            "<line x1=\"{LEFT_MARGIN}\" y1=\"{nut_y}\" x2=\"{}\" y2=\"{nut_y}\" \
+             stroke=\"black\" stroke-width=\"3\"/>\n",
+            LEFT_MARGIN + grid_w
+        ));
+    } else {
+        svg.push_str(&format!(
+            "<text x=\"{}\" y=\"{}\" text-anchor=\"end\" \
+             font-family=\"sans-serif\" font-size=\"10\">{}fr</text>\n",
+            LEFT_MARGIN - 4.0,
+            nut_y + CELL_H / 2.0 + 3.0,
+            data.base_fret
+        ));
+    }
+
+    // Vertical lines (strings)
+    for i in 0..num_strings {
+        let x = LEFT_MARGIN + i as f32 * CELL_W;
+        svg.push_str(&format!(
+            "<line x1=\"{x}\" y1=\"{nut_y}\" x2=\"{x}\" y2=\"{}\" \
+             stroke=\"black\" stroke-width=\"1\"/>\n",
+            nut_y + grid_h
+        ));
+    }
+
+    // Horizontal lines (frets)
+    for j in 0..=num_frets {
+        let y = nut_y + j as f32 * CELL_H;
+        svg.push_str(&format!(
+            "<line x1=\"{LEFT_MARGIN}\" y1=\"{y}\" x2=\"{}\" y2=\"{y}\" \
+             stroke=\"black\" stroke-width=\"1\"/>\n",
+            LEFT_MARGIN + grid_w
+        ));
+    }
+
+    // Finger positions, open, and muted markers
+    for (i, &fret) in data.frets.iter().enumerate() {
+        if i >= num_strings {
+            break;
+        }
+        let x = LEFT_MARGIN + i as f32 * CELL_W;
+        if fret == -1 {
+            // Muted (X)
+            let y = nut_y - 10.0;
+            svg.push_str(&format!(
+                "<text x=\"{x}\" y=\"{y}\" text-anchor=\"middle\" \
+                 font-family=\"sans-serif\" font-size=\"10\">X</text>\n"
+            ));
+        } else if fret == 0 {
+            // Open (O)
+            let y = nut_y - 10.0;
+            svg.push_str(&format!(
+                "<circle cx=\"{x}\" cy=\"{y}\" r=\"{OPEN_RADIUS}\" \
+                 fill=\"none\" stroke=\"black\" stroke-width=\"1\"/>\n"
+            ));
+        } else {
+            // Fretted dot
+            let y = nut_y + (fret as f32 - 0.5) * CELL_H;
+            svg.push_str(&format!(
+                "<circle cx=\"{x}\" cy=\"{y}\" r=\"{DOT_RADIUS}\" fill=\"black\"/>\n"
+            ));
+        }
+    }
+
+    svg.push_str("</svg>");
+    svg
+}
+
+/// Escape XML special characters.
+fn escape_xml(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+// ===========================================================================
+// Tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_render_svg_basic() {
+        let data = DiagramData {
+            name: "Am".to_string(),
+            strings: 6,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![-1, 0, 2, 2, 1, 0],
+            fingers: vec![],
+        };
+        let svg = render_svg(&data);
+        assert!(svg.contains("<svg"));
+        assert!(svg.contains("</svg>"));
+        assert!(svg.contains("Am"));
+        // Should have circles for fretted positions
+        assert!(svg.contains("<circle"));
+        // Should have X for muted string
+        assert!(svg.contains(">X<"));
+    }
+
+    #[test]
+    fn test_render_svg_barre_chord() {
+        let data = DiagramData {
+            name: "F".to_string(),
+            strings: 6,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![1, 1, 2, 3, 3, 1],
+            fingers: vec![],
+        };
+        let svg = render_svg(&data);
+        assert!(svg.contains(">F<"));
+    }
+
+    #[test]
+    fn test_render_svg_high_position() {
+        let data = DiagramData {
+            name: "Bm".to_string(),
+            strings: 6,
+            frets_shown: 5,
+            base_fret: 7,
+            frets: vec![-1, 1, 3, 3, 2, 1],
+            fingers: vec![],
+        };
+        let svg = render_svg(&data);
+        assert!(svg.contains("7fr"));
+    }
+
+    #[test]
+    fn test_from_raw_basic() {
+        let data = DiagramData::from_raw("Am", "base-fret 1 frets x 0 2 2 1 0", 6).unwrap();
+        assert_eq!(data.name, "Am");
+        assert_eq!(data.base_fret, 1);
+        assert_eq!(data.frets, vec![-1, 0, 2, 2, 1, 0]);
+    }
+
+    #[test]
+    fn test_from_raw_with_fingers() {
+        let data =
+            DiagramData::from_raw("C", "base-fret 1 frets x 3 2 0 1 0 fingers 0 3 2 0 1 0", 6)
+                .unwrap();
+        assert_eq!(data.frets, vec![-1, 3, 2, 0, 1, 0]);
+        assert_eq!(data.fingers, vec![0, 3, 2, 0, 1, 0]);
+    }
+
+    #[test]
+    fn test_from_raw_no_frets() {
+        assert!(DiagramData::from_raw("X", "base-fret 1", 6).is_none());
+    }
+
+    #[test]
+    fn test_from_raw_ukulele() {
+        let data = DiagramData::from_raw("C", "frets 0 0 0 3", 4).unwrap();
+        assert_eq!(data.strings, 4);
+        assert_eq!(data.frets, vec![0, 0, 0, 3]);
+    }
+
+    #[test]
+    fn test_escape_xml() {
+        assert_eq!(escape_xml("A&B"), "A&amp;B");
+        assert_eq!(escape_xml("A<B>C"), "A&lt;B&gt;C");
+    }
+}
