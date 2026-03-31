@@ -4,6 +4,7 @@
 
 use std::fs;
 use std::io::{self, Write};
+use std::path::Path;
 use std::process::ExitCode;
 
 use clap::Parser;
@@ -51,8 +52,16 @@ enum Format {
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    // Build configuration: defaults → system → user → custom config files → defines
-    let mut config = chordpro_core::config::Config::defaults();
+    // Derive project directory from the first input file for project-level config.
+    let project_dir = cli
+        .files
+        .first()
+        .and_then(|f| Path::new(f).parent())
+        .and_then(|p| p.to_str())
+        .map(|s| s.to_string());
+
+    // Build configuration: defaults → system → user → project → custom config files → defines
+    let mut config = chordpro_core::config::Config::load(project_dir.as_deref(), None);
 
     // Apply --config files/presets in order (preset names resolved first)
     for config_name in &cli.configs {
