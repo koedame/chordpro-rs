@@ -40,10 +40,24 @@ pub struct DiagramData {
 }
 
 impl DiagramData {
+    /// Parse fretted chord data from a raw definition string, inferring the
+    /// string count from the number of fret values provided.
+    ///
+    /// This is equivalent to calling [`from_raw`](Self::from_raw) with
+    /// `num_strings` set to `0`, so the actual fret count determines the
+    /// number of strings in the diagram.
+    #[must_use]
+    pub fn from_raw_infer(name: &str, raw: &str) -> Option<Self> {
+        Self::from_raw(name, raw, 0)
+    }
+
     /// Parse fretted chord data from a `ChordDefinition` raw string.
     ///
     /// Expected format: `base-fret N frets f1 f2 ... [fingers g1 g2 ...]`
     /// where fret values are numbers or `x`/`X` for muted strings.
+    ///
+    /// `num_strings` sets a minimum string count; the actual count will be
+    /// the maximum of this value and the number of fret values parsed.
     #[must_use]
     pub fn from_raw(name: &str, raw: &str, num_strings: usize) -> Option<Self> {
         let mut base_fret: u32 = 1;
@@ -297,6 +311,27 @@ mod tests {
         let data = DiagramData::from_raw("C", "frets 0 0 0 3", 4).unwrap();
         assert_eq!(data.strings, 4);
         assert_eq!(data.frets, vec![0, 0, 0, 3]);
+    }
+
+    #[test]
+    fn test_from_raw_infer_guitar() {
+        let data = DiagramData::from_raw_infer("Am", "base-fret 1 frets x 0 2 2 1 0").unwrap();
+        assert_eq!(data.strings, 6);
+        assert_eq!(data.frets, vec![-1, 0, 2, 2, 1, 0]);
+    }
+
+    #[test]
+    fn test_from_raw_infer_ukulele() {
+        let data = DiagramData::from_raw_infer("C", "frets 0 0 0 3").unwrap();
+        assert_eq!(data.strings, 4);
+        assert_eq!(data.frets, vec![0, 0, 0, 3]);
+    }
+
+    #[test]
+    fn test_from_raw_infer_banjo() {
+        let data = DiagramData::from_raw_infer("G", "frets 0 0 0 0 0").unwrap();
+        assert_eq!(data.strings, 5);
+        assert_eq!(data.frets, vec![0, 0, 0, 0, 0]);
     }
 
     #[test]

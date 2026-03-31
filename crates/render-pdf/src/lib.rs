@@ -517,7 +517,7 @@ fn render_directive(directive: &chordpro_core::ast::Directive, doc: &mut PdfDocu
             let def = chordpro_core::ast::ChordDefinition::parse_value(value);
             if let Some(ref raw) = def.raw {
                 if let Some(diagram) =
-                    chordpro_core::chord_diagram::DiagramData::from_raw(&def.name, raw, 6)
+                    chordpro_core::chord_diagram::DiagramData::from_raw_infer(&def.name, raw)
                 {
                     render_chord_diagram_pdf(&diagram, doc);
                     return;
@@ -2378,6 +2378,24 @@ mod chord_diagram_pdf_tests {
         let bytes = render_song(&song);
         assert!(bytes.starts_with(b"%PDF-1.4"));
         assert!(bytes.ends_with(b"%%EOF\n"));
+    }
+
+    #[test]
+    fn test_define_ukulele_diagram_in_pdf() {
+        let input = "{define: C frets 0 0 0 3}\n[C]Hello";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF"));
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("C"));
+    }
+
+    #[test]
+    fn test_define_banjo_diagram_in_pdf() {
+        let input = "{define: G frets 0 0 0 0 0}\n[G]Hello";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF"));
     }
 }
 

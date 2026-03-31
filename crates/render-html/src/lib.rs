@@ -944,7 +944,7 @@ fn render_directive_inner(directive: &chordpro_core::ast::Directive, html: &mut 
                 let def = chordpro_core::ast::ChordDefinition::parse_value(value);
                 if let Some(ref raw) = def.raw {
                     if let Some(diagram) =
-                        chordpro_core::chord_diagram::DiagramData::from_raw(&def.name, raw, 6)
+                        chordpro_core::chord_diagram::DiagramData::from_raw_infer(&def.name, raw)
                     {
                         html.push_str("<div class=\"chord-diagram-container\">");
                         html.push_str(&chordpro_core::chord_diagram::render_svg(&diagram));
@@ -1776,6 +1776,29 @@ Verse text\n\
         let html = render("{define: Am keys 0 3 7}");
         // Keyboard definitions don't produce SVG diagrams
         assert!(!html.contains("<svg"));
+    }
+
+    #[test]
+    fn test_define_ukulele_diagram() {
+        let html = render("{define: C frets 0 0 0 3}");
+        assert!(html.contains("<svg"));
+        assert!(html.contains("chord-diagram"));
+        // 4 strings: SVG width = (4-1)*16 + 20*2 = 88
+        assert!(
+            html.contains("width=\"88\""),
+            "Expected 4-string SVG width (88)"
+        );
+    }
+
+    #[test]
+    fn test_define_banjo_diagram() {
+        let html = render("{define: G frets 0 0 0 0 0}");
+        assert!(html.contains("<svg"));
+        // 5 strings: SVG width = (5-1)*16 + 20*2 = 104
+        assert!(
+            html.contains("width=\"104\""),
+            "Expected 5-string SVG width (104)"
+        );
     }
 
     // -- abc2svg delegate rendering tests -----------------------------------------
