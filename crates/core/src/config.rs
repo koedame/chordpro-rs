@@ -192,6 +192,15 @@ impl Config {
     ///
     /// Returns `Ok(Config)` on success, or a [`ConfigError`] on failure.
     ///
+    /// # Trust boundary
+    ///
+    /// When `name` is not a preset, it is used directly as a file path.
+    /// No path validation or restriction is applied — the caller must
+    /// ensure the path comes from trusted input. This is safe for a local
+    /// CLI tool where the user already has filesystem access, but callers
+    /// invoking this programmatically with partially untrusted input should
+    /// validate the path first.
+    ///
     /// # Errors
     ///
     /// Returns [`ConfigError::Io`] if the file cannot be read, or

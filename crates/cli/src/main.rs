@@ -29,7 +29,10 @@ struct Cli {
     #[arg(short, long, default_value = "0")]
     transpose: i8,
 
-    /// Load a custom configuration file (may be specified multiple times).
+    /// Load a custom configuration file or preset name (may be specified multiple times).
+    ///
+    /// Paths are treated as trusted input — the file is read without path restrictions.
+    /// Do not pass untrusted paths when invoking chordpro programmatically.
     #[arg(short = 'c', long = "config")]
     configs: Vec<String>,
 
