@@ -1063,9 +1063,7 @@ fn render_image(attrs: &chordpro_core::ast::ImageAttributes, html: &mut String) 
 
     // Determine wrapper alignment
     let align_css = match attrs.anchor.as_deref() {
-        Some("line") | None => "",
-        Some("column") => "text-align: center;",
-        Some("paper") => "text-align: center;",
+        Some("column") | Some("paper") => "text-align: center;",
         _ => "",
     };
 
@@ -1759,6 +1757,40 @@ Verse text\n\
         assert!(!is_safe_image_src("  javascript:alert(1)"));
         assert!(!is_safe_image_src("data:image/png;base64,abc"));
         assert!(!is_safe_image_src("vbscript:MsgBox"));
+    }
+
+    #[test]
+    fn test_image_anchor_column_centers() {
+        let html = render("{image: src=photo.jpg anchor=column}");
+        assert!(
+            html.contains("<div style=\"text-align: center;\">"),
+            "anchor=column should produce centered div"
+        );
+    }
+
+    #[test]
+    fn test_image_anchor_paper_centers() {
+        let html = render("{image: src=photo.jpg anchor=paper}");
+        assert!(
+            html.contains("<div style=\"text-align: center;\">"),
+            "anchor=paper should produce centered div"
+        );
+    }
+
+    #[test]
+    fn test_image_anchor_line_no_style() {
+        let html = render("{image: src=photo.jpg anchor=line}");
+        // anchor=line should produce a bare <div> without style
+        assert!(html.contains("<div><img"));
+        assert!(!html.contains("text-align"));
+    }
+
+    #[test]
+    fn test_image_no_anchor_no_style() {
+        let html = render("{image: src=photo.jpg}");
+        // No anchor should produce a bare <div> without style
+        assert!(html.contains("<div><img"));
+        assert!(!html.contains("text-align"));
     }
 
     // -- chord diagram tests --------------------------------------------------
