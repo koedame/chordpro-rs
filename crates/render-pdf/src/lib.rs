@@ -525,6 +525,29 @@ fn render_directive(directive: &chordpro_core::ast::Directive, doc: &mut PdfDocu
     render_section_label(directive, doc);
 }
 
+/// Check whether an image path is safe to open.
+///
+/// Rejects absolute paths and paths containing `..` components to prevent
+/// directory traversal attacks. Only relative paths that stay within (or
+/// below) the current working directory are accepted.
+fn is_safe_image_path(path: &str) -> bool {
+    let p = std::path::Path::new(path);
+
+    // Reject absolute paths (Unix `/…` and Windows `C:\…`).
+    if p.is_absolute() {
+        return false;
+    }
+
+    // Reject any path component that is `..`.
+    for component in p.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return false;
+        }
+    }
+
+    true
+}
+
 /// Render an `{image}` directive by embedding a JPEG file into the PDF.
 ///
 /// Only JPEG files (`.jpg` / `.jpeg` extension) are supported. If the file
@@ -532,6 +555,11 @@ fn render_directive(directive: &chordpro_core::ast::Directive, doc: &mut PdfDocu
 /// extension, the directive is silently skipped.
 fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
     if attrs.src.is_empty() {
+        return;
+    }
+
+    // Reject paths that could escape the working directory.
+    if !is_safe_image_path(&attrs.src) {
         return;
     }
 
@@ -2301,5 +2329,25 @@ mod jpeg_tests {
         let (w, h) = compute_image_dimensions(&attrs, 400.0, 300.0, 400.0 / 300.0);
         assert!((w - 400.0).abs() < 0.01);
         assert!((h - 300.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_safe_image_path_relative() {
+        assert!(is_safe_image_path("photo.jpg"));
+        assert!(is_safe_image_path("images/photo.jpg"));
+        assert!(is_safe_image_path("sub/dir/photo.jpg"));
+    }
+
+    #[test]
+    fn test_safe_image_path_rejects_absolute() {
+        assert!(!is_safe_image_path("/etc/shadow.jpeg"));
+        assert!(!is_safe_image_path("/home/user/photo.jpg"));
+    }
+
+    #[test]
+    fn test_safe_image_path_rejects_traversal() {
+        assert!(!is_safe_image_path("../photo.jpg"));
+        assert!(!is_safe_image_path("images/../../etc/shadow.jpeg"));
+        assert!(!is_safe_image_path("sub/../../../photo.jpg"));
     }
 }
