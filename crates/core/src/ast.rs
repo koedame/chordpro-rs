@@ -578,9 +578,15 @@ fn extract_attribute(s: &mut String, key: &str) -> Option<String> {
     let after = &s[pos + needle.len()..];
 
     let (val, token_end) = if let Some(stripped) = after.strip_prefix('"') {
-        let v = stripped.split('"').next().map(|t| t.to_string());
-        let len = v.as_ref().map_or(0, |t| t.len());
-        (v, pos + needle.len() + 1 + len + 1)
+        // Find the closing quote, if present.
+        let close = stripped.find('"').unwrap_or(stripped.len());
+        let v = stripped[..close].to_string();
+        // Only count the closing quote in token_end when it actually exists.
+        let has_close = close < stripped.len();
+        (
+            Some(v),
+            pos + needle.len() + 1 + close + usize::from(has_close),
+        )
     } else {
         let v = after.split_whitespace().next().map(|t| t.to_string());
         let len = v.as_ref().map_or(0, |t| t.len());
@@ -629,7 +635,7 @@ pub struct ChordDefinition {
     pub copyall: Option<String>,
     /// Display name override.
     pub display: Option<String>,
-    /// Format pattern for chord name rendering (e.g., `"%{root}%{qual}"`).
+    /// Format pattern for chord name rendering (e.g., `"%{root}%{quality}"`).
     ///
     /// When present, the pattern is expanded using the chord's parsed
     /// components. Supported placeholders: `%{root}`, `%{quality}`,
@@ -2953,6 +2959,20 @@ mod chord_definition_tests {
         let def = ChordDefinition::parse_value("Am format=\"%{root}-%{quality}\"");
         assert_eq!(def.format, Some("%{root}-%{quality}".to_string()));
         assert!(def.raw.is_none());
+    }
+
+    #[test]
+    fn test_parse_format_unclosed_quote_no_panic() {
+        // Malformed input: missing closing quote must not panic.
+        let def = ChordDefinition::parse_value("Am display=\"unclosed");
+        assert_eq!(def.display, Some("unclosed".to_string()));
+        assert!(def.raw.is_none());
+    }
+
+    #[test]
+    fn test_parse_format_unclosed_quote_format_attr() {
+        let def = ChordDefinition::parse_value("Am format=\"%{root}%{quality}");
+        assert_eq!(def.format, Some("%{root}%{quality}".to_string()));
     }
 
     #[test]
