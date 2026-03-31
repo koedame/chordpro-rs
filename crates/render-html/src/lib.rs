@@ -434,29 +434,49 @@ fn render_spans(spans: &[TextSpan], html: &mut String) {
 fn span_attrs_to_css(attrs: &SpanAttributes) -> String {
     let mut css = String::new();
     if let Some(ref font_family) = attrs.font_family {
-        css.push_str(&format!("font-family: {};", font_family));
+        css.push_str(&format!(
+            "font-family: {};",
+            sanitize_css_value(font_family)
+        ));
     }
     if let Some(ref size) = attrs.size {
+        let safe = sanitize_css_value(size);
         // If the size is a plain number, treat it as pt; otherwise pass through.
-        if size.chars().all(|c| c.is_ascii_digit()) {
-            css.push_str(&format!("font-size: {}pt;", size));
+        if safe.chars().all(|c| c.is_ascii_digit()) {
+            css.push_str(&format!("font-size: {}pt;", safe));
         } else {
-            css.push_str(&format!("font-size: {};", size));
+            css.push_str(&format!("font-size: {};", safe));
         }
     }
     if let Some(ref fg) = attrs.foreground {
-        css.push_str(&format!("color: {};", fg));
+        css.push_str(&format!("color: {};", sanitize_css_value(fg)));
     }
     if let Some(ref bg) = attrs.background {
-        css.push_str(&format!("background-color: {};", bg));
+        css.push_str(&format!("background-color: {};", sanitize_css_value(bg)));
     }
     if let Some(ref weight) = attrs.weight {
-        css.push_str(&format!("font-weight: {};", weight));
+        css.push_str(&format!("font-weight: {};", sanitize_css_value(weight)));
     }
     if let Some(ref style) = attrs.style {
-        css.push_str(&format!("font-style: {};", style));
+        css.push_str(&format!("font-style: {};", sanitize_css_value(style)));
     }
     css
+}
+
+/// Strip characters that could break out of a CSS property value context.
+///
+/// This prevents CSS injection by removing `;` (property boundary), `{`/`}`
+/// (rule boundaries), `(`/`)` (function calls like `url()`), quotes, and
+/// backslashes from user-provided attribute values.
+fn sanitize_css_value(s: &str) -> String {
+    s.chars()
+        .filter(|c| {
+            !matches!(
+                c,
+                ';' | '{' | '}' | '(' | ')' | '\'' | '\\' | '<' | '>' | '"'
+            )
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -938,6 +958,28 @@ mod transpose_tests {
         assert!(html.contains("color: blue;"));
         assert!(html.contains("font-weight: bold;"));
         assert!(html.contains("styled"));
+    }
+
+    #[test]
+    fn test_span_css_injection_url_prevented() {
+        let html = render(
+            r#"<span foreground="red; background-image: url('https://evil.com/')">text</span>"#,
+        );
+        // Parentheses and semicolons must be stripped, preventing url() and property injection.
+        assert!(!html.contains("url("));
+        assert!(!html.contains(";background-image"));
+    }
+
+    #[test]
+    fn test_span_css_injection_semicolon_stripped() {
+        let html =
+            render(r#"<span foreground="red; position: absolute; z-index: 9999">text</span>"#);
+        // Semicolons must be stripped so injected properties cannot create new
+        // CSS property boundaries. Without `;`, "position: absolute" is just
+        // noise inside the single `color:` value, not a separate property.
+        assert!(!html.contains(";position"));
+        assert!(!html.contains("; position"));
+        assert!(html.contains("color:"));
     }
 
     #[test]
