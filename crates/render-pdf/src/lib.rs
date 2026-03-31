@@ -2706,11 +2706,16 @@ mod jpeg_tests {
     fn test_symlink_image_is_rejected() {
         use std::os::unix::fs::symlink;
 
-        // Create files in a subdirectory of the current working directory
-        // to avoid set_current_dir which is not safe in parallel tests.
-        let subdir = "_test_symlink_img";
-        let _ = std::fs::remove_dir_all(subdir);
-        std::fs::create_dir_all(subdir).expect("create test dir");
+        // Use a unique subdirectory name (PID + thread name) so parallel test
+        // threads never collide on the same directory.  The path must be
+        // relative because `is_safe_image_path()` rejects absolute paths.
+        let subdir = format!(
+            "_test_symlink_img_{}_{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("main")
+        );
+        let _ = std::fs::remove_dir_all(&subdir);
+        std::fs::create_dir_all(&subdir).expect("create test dir");
 
         let target = format!("{subdir}/real.jpg");
         std::fs::write(&target, b"\xFF\xD8\xFF").expect("write target");
@@ -2727,7 +2732,7 @@ mod jpeg_tests {
             "symlink images must be rejected"
         );
 
-        let _ = std::fs::remove_dir_all(subdir);
+        let _ = std::fs::remove_dir_all(&subdir);
     }
 
     #[test]
