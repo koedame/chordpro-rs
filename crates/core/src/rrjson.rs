@@ -494,11 +494,20 @@ impl<'a> Parser<'a> {
         Ok(Value::Number(n))
     }
 
+    /// Check whether the character at `self.pos + offset` is a word character
+    /// (alphanumeric or `_`). Returns `false` if at end of input.
+    fn is_word_char_at(&self, offset: usize) -> bool {
+        self.input[self.pos + offset..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+    }
+
     fn parse_bool(&mut self) -> Result<Value, ParseError> {
-        if self.input[self.pos..].starts_with("true") {
+        if self.input[self.pos..].starts_with("true") && !self.is_word_char_at(4) {
             self.pos += 4;
             Ok(Value::Bool(true))
-        } else if self.input[self.pos..].starts_with("false") {
+        } else if self.input[self.pos..].starts_with("false") && !self.is_word_char_at(5) {
             self.pos += 5;
             Ok(Value::Bool(false))
         } else {
@@ -507,7 +516,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_null(&mut self) -> Result<Value, ParseError> {
-        if self.input[self.pos..].starts_with("null") {
+        if self.input[self.pos..].starts_with("null") && !self.is_word_char_at(4) {
             self.pos += 4;
             Ok(Value::Null)
         } else {
@@ -665,6 +674,21 @@ mod tests {
     fn test_null_value() {
         let v = parse_rrjson(r#"{"x": null}"#).unwrap();
         assert_eq!(v["x"], Value::Null);
+    }
+
+    #[test]
+    fn test_bool_word_boundary() {
+        assert!(parse_rrjson(r#"{"a": truex}"#).is_err());
+        assert!(parse_rrjson(r#"{"a": falsehood}"#).is_err());
+        assert!(parse_rrjson(r#"{"a": true_val}"#).is_err());
+        assert!(parse_rrjson(r#"{"a": false0}"#).is_err());
+    }
+
+    #[test]
+    fn test_null_word_boundary() {
+        assert!(parse_rrjson(r#"{"a": nullify}"#).is_err());
+        assert!(parse_rrjson(r#"{"a": null_val}"#).is_err());
+        assert!(parse_rrjson(r#"{"a": null0}"#).is_err());
     }
 
     #[test]
