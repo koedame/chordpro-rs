@@ -601,6 +601,12 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
         Err(_) => return,
     };
 
+    // Re-check the actual data length after reading to close the TOCTOU gap
+    // between the metadata size check and the read.
+    if data.len() as u64 > MAX_IMAGE_FILE_SIZE {
+        return;
+    }
+
     let (pixel_w, pixel_h) = match parse_jpeg_dimensions(&data) {
         Some(dims) => dims,
         None => return,
@@ -2418,26 +2424,35 @@ mod jpeg_tests {
 
     #[test]
     fn test_oversized_image_file_is_skipped() {
-        // Create a temporary file that exceeds MAX_IMAGE_FILE_SIZE by writing
-        // a sparse file (only metadata matters — we just need the reported size).
-        let dir = std::env::temp_dir().join("chordpro_pdf_test_oversized");
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("huge.jpg");
+        // Create a sparse file that exceeds MAX_IMAGE_FILE_SIZE using a
+        // relative path so that is_safe_image_path() passes and the size
+        // limit code path is actually exercised.
+        //
+        // We create the file in a subdirectory of the current working
+        // directory and use the relative path directly, avoiding
+        // set_current_dir which is not safe in parallel tests.
+        let subdir = "_test_oversized_img";
+        let _ = std::fs::remove_dir_all(subdir);
+        std::fs::create_dir_all(subdir).expect("create test dir");
+        let rel_path = format!("{subdir}/huge.jpg");
 
         // Write a file that is exactly 1 byte over the limit.
-        let f = std::fs::File::create(&path).unwrap();
+        let f = std::fs::File::create(&rel_path).unwrap();
         f.set_len(MAX_IMAGE_FILE_SIZE + 1).unwrap();
         drop(f);
 
-        let input = format!("{{image: src={}}}", path.display());
+        let input = format!("{{image: src={rel_path}}}");
         let song = chordpro_core::parse(&input).unwrap();
         // Should not panic or crash — the oversized image is silently skipped.
         let pdf = render_song(&song);
-        // The PDF is valid but contains no image XObjects.
-        assert!(!pdf.is_empty());
+        let content = String::from_utf8_lossy(&pdf);
+        // The PDF must not contain an image XObject.
+        assert!(
+            !content.contains("/Subtype /Image"),
+            "oversized image must be rejected"
+        );
 
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_dir(&dir);
+        let _ = std::fs::remove_dir_all(subdir);
     }
 
     #[test]
@@ -2510,20 +2525,19 @@ mod jpeg_tests {
     fn test_symlink_image_is_rejected() {
         use std::os::unix::fs::symlink;
 
-        let dir = std::env::temp_dir().join("chordpro_symlink_test");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("create temp dir");
+        // Create files in a subdirectory of the current working directory
+        // to avoid set_current_dir which is not safe in parallel tests.
+        let subdir = "_test_symlink_img";
+        let _ = std::fs::remove_dir_all(subdir);
+        std::fs::create_dir_all(subdir).expect("create test dir");
 
-        let target = dir.join("real.jpg");
+        let target = format!("{subdir}/real.jpg");
         std::fs::write(&target, b"\xFF\xD8\xFF").expect("write target");
-        let link = dir.join("link.jpg");
+        let link = format!("{subdir}/link.jpg");
         symlink(&target, &link).expect("create symlink");
 
-        // Change to the temp dir so the relative path resolves.
-        let saved_dir = std::env::current_dir().expect("get cwd");
-        std::env::set_current_dir(&dir).expect("set cwd");
-
-        let song = chordpro_core::parse("{title: T}\n{image: src=link.jpg}").expect("parse");
+        let input = format!("{{title: T}}\n{{image: src={link}}}");
+        let song = chordpro_core::parse(&input).expect("parse");
         let pdf = render_song(&song);
         let content = String::from_utf8_lossy(&pdf);
         // Image must NOT be embedded because src is a symlink.
@@ -2532,8 +2546,7 @@ mod jpeg_tests {
             "symlink images must be rejected"
         );
 
-        std::env::set_current_dir(&saved_dir).expect("restore cwd");
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(subdir);
     }
 
     #[test]
