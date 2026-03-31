@@ -84,6 +84,8 @@ const COMMENT_SIZE: f32 = 9.0;
 const LINE_GAP: f32 = 4.0;
 /// Average character width as fraction of font size (Helvetica approximation).
 const CHAR_WIDTH: f32 = 0.52;
+/// Table of Contents entry font size.
+const TOC_ENTRY_SIZE: f32 = 11.0;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -125,23 +127,82 @@ pub fn render_songs(songs: &[Song]) -> Vec<u8> {
 
 /// Render multiple [`Song`]s into a single PDF with transposition.
 ///
-/// Each song starts on a new page (except the first).
+/// Each song starts on a new page (except the first). When there are two or
+/// more songs, a Table of Contents page is prepended with song titles and
+/// page numbers.
 #[must_use]
 pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8) -> Vec<u8> {
     if songs.len() == 1 {
         return render_song_with_transpose(&songs[0], cli_transpose);
     }
 
-    let mut doc = PdfDocument::new();
+    // Phase 1: render all songs and record which page each starts on.
+    let mut body_doc = PdfDocument::new();
+    let mut toc_entries: Vec<(String, usize)> = Vec::new(); // (title, page_index)
 
     for (i, song) in songs.iter().enumerate() {
         if i > 0 {
-            doc.new_page();
+            body_doc.new_page();
         }
-        render_song_into_doc(song, cli_transpose, &mut doc);
+        let start_page = body_doc.page_count();
+        let title = song
+            .metadata
+            .title
+            .as_deref()
+            .unwrap_or("Untitled")
+            .to_string();
+        toc_entries.push((title, start_page));
+        render_song_into_doc(song, cli_transpose, &mut body_doc);
     }
 
-    doc.build_pdf()
+    // Phase 2: generate ToC pages.
+    let mut toc_doc = PdfDocument::new();
+    toc_doc.text("Table of Contents", Font::HelveticaBold, TITLE_SIZE);
+    toc_doc.newline(TITLE_SIZE + LINE_GAP * 2.0);
+
+    let toc_page_count = {
+        for (title, body_page_idx) in &toc_entries {
+            toc_doc.ensure_space(TOC_ENTRY_SIZE + LINE_GAP);
+            // Page number = toc pages + body page index
+            // (we'll calculate toc_page_count after this loop)
+            let page_num_placeholder = body_page_idx + 1; // 1-based, offset added later
+            let entry_text = format!("{title}  ......  {page_num_placeholder}");
+            toc_doc.text(&entry_text, Font::Helvetica, TOC_ENTRY_SIZE);
+            toc_doc.newline(TOC_ENTRY_SIZE + LINE_GAP);
+        }
+        toc_doc.page_count()
+    };
+
+    // Phase 3: rebuild ToC with correct page numbers (offset by toc_page_count).
+    let mut toc_doc = PdfDocument::new();
+    toc_doc.text("Table of Contents", Font::HelveticaBold, TITLE_SIZE);
+    toc_doc.newline(TITLE_SIZE + LINE_GAP * 2.0);
+
+    for (title, body_page_idx) in &toc_entries {
+        toc_doc.ensure_space(TOC_ENTRY_SIZE + LINE_GAP);
+        let page_num = body_page_idx + toc_page_count; // 1-based page number
+        let x = toc_doc.margin_left();
+        let y = toc_doc.y();
+
+        // Render title on the left
+        toc_doc.text_at(title, Font::Helvetica, TOC_ENTRY_SIZE, x, y);
+
+        // Render page number right-aligned
+        let num_str = page_num.to_string();
+        let num_width = num_str.len() as f32 * TOC_ENTRY_SIZE * CHAR_WIDTH;
+        let right_x = PAGE_W - MARGIN_RIGHT - num_width;
+        toc_doc.text_at(&num_str, Font::Helvetica, TOC_ENTRY_SIZE, right_x, y);
+
+        toc_doc.newline(TOC_ENTRY_SIZE + LINE_GAP);
+    }
+
+    // Phase 4: combine ToC pages + body pages.
+    let mut combined = toc_doc;
+    for page_ops in body_doc.take_pages() {
+        combined.push_page(page_ops);
+    }
+
+    combined.build_pdf()
 }
 
 /// Render a single song's content into an existing [`PdfDocument`].
@@ -504,7 +565,6 @@ impl PdfDocument {
     }
 
     /// Returns the number of pages.
-    #[cfg(test)]
     fn page_count(&self) -> usize {
         self.pages.len()
     }
@@ -601,6 +661,16 @@ impl PdfDocument {
     fn current_page_mut(&mut self) -> &mut Vec<String> {
         // pages always has at least one element (initialized in new())
         self.pages.last_mut().expect("pages is never empty")
+    }
+
+    /// Take all pages out of this document, leaving it empty.
+    fn take_pages(&mut self) -> Vec<Vec<String>> {
+        std::mem::take(&mut self.pages)
+    }
+
+    /// Append a pre-built page to this document.
+    fn push_page(&mut self, ops: Vec<String>) {
+        self.pages.push(ops);
     }
 
     /// Build the complete multi-page PDF document.
@@ -1266,8 +1336,10 @@ mod column_tests {
         // Both songs should be present
         assert!(content.contains("Song A"));
         assert!(content.contains("Song B"));
-        // Pages node should have /Count 2
-        assert!(content.contains("/Count 2"));
+        // ToC page + 2 song pages = 3 pages
+        assert!(content.contains("/Count 3"));
+        // Should contain "Table of Contents"
+        assert!(content.contains("Table of Contents"));
     }
 
     #[test]
@@ -1293,5 +1365,53 @@ mod column_tests {
         assert!(pdf.starts_with(b"%PDF-1.4"));
         let content = String::from_utf8_lossy(&pdf);
         assert!(content.contains("Test"));
+    }
+}
+
+#[cfg(test)]
+mod toc_tests {
+    use super::*;
+
+    #[test]
+    fn test_toc_generated_for_multi_song() {
+        let songs = chordpro_core::parse_multi(
+            "{title: First}\nLyrics 1\n{new_song}\n{title: Second}\nLyrics 2",
+        )
+        .unwrap();
+        let bytes = render_songs(&songs);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("Table of Contents"));
+        assert!(content.contains("First"));
+        assert!(content.contains("Second"));
+    }
+
+    #[test]
+    fn test_toc_not_generated_for_single_song() {
+        let song = chordpro_core::parse("{title: Only Song}\nLyrics").unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(!content.contains("Table of Contents"));
+    }
+
+    #[test]
+    fn test_toc_page_numbers_present() {
+        let songs = chordpro_core::parse_multi(
+            "{title: Song A}\nA\n{new_song}\n{title: Song B}\nB\n{new_song}\n{title: Song C}\nC",
+        )
+        .unwrap();
+        let bytes = render_songs(&songs);
+        let content = String::from_utf8_lossy(&bytes);
+        // ToC is 1 page, then Song A=page 2, Song B=page 3, Song C=page 4
+        assert!(content.contains("/Count 4"));
+        assert!(content.contains("Table of Contents"));
+    }
+
+    #[test]
+    fn test_toc_valid_pdf_structure() {
+        let songs =
+            chordpro_core::parse_multi("{title: A}\nText\n{new_song}\n{title: B}\nText").unwrap();
+        let bytes = render_songs(&songs);
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert!(bytes.ends_with(b"%%EOF\n"));
     }
 }
