@@ -1,0 +1,106 @@
+name: Auto Resolve Conflicts
+
+on:
+  workflow_run:
+    workflows: ["Auto Rebase"]
+    types: [completed]
+
+concurrency:
+  group: auto-resolve-conflicts
+  cancel-in-progress: true
+
+jobs:
+  resolve:
+    name: Request Claude conflict resolution
+    # Run regardless of auto-rebase conclusion — we just need to find
+    # PRs that still have the has-conflicts label after auto-rebase ran.
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Request resolution for conflicted PRs
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.CLAUDE_PAT }}
+          script: |
+            const COMMENT_MARKER = '<!-- auto-resolve-conflicts -->';
+            const MAX_PRS = 3;
+            const DELAY_BETWEEN_COMMENTS_MS = 2000;
+
+            // Fetch all open PRs targeting main
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              base: 'main',
+              per_page: 100,
+            });
+
+            // Filter to PRs that still have conflicts after auto-rebase
+            const conflicted = prs.filter(pr => {
+              if (pr.user.login === 'dependabot[bot]') return false;
+              return pr.labels.some(l => l.name === 'has-conflicts');
+            });
+
+            console.log(`Found ${conflicted.length} PR(s) still with conflicts after auto-rebase`);
+
+            let requested = 0;
+            let skipped = 0;
+
+            for (const pr of conflicted.slice(0, MAX_PRS)) {
+              // Check if we already posted a resolution request for the
+              // current conflict. We key on the HEAD SHA so that a new
+              // push (which may introduce different conflicts) allows a
+              // fresh request.
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+              });
+
+              const marker = `${COMMENT_MARKER}:${pr.head.sha}`;
+              if (comments.some(c => c.body.includes(marker))) {
+                console.log(`PR #${pr.number}: resolution already requested for ${pr.head.sha.slice(0, 7)}, skipping`);
+                skipped++;
+                continue;
+              }
+
+              console.log(`PR #${pr.number} (${pr.head.ref}): posting @claude resolution request...`);
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: [
+                  `${marker}`,
+                  '',
+                  '@claude This PR has merge conflicts that automatic rebase could not resolve.',
+                  '',
+                  'Please resolve the conflicts by following these steps:',
+                  '1. Run `git fetch --unshallow origin` to get full history (needed for rebase)',
+                  '2. Run `git fetch origin main` to get the latest main',
+                  '3. Run `git rebase origin/main` to start the rebase',
+                  '4. For each conflict, read the conflicting files and resolve the merge conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)',
+                  '5. After resolving each file, run `git add <file>` and `git rebase --continue`',
+                  '6. When all conflicts are resolved, run `git push --force-with-lease`',
+                  '',
+                  'Important guidelines:',
+                  '- Keep changes from **both** sides where they are independent additions (e.g., different tests added near the same location)',
+                  '- For conflicting modifications to the same lines, prefer the PR branch\'s version unless it contradicts the main branch\'s intent',
+                  '- Run `cargo test` and `cargo clippy -- -D warnings` after resolving to verify correctness',
+                ].join('\n'),
+              });
+
+              console.log(`PR #${pr.number}: resolution requested`);
+              requested++;
+
+              if (requested < conflicted.slice(0, MAX_PRS).length) {
+                await new Promise(r => setTimeout(r, DELAY_BETWEEN_COMMENTS_MS));
+              }
+            }
+
+            console.log('');
+            console.log('=== Summary ===');
+            console.log(`Resolution requested: ${requested}`);
+            console.log(`Already requested:    ${skipped}`);
+            console.log(`Total conflicted:     ${conflicted.length}`);
