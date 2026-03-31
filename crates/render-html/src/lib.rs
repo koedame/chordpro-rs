@@ -512,7 +512,7 @@ fn render_lyrics(
             } else {
                 html.push_str(&format!(
                     "<span class=\"chord\" style=\"{}\">{}</span>",
-                    chord_css,
+                    escape(&chord_css),
                     escape(&display_name)
                 ));
             }
@@ -525,7 +525,10 @@ fn render_lyrics(
         if text_css.is_empty() {
             html.push_str("<span class=\"lyrics\">");
         } else {
-            html.push_str(&format!("<span class=\"lyrics\" style=\"{}\">", text_css));
+            html.push_str(&format!(
+                "<span class=\"lyrics\" style=\"{}\">",
+                escape(&text_css)
+            ));
         }
         if segment.has_markup() {
             render_spans(&segment.spans, html);
@@ -576,9 +579,7 @@ fn render_spans(spans: &[TextSpan], html: &mut String) {
                 if css.is_empty() {
                     html.push_str("<span>");
                 } else {
-                    // CSS values are already sanitized by sanitize_css_value();
-                    // applying escape() would double-encode (e.g., & → &amp;).
-                    html.push_str(&format!("<span style=\"{css}\">"));
+                    html.push_str(&format!("<span style=\"{}\">", escape(&css)));
                 }
                 render_spans(children, html);
                 html.push_str("</span>");
