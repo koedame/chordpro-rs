@@ -675,7 +675,23 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
     doc.ensure_space(render_h + LINE_GAP);
 
     let img_idx = doc.embed_jpeg(data, pixel_w, pixel_h);
-    let x = doc.margin_left();
+
+    // Compute horizontal position based on the anchor attribute.
+    let x = match attrs.anchor.as_deref() {
+        Some("column") => {
+            // Center within the current column's printable area.
+            let col_left = doc.margin_left();
+            let col_w = (PAGE_W - doc.margin_left - doc.margin_right) / doc.num_columns as f32;
+            col_left + (col_w - render_w) / 2.0
+        }
+        Some("paper") => {
+            // Center on the full page width.
+            (PAGE_W - render_w) / 2.0
+        }
+        // "line" or unrecognised/absent: left-aligned at column margin.
+        _ => doc.margin_left(),
+    };
+
     // PDF images are placed with the origin at the bottom-left corner.
     let y = doc.y() - render_h;
     doc.draw_image(img_idx, x, y, render_w, render_h);
@@ -2499,6 +2515,46 @@ mod jpeg_tests {
         assert!(ops.iter().any(|op| op.contains("cm")));
         assert!(ops.iter().any(|op| op.contains("/Im1 Do")));
         assert!(ops.iter().any(|op| op == "Q"));
+    }
+
+    #[test]
+    fn test_anchor_line_uses_margin_left() {
+        // anchor=line (default) should place image at margin_left.
+        let mut doc = PdfDocument::new();
+        let jpeg = minimal_jpeg(100, 100);
+        let idx = doc.embed_jpeg(jpeg, 100, 100);
+        let x = doc.margin_left();
+        doc.draw_image(idx, x, 500.0, 100.0, 100.0);
+        let cm_op = doc.pages[0]
+            .iter()
+            .find(|op| op.contains("cm"))
+            .expect("cm operator");
+        // The cm matrix puts tx at position 5 (0-indexed): "w 0 0 h tx ty cm"
+        let tx: f32 = cm_op.split_whitespace().nth(4).unwrap().parse().unwrap();
+        assert!(
+            (tx - MARGIN_LEFT).abs() < 0.01,
+            "expected tx ~{MARGIN_LEFT}, got {tx}"
+        );
+    }
+
+    #[test]
+    fn test_anchor_paper_centers_on_page() {
+        // anchor=paper should place image centered on the full page width.
+        let render_w: f32 = 200.0;
+        let expected_x = (PAGE_W - render_w) / 2.0;
+        let mut doc = PdfDocument::new();
+        let jpeg = minimal_jpeg(200, 100);
+        let idx = doc.embed_jpeg(jpeg, 200, 100);
+        doc.draw_image(idx, expected_x, 500.0, render_w, 100.0);
+        let cm_op = doc.pages[0]
+            .iter()
+            .find(|op| op.contains("cm"))
+            .expect("cm operator");
+        let tx: f32 = cm_op.split_whitespace().nth(4).unwrap().parse().unwrap();
+        assert!(
+            (tx - expected_x).abs() < 0.01,
+            "expected tx ~{expected_x}, got {tx}"
+        );
     }
 
     #[test]

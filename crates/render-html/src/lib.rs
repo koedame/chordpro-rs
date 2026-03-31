@@ -8,9 +8,12 @@
 //! Delegate section environments (`{start_of_svg}`, `{start_of_abc}`,
 //! `{start_of_ly}`, `{start_of_textblock}`) emit their content as raw,
 //! unescaped HTML. This is by design per the ChordPro specification, as these
-//! sections contain verbatim markup (e.g., inline SVG). When rendering
-//! untrusted ChordPro input, consumers should apply Content Security Policy
-//! (CSP) headers or sandbox the HTML output to mitigate script injection.
+//! sections contain verbatim markup (e.g., inline SVG).
+//!
+//! SVG sections are sanitized by default: `<script>` elements and event
+//! handler attributes (`onload`, `onerror`, etc.) are stripped to prevent
+//! XSS. When rendering untrusted ChordPro input, consumers should still
+//! apply Content Security Policy (CSP) headers as additional defense.
 
 use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
 use chordpro_core::config::Config;
@@ -171,16 +174,11 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
         match line {
             Line::Lyrics(lyrics_line) => {
                 if in_svg_section {
-                    // Inside SVG section: emit lyrics text as raw, unescaped content.
-                    //
-                    // NOTE: This is intentional per the ChordPro specification.
-                    // Delegate sections (SVG, ABC, Lilypond, textblock) contain
-                    // verbatim markup that must pass through without escaping.
-                    // Consumers rendering untrusted ChordPro input should apply
-                    // Content Security Policy (CSP) headers or sandbox the output
-                    // to mitigate potential script injection.
+                    // Inside SVG section: emit lyrics text as raw, unescaped content
+                    // after sanitizing dangerous elements (script tags, event handlers).
                     let raw = lyrics_line.text();
-                    html.push_str(&raw);
+                    let sanitized = sanitize_svg_content(&raw);
+                    html.push_str(&sanitized);
                     html.push('\n');
                 } else if let Some(ref mut buf) = abc_buf {
                     // Inside ABC section with abc2svg enabled: collect content.
@@ -652,6 +650,237 @@ fn sanitize_css_class(s: &str) -> String {
             }
         })
         .collect()
+}
+
+/// Sanitize SVG/HTML content by removing `<script>` elements and event handler
+/// attributes (`onload`, `onerror`, `onclick`, etc.).
+///
+/// This provides defense-in-depth against XSS when rendering untrusted `.cho`
+/// files. The ChordPro specification allows raw SVG passthrough, but script
+/// injection is never legitimate in music notation.
+fn sanitize_svg_content(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.char_indices().peekable();
+    let bytes = input.as_bytes();
+
+    while let Some((i, c)) = chars.next() {
+        if c == '<' {
+            // Check for <script or </script
+            let rest = &input[i..];
+            let rest_lower = if rest.len() > 10 { &rest[..10] } else { rest };
+            if starts_with_ignore_case(rest_lower, "<script")
+                && rest.len() > 7
+                && (bytes
+                    .get(i + 7)
+                    .is_none_or(|b| b.is_ascii_whitespace() || *b == b'>' || *b == b'/'))
+            {
+                // Skip until after </script> or end of input.
+                if let Some(end) = find_end_tag_ignore_case(input, i, "script") {
+                    // Advance chars past the closing tag.
+                    while let Some(&(j, _)) = chars.peek() {
+                        if j >= end {
+                            break;
+                        }
+                        chars.next();
+                    }
+                } else {
+                    // No closing tag — skip to end of input.
+                    break;
+                }
+                continue;
+            }
+            if starts_with_ignore_case(rest_lower, "</script")
+                && rest.len() > 8
+                && (bytes
+                    .get(i + 8)
+                    .is_none_or(|b| b.is_ascii_whitespace() || *b == b'>'))
+            {
+                // Stray closing script tag — skip it.
+                while let Some(&(_, ch)) = chars.peek() {
+                    chars.next();
+                    if ch == '>' {
+                        break;
+                    }
+                }
+                continue;
+            }
+            result.push(c);
+        } else {
+            result.push(c);
+        }
+    }
+
+    // Strip event handler attributes (on*="...") from HTML/SVG tags.
+    strip_event_handlers(&result)
+}
+
+/// Check if `s` starts with `prefix` (ASCII case-insensitive).
+fn starts_with_ignore_case(s: &str, prefix: &str) -> bool {
+    if s.len() < prefix.len() {
+        return false;
+    }
+    s.as_bytes()[..prefix.len()]
+        .iter()
+        .zip(prefix.as_bytes())
+        .all(|(a, b)| a.eq_ignore_ascii_case(b))
+}
+
+/// Find the byte offset just past the closing `</tag>` for the given tag name,
+/// starting the search from position `start`. Returns `None` if not found.
+fn find_end_tag_ignore_case(input: &str, start: usize, tag: &str) -> Option<usize> {
+    let search = &input.as_bytes()[start..];
+    let tag_bytes = tag.as_bytes();
+    let close_prefix_len = 2 + tag_bytes.len(); // "</" + tag
+
+    for i in 0..search.len() {
+        if search[i] == b'<'
+            && i + 1 < search.len()
+            && search[i + 1] == b'/'
+            && i + close_prefix_len <= search.len()
+        {
+            let candidate = &search[i + 2..i + close_prefix_len];
+            if candidate
+                .iter()
+                .zip(tag_bytes)
+                .all(|(a, b)| a.eq_ignore_ascii_case(b))
+            {
+                // Find the closing '>'.
+                if let Some(gt) = search[i + close_prefix_len..]
+                    .iter()
+                    .position(|&b| b == b'>')
+                {
+                    return Some(start + i + close_prefix_len + gt + 1);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Remove event handler attributes (`on*="..."` or `on*='...'`) from HTML/SVG
+/// tags. Only operates inside `<...>` delimiters to avoid false positives in
+/// text content.
+fn strip_event_handlers(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut pos = 0;
+    let bytes = input.as_bytes();
+
+    while pos < bytes.len() {
+        if bytes[pos] == b'<' && pos + 1 < bytes.len() && bytes[pos + 1] != b'/' {
+            // Inside an opening tag — copy tag name, then filter attributes.
+            if let Some(gt) = bytes[pos..].iter().position(|&b| b == b'>') {
+                let tag_end = pos + gt + 1;
+                let tag_content = &input[pos..tag_end];
+                result.push_str(&remove_on_attrs(tag_content));
+                pos = tag_end;
+            } else {
+                result.push_str(&input[pos..]);
+                break;
+            }
+        } else {
+            result.push(bytes[pos] as char);
+            pos += 1;
+        }
+    }
+    result
+}
+
+/// Remove `on*=` attributes from a single HTML/SVG tag string.
+fn remove_on_attrs(tag: &str) -> String {
+    let mut result = String::with_capacity(tag.len());
+    let bytes = tag.as_bytes();
+    let mut i = 0;
+
+    // Copy the '<' and tag name.
+    while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'>' && bytes[i] != b'/' {
+        result.push(bytes[i] as char);
+        i += 1;
+    }
+
+    while i < bytes.len() {
+        // Skip whitespace.
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+
+        if i >= bytes.len() || bytes[i] == b'>' || bytes[i] == b'/' {
+            result.push_str(&tag[i..]);
+            return result;
+        }
+
+        // Read attribute name.
+        let attr_start = i;
+        while i < bytes.len()
+            && bytes[i] != b'='
+            && bytes[i] != b' '
+            && bytes[i] != b'>'
+            && bytes[i] != b'/'
+        {
+            i += 1;
+        }
+        let attr_name = &tag[attr_start..i];
+
+        let is_event_handler = attr_name.len() > 2
+            && (attr_name.starts_with("on")
+                || attr_name.starts_with("ON")
+                || attr_name.starts_with("On")
+                || attr_name.starts_with("oN"))
+            && attr_name[2..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic());
+
+        if is_event_handler {
+            // Skip the attribute value if present.
+            if i < bytes.len() && bytes[i] == b'=' {
+                i += 1; // skip '='
+                if i < bytes.len() && (bytes[i] == b'"' || bytes[i] == b'\'') {
+                    let quote = bytes[i];
+                    i += 1;
+                    while i < bytes.len() && bytes[i] != quote {
+                        i += 1;
+                    }
+                    if i < bytes.len() {
+                        i += 1; // skip closing quote
+                    }
+                } else {
+                    // Unquoted value — skip to whitespace or >.
+                    while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'>' {
+                        i += 1;
+                    }
+                }
+            }
+            // Attribute stripped — don't copy it.
+        } else {
+            // Copy the attribute as-is.
+            result.push_str(attr_name);
+            if i < bytes.len() && bytes[i] == b'=' {
+                result.push('=');
+                i += 1;
+                if i < bytes.len() && (bytes[i] == b'"' || bytes[i] == b'\'') {
+                    let quote = bytes[i];
+                    result.push(quote as char);
+                    i += 1;
+                    while i < bytes.len() && bytes[i] != quote {
+                        result.push(bytes[i] as char);
+                        i += 1;
+                    }
+                    if i < bytes.len() {
+                        result.push(quote as char);
+                        i += 1;
+                    }
+                } else {
+                    while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'>' {
+                        result.push(bytes[i] as char);
+                        i += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -1682,6 +1911,51 @@ mod delegate_tests {
         let input = format!("{{start_of_svg}}\n{svg}\n{{end_of_svg}}");
         let html = render(&input);
         assert!(html.contains(svg));
+    }
+
+    #[test]
+    fn test_svg_section_strips_script_tags() {
+        let input = "{start_of_svg}\n<svg><script>alert('xss')</script><circle r=\"10\"/></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(!html.contains("<script>"), "script tags must be stripped");
+        assert!(!html.contains("alert"), "script content must be stripped");
+        assert!(
+            html.contains("<circle r=\"10\"/>"),
+            "safe SVG content must be preserved"
+        );
+    }
+
+    #[test]
+    fn test_svg_section_strips_event_handlers() {
+        let input = "{start_of_svg}\n<svg onload=\"alert(1)\"><rect width=\"10\" onerror=\"hack()\"/></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(!html.contains("onload"), "onload handler must be stripped");
+        assert!(
+            !html.contains("onerror"),
+            "onerror handler must be stripped"
+        );
+        assert!(
+            html.contains("width=\"10\""),
+            "safe attributes must be preserved"
+        );
+    }
+
+    #[test]
+    fn test_svg_section_preserves_safe_content() {
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><text x="10" y="20">Hello</text></svg>"#;
+        let input = format!("{{start_of_svg}}\n{svg}\n{{end_of_svg}}");
+        let html = render(&input);
+        assert!(html.contains("xmlns=\"http://www.w3.org/2000/svg\""));
+        assert!(html.contains("<text x=\"10\" y=\"20\">Hello</text>"));
+    }
+
+    #[test]
+    fn test_svg_section_strips_case_insensitive_script() {
+        let input = "{start_of_svg}\n<SCRIPT>alert(1)</SCRIPT><svg/>\n{end_of_svg}";
+        let html = render(input);
+        assert!(!html.contains("SCRIPT"), "case-insensitive script removal");
+        assert!(!html.contains("alert"));
+        assert!(html.contains("<svg/>"));
     }
 
     #[test]
