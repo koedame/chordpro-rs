@@ -153,8 +153,18 @@ pub struct Parser {
 
 impl Parser {
     /// Creates a new parser for the given token stream.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `tokens` is empty. The lexer always appends an
+    /// [`Eof`](crate::token::TokenKind::Eof) token, so a well-formed
+    /// token stream is never empty.
     #[must_use]
     pub fn new(tokens: Vec<Token>) -> Self {
+        assert!(
+            !tokens.is_empty(),
+            "token list must contain at least an Eof token"
+        );
         Self {
             tokens,
             pos: 0,
@@ -3565,5 +3575,11 @@ mod delegate_tests {
         } else {
             panic!("expected directive");
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "token list must contain at least an Eof token")]
+    fn parser_new_panics_on_empty_tokens() {
+        let _parser = Parser::new(Vec::new());
     }
 }
