@@ -643,10 +643,28 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
     doc.newline(LINE_GAP);
 }
 
+/// Parse a dimension value that may be an absolute number or a percentage.
+///
+/// Returns `None` if the value is not a valid positive number (or percentage).
+/// Percentage values (e.g. `"50%"`) are resolved against `reference`.
+fn parse_dimension(value: &str, reference: f32) -> Option<f32> {
+    let trimmed = value.trim();
+    if let Some(pct_str) = trimmed.strip_suffix('%') {
+        let pct: f32 = pct_str.trim().parse().ok()?;
+        let result = reference * pct / 100.0;
+        if result > 0.0 { Some(result) } else { None }
+    } else {
+        let v: f32 = trimmed.parse().ok()?;
+        if v > 0.0 { Some(v) } else { None }
+    }
+}
+
 /// Compute the rendered width and height of an image based on the directive
 /// attributes (`width`, `height`, `scale`).
 ///
 /// Priority: explicit width/height > scale > native dimensions.
+/// Width and height values may be absolute points or percentages of the
+/// native image dimensions (e.g. `"50%"`).
 fn compute_image_dimensions(
     attrs: &ImageAttributes,
     native_w: f32,
@@ -656,13 +674,11 @@ fn compute_image_dimensions(
     let parsed_w = attrs
         .width
         .as_deref()
-        .and_then(|v| v.trim().parse::<f32>().ok())
-        .filter(|&v| v > 0.0);
+        .and_then(|v| parse_dimension(v, native_w));
     let parsed_h = attrs
         .height
         .as_deref()
-        .and_then(|v| v.trim().parse::<f32>().ok())
-        .filter(|&v| v > 0.0);
+        .and_then(|v| parse_dimension(v, native_h));
     let parsed_scale = attrs
         .scale
         .as_deref()
@@ -2420,6 +2436,63 @@ mod jpeg_tests {
         let (w, h) = compute_image_dimensions(&attrs, 800.0, 600.0, 800.0 / 600.0);
         assert!((w - 800.0).abs() < 0.01);
         assert!((h - 600.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_image_dimensions_percentage_width() {
+        let attrs = ImageAttributes {
+            width: Some("50%".to_string()),
+            ..Default::default()
+        };
+        // 50% of 400 = 200, height derived from aspect ratio.
+        let (w, h) = compute_image_dimensions(&attrs, 400.0, 300.0, 400.0 / 300.0);
+        assert!((w - 200.0).abs() < 0.01);
+        assert!((h - 150.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_image_dimensions_percentage_height() {
+        let attrs = ImageAttributes {
+            height: Some("50%".to_string()),
+            ..Default::default()
+        };
+        // 50% of 300 = 150, width derived from aspect ratio.
+        let (w, h) = compute_image_dimensions(&attrs, 400.0, 300.0, 400.0 / 300.0);
+        assert!((w - 200.0).abs() < 0.01);
+        assert!((h - 150.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_image_dimensions_percentage_both() {
+        let attrs = ImageAttributes {
+            width: Some("75%".to_string()),
+            height: Some("50%".to_string()),
+            ..Default::default()
+        };
+        // 75% of 400 = 300, 50% of 300 = 150
+        let (w, h) = compute_image_dimensions(&attrs, 400.0, 300.0, 400.0 / 300.0);
+        assert!((w - 300.0).abs() < 0.01);
+        assert!((h - 150.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_dimension_absolute() {
+        assert!((parse_dimension("200", 400.0).unwrap() - 200.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_dimension_percentage() {
+        assert!((parse_dimension("50%", 400.0).unwrap() - 200.0).abs() < 0.01);
+        assert!((parse_dimension(" 25% ", 800.0).unwrap() - 200.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_dimension_invalid() {
+        assert!(parse_dimension("", 400.0).is_none());
+        assert!(parse_dimension("abc", 400.0).is_none());
+        assert!(parse_dimension("-10", 400.0).is_none());
+        assert!(parse_dimension("0%", 400.0).is_none());
+        assert!(parse_dimension("-5%", 400.0).is_none());
     }
 
     #[test]
