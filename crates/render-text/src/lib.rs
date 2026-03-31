@@ -4,6 +4,7 @@
 //! formatted plain text with chords aligned above their corresponding lyrics.
 
 use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
+use chordpro_core::config::Config;
 use chordpro_core::transpose::transpose_chord;
 
 /// Render a [`Song`] AST to plain text.
@@ -22,7 +23,7 @@ use chordpro_core::transpose::transpose_chord;
 /// - Empty lines are preserved.
 #[must_use]
 pub fn render_song(song: &Song) -> String {
-    render_song_with_transpose(song, 0)
+    render_song_with_transpose(song, 0, &Config::defaults())
 }
 
 /// Render a [`Song`] AST to plain text with an additional CLI transposition offset.
@@ -30,7 +31,9 @@ pub fn render_song(song: &Song) -> String {
 /// The `cli_transpose` parameter is added to any in-file `{transpose}` directive
 /// values, allowing the CLI `--transpose` flag to combine with in-file directives.
 #[must_use]
-pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
+pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Config) -> String {
+    // Config is plumbed through for future use (e.g., suppress_empty_chords).
+    let _ = config;
     let mut output = Vec::new();
     let mut transpose_offset: i8 = cli_transpose;
     // Stores the rendered text lines of the most recently defined chorus,
@@ -127,15 +130,15 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
 /// Render multiple [`Song`]s to plain text, separated by a blank line.
 #[must_use]
 pub fn render_songs(songs: &[Song]) -> String {
-    render_songs_with_transpose(songs, 0)
+    render_songs_with_transpose(songs, 0, &Config::defaults())
 }
 
 /// Render multiple [`Song`]s to plain text with transposition.
 #[must_use]
-pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8) -> String {
+pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &Config) -> String {
     songs
         .iter()
-        .map(|song| render_song_with_transpose(song, cli_transpose))
+        .map(|song| render_song_with_transpose(song, cli_transpose, config))
         .collect::<Vec<_>>()
         .join("\n\n")
 }
@@ -636,7 +639,7 @@ mod multi_song_tests {
         let songs =
             chordpro_core::parse_multi("{title: S1}\n[C]Do\n{new_song}\n{title: S2}\n[G]Re")
                 .unwrap();
-        let output = render_songs_with_transpose(&songs, 2);
+        let output = render_songs_with_transpose(&songs, 2, &Config::defaults());
         // C+2=D, G+2=A
         assert!(output.contains("D\nDo"));
         assert!(output.contains("A\nRe"));
@@ -689,7 +692,7 @@ mod transpose_tests {
     fn test_transpose_directive_with_cli_offset() {
         let input = "{transpose: 2}\n[C]Hello";
         let song = chordpro_core::parse(input).unwrap();
-        let output = render_song_with_transpose(&song, 3);
+        let output = render_song_with_transpose(&song, 3, &Config::defaults());
         // In-file 2 + CLI 3 = 5 total. C+5=F
         assert!(output.contains("F\nHello"));
     }
@@ -698,7 +701,7 @@ mod transpose_tests {
     fn test_cli_transpose_without_directive() {
         let input = "[G]Hello [C]world";
         let song = chordpro_core::parse(input).unwrap();
-        let output = render_song_with_transpose(&song, 2);
+        let output = render_song_with_transpose(&song, 2, &Config::defaults());
         // CLI offset only: G+2=A, C+2=D
         assert_eq!(output, "A     D\nHello world\n");
     }
@@ -707,7 +710,7 @@ mod transpose_tests {
     fn test_transpose_directive_replaces_with_cli_additive() {
         let input = "{transpose: 2}\n[C]First\n{transpose: -1}\n[C]Second";
         let song = chordpro_core::parse(input).unwrap();
-        let output = render_song_with_transpose(&song, 1);
+        let output = render_song_with_transpose(&song, 1, &Config::defaults());
         // First: 2+1=3, C+3=D#. Second: -1+1=0, C+0=C
         assert!(output.contains("D#\nFirst"));
         assert!(output.contains("C\nSecond"));

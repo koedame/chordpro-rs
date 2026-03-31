@@ -13,6 +13,7 @@
 //! (CSP) headers or sandbox the HTML output to mitigate script injection.
 
 use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
+use chordpro_core::config::Config;
 use chordpro_core::inline_markup::{SpanAttributes, TextSpan};
 use chordpro_core::transpose::transpose_chord;
 
@@ -115,7 +116,7 @@ impl FormattingState {
 /// includes the full chorus body.
 #[must_use]
 pub fn render_song(song: &Song) -> String {
-    render_song_with_transpose(song, 0)
+    render_song_with_transpose(song, 0, &Config::defaults())
 }
 
 /// Render a [`Song`] AST to an HTML5 document with an additional CLI transposition offset.
@@ -123,7 +124,8 @@ pub fn render_song(song: &Song) -> String {
 /// The `cli_transpose` parameter is added to any in-file `{transpose}` directive
 /// values, allowing the CLI `--transpose` flag to combine with in-file directives.
 #[must_use]
-pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
+pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Config) -> String {
+    let _ = config;
     let mut html = String::new();
     let mut transpose_offset: i8 = cli_transpose;
     let mut fmt_state = FormattingState::default();
@@ -292,7 +294,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> String {
 /// Render multiple [`Song`]s into a single HTML5 document.
 #[must_use]
 pub fn render_songs(songs: &[Song]) -> String {
-    render_songs_with_transpose(songs, 0)
+    render_songs_with_transpose(songs, 0, &Config::defaults())
 }
 
 /// Render multiple [`Song`]s into a single HTML5 document with transposition.
@@ -301,11 +303,11 @@ pub fn render_songs(songs: &[Song]) -> String {
 /// For multiple songs, the document uses the first song's title and separates
 /// each song with an `<hr class="song-separator">`.
 #[must_use]
-pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8) -> String {
+pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &Config) -> String {
     if songs.len() <= 1 {
         return songs
             .first()
-            .map(|s| render_song_with_transpose(s, cli_transpose))
+            .map(|s| render_song_with_transpose(s, cli_transpose, config))
             .unwrap_or_default();
     }
     // Use the first song's title for the document
@@ -327,7 +329,7 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8) -> String 
             html.push_str("<hr class=\"song-separator\">\n");
         }
         // Render each song as a full document, then extract the <div class="song">...</div> body.
-        let song_html = render_song_with_transpose(song, cli_transpose);
+        let song_html = render_song_with_transpose(song, cli_transpose, config);
         if let Some(start) = song_html.find("<div class=\"song\">") {
             if let Some(end) = song_html.rfind("</div>\n</body>") {
                 html.push_str(&song_html[start..end + 6]); // include </div>
@@ -990,7 +992,7 @@ mod transpose_tests {
     fn test_transpose_directive_with_cli_offset() {
         let input = "{transpose: 2}\n[C]Hello";
         let song = chordpro_core::parse(input).unwrap();
-        let html = render_song_with_transpose(&song, 3);
+        let html = render_song_with_transpose(&song, 3, &Config::defaults());
         // 2 + 3 = 5, C+5=F
         assert!(html.contains("<span class=\"chord\">F</span>"));
     }
@@ -1410,7 +1412,7 @@ mod delegate_tests {
         let songs =
             chordpro_core::parse_multi("{title: S1}\n[C]Do\n{new_song}\n{title: S2}\n[G]Re")
                 .unwrap();
-        let html = render_songs_with_transpose(&songs, 2);
+        let html = render_songs_with_transpose(&songs, 2, &Config::defaults());
         // C+2=D, G+2=A
         assert!(html.contains(">D<"));
         assert!(html.contains(">A<"));

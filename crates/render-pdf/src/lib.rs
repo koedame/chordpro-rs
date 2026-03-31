@@ -9,6 +9,7 @@
 //! directives trigger explicit page breaks.
 
 use chordpro_core::ast::{CommentStyle, DirectiveKind, ImageAttributes, Line, LyricsLine, Song};
+use chordpro_core::config::Config;
 use chordpro_core::inline_markup::TextSpan;
 use chordpro_core::transpose::transpose_chord;
 
@@ -118,7 +119,7 @@ const MAX_IMAGE_FILE_SIZE: u64 = 50 * 1024 * 1024;
 /// `{new_physical_page}` directives trigger explicit page breaks.
 #[must_use]
 pub fn render_song(song: &Song) -> Vec<u8> {
-    render_song_with_transpose(song, 0)
+    render_song_with_transpose(song, 0, &Config::defaults())
 }
 
 /// Render a [`Song`] AST to PDF bytes with an additional CLI transposition offset.
@@ -126,7 +127,8 @@ pub fn render_song(song: &Song) -> Vec<u8> {
 /// The `cli_transpose` parameter is added to any in-file `{transpose}` directive
 /// values, allowing the CLI `--transpose` flag to combine with in-file directives.
 #[must_use]
-pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
+pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Config) -> Vec<u8> {
+    let _ = config;
     let mut doc = PdfDocument::new();
     render_song_into_doc(song, cli_transpose, &mut doc);
     doc.build_pdf()
@@ -137,7 +139,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8) -> Vec<u8> {
 /// Each song starts on a new page.
 #[must_use]
 pub fn render_songs(songs: &[Song]) -> Vec<u8> {
-    render_songs_with_transpose(songs, 0)
+    render_songs_with_transpose(songs, 0, &Config::defaults())
 }
 
 /// Render multiple [`Song`]s into a single PDF with transposition.
@@ -146,9 +148,9 @@ pub fn render_songs(songs: &[Song]) -> Vec<u8> {
 /// more songs, a Table of Contents page is prepended with song titles and
 /// page numbers.
 #[must_use]
-pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8) -> Vec<u8> {
+pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &Config) -> Vec<u8> {
     if songs.len() == 1 {
-        return render_song_with_transpose(&songs[0], cli_transpose);
+        return render_song_with_transpose(&songs[0], cli_transpose, config);
     }
 
     // Phase 1: render all songs and record which page each starts on.
@@ -1458,7 +1460,7 @@ mod transpose_tests {
     fn test_transpose_with_cli_offset() {
         let input = "{transpose: 2}\n[C]Hello";
         let song = chordpro_core::parse(input).unwrap();
-        let bytes = render_song_with_transpose(&song, 3);
+        let bytes = render_song_with_transpose(&song, 3, &Config::defaults());
         // 2+3=5, C+5=F
         let content = String::from_utf8_lossy(&bytes);
         assert!(content.contains("(F)"));
@@ -1956,7 +1958,7 @@ mod column_tests {
         let songs =
             chordpro_core::parse_multi("{title: S1}\n[C]Do\n{new_song}\n{title: S2}\n[G]Re")
                 .unwrap();
-        let bytes = render_songs_with_transpose(&songs, 2);
+        let bytes = render_songs_with_transpose(&songs, 2, &Config::defaults());
         let content = String::from_utf8_lossy(&bytes);
         // C+2=D, G+2=A — both transposed chords should appear
         assert!(content.contains("(D)"));

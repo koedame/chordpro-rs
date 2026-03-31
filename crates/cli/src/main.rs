@@ -74,10 +74,6 @@ fn main() -> ExitCode {
         config = config.with_define(define);
     }
 
-    // Config is now built but not yet used by renderers.
-    // Future work will pass it to render functions.
-    let _ = config;
-
     let mut all_songs: Vec<chordpro_core::ast::Song> = Vec::new();
     let is_binary = matches!(cli.format, Format::Pdf);
     let mut had_error = false;
@@ -112,17 +108,21 @@ fn main() -> ExitCode {
 
     if is_binary {
         combined_bytes =
-            chordpro_render_pdf::render_songs_with_transpose(&all_songs, cli.transpose);
+            chordpro_render_pdf::render_songs_with_transpose(&all_songs, cli.transpose, &config);
         combined_text = String::new();
     } else {
         combined_bytes = Vec::new();
         combined_text = match cli.format {
-            Format::Text => {
-                chordpro_render_text::render_songs_with_transpose(&all_songs, cli.transpose)
-            }
-            Format::Html => {
-                chordpro_render_html::render_songs_with_transpose(&all_songs, cli.transpose)
-            }
+            Format::Text => chordpro_render_text::render_songs_with_transpose(
+                &all_songs,
+                cli.transpose,
+                &config,
+            ),
+            Format::Html => chordpro_render_html::render_songs_with_transpose(
+                &all_songs,
+                cli.transpose,
+                &config,
+            ),
             Format::Pdf => unreachable!(),
         };
     }
