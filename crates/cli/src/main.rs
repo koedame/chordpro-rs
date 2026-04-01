@@ -72,7 +72,11 @@ fn main() -> ExitCode {
     let mut config = if cli.no_default_configs {
         chordpro_core::config::Config::defaults()
     } else {
-        chordpro_core::config::Config::load(project_dir.as_deref(), None)
+        let result = chordpro_core::config::Config::load(project_dir.as_deref(), None);
+        for warning in &result.warnings {
+            eprintln!("warning: {warning}");
+        }
+        result.config
     };
 
     // Apply --config files/presets in order (preset names resolved first)

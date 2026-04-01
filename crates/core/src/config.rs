@@ -101,6 +101,16 @@ pub fn deep_merge(base: Value, overlay: Value) -> Value {
 // Config
 // ---------------------------------------------------------------------------
 
+/// Result of loading configuration, including any non-fatal warnings.
+#[derive(Debug)]
+pub struct ConfigLoadResult {
+    /// The loaded configuration.
+    pub config: Config,
+    /// Non-fatal warnings encountered during loading (parse errors in
+    /// optional config files, unsupported RRJSON directives, I/O issues).
+    pub warnings: Vec<String>,
+}
+
 /// A ChordPro configuration loaded from one or more sources.
 ///
 /// Wraps a [`Value::Object`] and provides convenience accessors.
@@ -271,31 +281,32 @@ impl Config {
     /// project-level config). `song_config` is an optional path to a
     /// song-specific config file.
     #[must_use]
-    pub fn load(project_dir: Option<&str>, song_config: Option<&str>) -> Self {
+    pub fn load(project_dir: Option<&str>, song_config: Option<&str>) -> ConfigLoadResult {
         let mut config = Self::defaults();
+        let mut warnings = Vec::new();
 
         // System config
         let system_path = PathBuf::from("/etc/chordpro.json");
-        if let Some(text) = read_file_if_exists(&system_path) {
-            match Self::parse(&text) {
+        if let Some(text) = read_file_if_exists(&system_path, &mut warnings) {
+            match Self::parse_collecting_warnings(&text, &mut warnings) {
                 Ok(sys) => config = config.merge(sys),
-                Err(e) => eprintln!(
-                    "warning: failed to parse config file {}: {e}",
+                Err(e) => warnings.push(format!(
+                    "failed to parse config file {}: {e}",
                     system_path.display()
-                ),
+                )),
             }
         }
 
         // User config: respect XDG_CONFIG_HOME, fall back to $HOME/.config
         if let Some(config_dir) = config_dir() {
             let user_path = config_dir.join("chordpro").join("chordpro.json");
-            if let Some(text) = read_file_if_exists(&user_path) {
-                match Self::parse(&text) {
+            if let Some(text) = read_file_if_exists(&user_path, &mut warnings) {
+                match Self::parse_collecting_warnings(&text, &mut warnings) {
                     Ok(user) => config = config.merge(user),
-                    Err(e) => eprintln!(
-                        "warning: failed to parse config file {}: {e}",
+                    Err(e) => warnings.push(format!(
+                        "failed to parse config file {}: {e}",
                         user_path.display()
-                    ),
+                    )),
                 }
             }
         }
@@ -303,28 +314,39 @@ impl Config {
         // Project config
         if let Some(dir) = project_dir {
             let project_path = PathBuf::from(dir).join("chordpro.json");
-            if let Some(text) = read_file_if_exists(&project_path) {
-                match Self::parse(&text) {
+            if let Some(text) = read_file_if_exists(&project_path, &mut warnings) {
+                match Self::parse_collecting_warnings(&text, &mut warnings) {
                     Ok(proj) => config = config.merge(proj),
-                    Err(e) => eprintln!(
-                        "warning: failed to parse config file {}: {e}",
+                    Err(e) => warnings.push(format!(
+                        "failed to parse config file {}: {e}",
                         project_path.display()
-                    ),
+                    )),
                 }
             }
         }
 
         // Song-specific config
         if let Some(path) = song_config {
-            if let Some(text) = read_file_if_exists(Path::new(path)) {
-                match Self::parse(&text) {
+            if let Some(text) = read_file_if_exists(Path::new(path), &mut warnings) {
+                match Self::parse_collecting_warnings(&text, &mut warnings) {
                     Ok(song) => config = config.merge(song),
-                    Err(e) => eprintln!("warning: failed to parse config file {path}: {e}"),
+                    Err(e) => warnings.push(format!("failed to parse config file {path}: {e}")),
                 }
             }
         }
 
-        config
+        ConfigLoadResult { config, warnings }
+    }
+
+    /// Parse a configuration from a RRJSON string, collecting warnings into
+    /// the provided vector.
+    fn parse_collecting_warnings(
+        input: &str,
+        warnings: &mut Vec<String>,
+    ) -> Result<Self, rrjson::ParseError> {
+        let result = rrjson::parse_rrjson_with_warnings(input)?;
+        warnings.extend(result.warnings);
+        Ok(Self { root: result.value })
     }
 }
 
@@ -396,12 +418,12 @@ fn read_config_file(path: &Path) -> Result<String, std::io::Error> {
 ///
 /// Rejects files that are symlinks or exceed [`MAX_CONFIG_FILE_SIZE`], emitting
 /// a warning to stderr in either case.
-fn read_file_if_exists(path: &Path) -> Option<String> {
+fn read_file_if_exists(path: &Path, warnings: &mut Vec<String>) -> Option<String> {
     match read_config_file(path) {
         Ok(contents) => Some(contents),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => {
-            eprintln!("warning: skipping config file {}: {e}", path.display());
+            warnings.push(format!("skipping config file {}: {e}", path.display()));
             None
         }
     }
@@ -636,9 +658,9 @@ mod tests {
     fn test_load_with_no_files() {
         // load() should succeed even when no config files exist.
         // We use a non-existent project dir to ensure nothing loads.
-        let config = Config::load(Some("/nonexistent/path"), None);
+        let result = Config::load(Some("/nonexistent/path"), None);
         // Should still have defaults
-        assert!(!config.get("pdf").is_null());
+        assert!(!result.config.get("pdf").is_null());
     }
 
     #[test]
@@ -843,10 +865,16 @@ mod tests {
         )
         .unwrap();
 
-        let config = Config::load(Some(dir.path().to_str().unwrap()), None);
-        assert_eq!(config.get_path("settings.columns"), &Value::Number(3.0));
+        let result = Config::load(Some(dir.path().to_str().unwrap()), None);
+        assert_eq!(
+            result.config.get_path("settings.columns"),
+            &Value::Number(3.0)
+        );
         // Defaults should still be present for non-overridden keys
-        assert_eq!(config.get_path("pdf.margins.top"), &Value::Number(56.0));
+        assert_eq!(
+            result.config.get_path("pdf.margins.top"),
+            &Value::Number(56.0)
+        );
     }
 
     #[test]
@@ -855,9 +883,9 @@ mod tests {
         let song_path = dir.path().join("song.json");
         std::fs::write(&song_path, r#"{ "pdf": { "papersize": "letter" } }"#).unwrap();
 
-        let config = Config::load(None, Some(song_path.to_str().unwrap()));
+        let result = Config::load(None, Some(song_path.to_str().unwrap()));
         assert_eq!(
-            config.get_path("pdf.papersize"),
+            result.config.get_path("pdf.papersize"),
             &Value::String("letter".to_string())
         );
     }
@@ -878,14 +906,20 @@ mod tests {
         let song_path = song_dir.path().join("song.json");
         std::fs::write(&song_path, r#"{ "settings": { "columns": 4 } }"#).unwrap();
 
-        let config = Config::load(
+        let result = Config::load(
             Some(project_dir.path().to_str().unwrap()),
             Some(song_path.to_str().unwrap()),
         );
         // Song overrides project
-        assert_eq!(config.get_path("settings.columns"), &Value::Number(4.0));
+        assert_eq!(
+            result.config.get_path("settings.columns"),
+            &Value::Number(4.0)
+        );
         // Project setting not overridden by song
-        assert_eq!(config.get_path("settings.transpose"), &Value::Number(5.0));
+        assert_eq!(
+            result.config.get_path("settings.transpose"),
+            &Value::Number(5.0)
+        );
     }
 
     #[test]
@@ -894,8 +928,17 @@ mod tests {
         std::fs::write(dir.path().join("chordpro.json"), "{ invalid json !!!").unwrap();
 
         // Should not panic; defaults are still loaded
-        let config = Config::load(Some(dir.path().to_str().unwrap()), None);
-        assert!(!config.get("pdf").is_null());
+        let result = Config::load(Some(dir.path().to_str().unwrap()), None);
+        assert!(!result.config.get("pdf").is_null());
+        // Warning should be collected instead of printed to stderr
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("failed to parse")),
+            "expected parse warning, got: {:?}",
+            result.warnings
+        );
     }
 
     #[test]
@@ -916,15 +959,19 @@ mod tests {
         let file_path = dir.path().join("config.json");
         std::fs::write(&file_path, r#"{"key": "value"}"#).unwrap();
 
-        let result = read_file_if_exists(&file_path);
+        let mut warnings = Vec::new();
+        let result = read_file_if_exists(&file_path, &mut warnings);
         assert!(result.is_some());
         assert!(result.unwrap().contains("key"));
+        assert!(warnings.is_empty());
     }
 
     #[test]
     fn test_read_file_if_exists_nonexistent() {
-        let result = read_file_if_exists(Path::new("/nonexistent/path/config.json"));
+        let mut warnings = Vec::new();
+        let result = read_file_if_exists(Path::new("/nonexistent/path/config.json"), &mut warnings);
         assert!(result.is_none());
+        assert!(warnings.is_empty());
     }
 
     #[cfg(unix)]
@@ -936,8 +983,10 @@ mod tests {
         std::fs::write(&real_file, r#"{"key": "value"}"#).unwrap();
         std::os::unix::fs::symlink(&real_file, &link_path).unwrap();
 
-        let result = read_file_if_exists(&link_path);
+        let mut warnings = Vec::new();
+        let result = read_file_if_exists(&link_path, &mut warnings);
         assert!(result.is_none(), "symlink should be rejected");
+        assert!(!warnings.is_empty(), "should produce a warning for symlink");
     }
 
     // -- resolve() security tests ------------------------------------------------
