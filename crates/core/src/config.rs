@@ -337,25 +337,31 @@ impl Config {
             "chords.",
             "metadata.",
             "instrument.",
-            "tuning",
             "diagrams.",
         ];
+
+        /// Top-level config keys (without sub-keys) that are safe for
+        /// song-level overrides. These require exact match, not prefix.
+        const ALLOWED_EXACT_KEYS: &[&str] = &["tuning"];
 
         let mut config = self;
         for &(key, value) in overrides {
             let allowed = ALLOWED_PREFIXES
                 .iter()
-                .any(|prefix| key.starts_with(prefix));
+                .any(|prefix| key.starts_with(prefix))
+                || ALLOWED_EXACT_KEYS.contains(&key);
             if !allowed {
                 warnings.push(format!(
                     "{key} cannot be overridden from a song-level config directive"
                 ));
                 continue;
             }
-            // Song overrides always have well-formed key=value; unwrap is safe.
-            config = config
-                .with_define(&format!("{key}={value}"))
-                .expect("song override has valid key=value");
+            match config.clone().with_define(&format!("{key}={value}")) {
+                Ok(updated) => config = updated,
+                Err(e) => {
+                    warnings.push(format!("failed to apply song override {key}={value}: {e}"));
+                }
+            }
         }
         config
     }
@@ -1442,5 +1448,49 @@ mod tests {
             song2_config.get_path("pdf.margins.top"),
             &Value::Number(56.0)
         );
+    }
+
+    #[test]
+    fn test_song_overrides_reject_tuning_prefix_mismatch() {
+        let config = Config::defaults();
+        let mut warnings = Vec::new();
+        let overrides = vec![("tuningXYZ", "true")];
+        let config = config.with_song_overrides(&overrides, &mut warnings);
+        assert_eq!(config.get_path("tuningXYZ"), &Value::Null);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("tuningXYZ"));
+    }
+
+    #[test]
+    fn test_song_overrides_accept_tuning_exact() {
+        let config = Config::defaults();
+        let mut warnings = Vec::new();
+        let overrides = vec![("tuning", "[\"E2\",\"A2\",\"D3\",\"G3\",\"B3\",\"E4\"]")];
+        let config = config.with_song_overrides(&overrides, &mut warnings);
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+        match config.get("tuning") {
+            Value::Array(arr) => assert_eq!(arr.len(), 6),
+            other => panic!("expected array, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_song_overrides_malformed_value_warns() {
+        let config = Config::defaults();
+        let mut warnings = Vec::new();
+        // Key with no '=' inside the value — with_define will fail
+        // We simulate this by passing a key that causes with_define to error.
+        // with_define expects "key=value", and with_song_overrides formats it as
+        // "{key}={value}", so with_define should always succeed for non-empty key+value.
+        // However, an empty key (after the prefix check) would be caught by with_define.
+        // We test the warning path by using a key that passes the allowlist but
+        // causes with_define to fail due to excessive depth.
+        let deep_key = "pdf.".to_string() + &"a.".repeat(100) + "x";
+        let overrides = vec![(deep_key.as_str(), "1")];
+        let config = config.with_song_overrides(&overrides, &mut warnings);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("failed to apply song override"));
+        // Config should remain unchanged
+        assert_eq!(config.get_path("pdf.margins.top"), &Value::Number(56.0));
     }
 }
