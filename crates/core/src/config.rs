@@ -574,13 +574,25 @@ fn open_no_follow(path: &Path) -> Result<File, std::io::Error> {
         // fall back to 0, which disables kernel-level symlink protection.
         // The pre-open symlink_metadata() check in read_config_file()
         // still provides TOCTOU-window-limited defense.
+        //
+        // WARNING: If you are porting to a new Unix platform, add the
+        // correct O_NOFOLLOW constant above to enable atomic symlink
+        // rejection.
         #[cfg(not(any(
             target_os = "linux",
             target_os = "macos",
             target_os = "freebsd",
             target_os = "openbsd"
         )))]
-        const O_NOFOLLOW: i32 = 0;
+        const O_NOFOLLOW: i32 = {
+            // Emit a compile-time warning on unsupported Unix platforms.
+            #[deprecated(note = "O_NOFOLLOW is not defined for this Unix platform; \
+                kernel-level symlink protection is disabled. Add the platform's \
+                O_NOFOLLOW constant to open_no_follow() for full protection.")]
+            const UNSUPPORTED: i32 = 0;
+            #[allow(deprecated)]
+            UNSUPPORTED
+        };
 
         std::fs::OpenOptions::new()
             .read(true)
