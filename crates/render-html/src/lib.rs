@@ -164,6 +164,9 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
     let mut ly_buf: Option<String> = None;
     let mut ly_label: Option<String> = None;
 
+    // Controls whether chord diagrams are rendered. Set by {diagrams: off/on}.
+    let mut show_diagrams = true;
+
     // Stores the rendered HTML of the most recently defined chorus body
     // (everything between StartOfChorus and EndOfChorus, excluding the
     // section open/close tags). Used by `{chorus}` recall.
@@ -202,6 +205,13 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
             }
             Line::Directive(directive) => {
                 if directive.kind.is_metadata() {
+                    continue;
+                }
+                if directive.kind == DirectiveKind::Diagrams {
+                    show_diagrams = match directive.value.as_deref() {
+                        Some("off") => false,
+                        _ => true, // "on", empty, or any other value
+                    };
                     continue;
                 }
                 if directive.kind == DirectiveKind::Transpose {
@@ -307,7 +317,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                     }
                     _ => {
                         let mut target = String::new();
-                        render_directive_inner(directive, &mut target);
+                        render_directive_inner(directive, show_diagrams, &mut target);
                         if let Some(buf) = chorus_buf.as_mut() {
                             buf.push_str(&target);
                         }
@@ -920,7 +930,11 @@ fn sanitize_tag_attrs(tag: &str) -> String {
 ///
 /// StartOfChorus, EndOfChorus, and Chorus are handled directly in
 /// `render_song` for chorus-recall state tracking.
-fn render_directive_inner(directive: &chordpro_core::ast::Directive, html: &mut String) {
+fn render_directive_inner(
+    directive: &chordpro_core::ast::Directive,
+    show_diagrams: bool,
+    html: &mut String,
+) {
     match &directive.kind {
         DirectiveKind::StartOfChorus => {
             render_section_open("chorus", "Chorus", &directive.value, html);
@@ -969,16 +983,20 @@ fn render_directive_inner(directive: &chordpro_core::ast::Directive, html: &mut 
             render_image(attrs, html);
         }
         DirectiveKind::Define => {
-            if let Some(ref value) = directive.value {
-                let def = chordpro_core::ast::ChordDefinition::parse_value(value);
-                if let Some(ref raw) = def.raw {
-                    if let Some(mut diagram) =
-                        chordpro_core::chord_diagram::DiagramData::from_raw_infer(&def.name, raw)
-                    {
-                        diagram.display_name = def.display.clone();
-                        html.push_str("<div class=\"chord-diagram-container\">");
-                        html.push_str(&chordpro_core::chord_diagram::render_svg(&diagram));
-                        html.push_str("</div>\n");
+            if show_diagrams {
+                if let Some(ref value) = directive.value {
+                    let def = chordpro_core::ast::ChordDefinition::parse_value(value);
+                    if let Some(ref raw) = def.raw {
+                        if let Some(mut diagram) =
+                            chordpro_core::chord_diagram::DiagramData::from_raw_infer(
+                                &def.name, raw,
+                            )
+                        {
+                            diagram.display_name = def.display.clone();
+                            html.push_str("<div class=\"chord-diagram-container\">");
+                            html.push_str(&chordpro_core::chord_diagram::render_svg(&diagram));
+                            html.push_str("</div>\n");
+                        }
                     }
                 }
             }
@@ -1935,6 +1953,60 @@ Verse text\n\
             html.contains("width=\"104\""),
             "Expected 5-string SVG width (104)"
         );
+    }
+
+    // -- {diagrams} directive tests -----------------------------------------------
+
+    #[test]
+    fn test_diagrams_off_suppresses_chord_diagrams() {
+        let html = render("{diagrams: off}\n{define: Am base-fret 1 frets x 0 2 2 1 0}");
+        assert!(
+            !html.contains("<svg"),
+            "chord diagram SVG should be suppressed when diagrams=off"
+        );
+    }
+
+    #[test]
+    fn test_diagrams_on_shows_chord_diagrams() {
+        let html = render("{diagrams: on}\n{define: Am base-fret 1 frets x 0 2 2 1 0}");
+        assert!(
+            html.contains("<svg"),
+            "chord diagram SVG should be shown when diagrams=on"
+        );
+    }
+
+    #[test]
+    fn test_diagrams_default_shows_chord_diagrams() {
+        let html = render("{define: Am base-fret 1 frets x 0 2 2 1 0}");
+        assert!(
+            html.contains("<svg"),
+            "chord diagram SVG should be shown by default"
+        );
+    }
+
+    #[test]
+    fn test_diagrams_off_then_on_restores() {
+        let html = render(
+            "{diagrams: off}\n{define: Am base-fret 1 frets x 0 2 2 1 0}\n{diagrams: on}\n{define: G base-fret 1 frets 3 2 0 0 0 3}",
+        );
+        // Am should be suppressed, G should be shown
+        assert!(!html.contains(">Am<"), "Am diagram should be suppressed");
+        assert!(html.contains(">G<"), "G diagram should be rendered");
+    }
+
+    #[test]
+    fn test_diagrams_parsed_as_known_directive() {
+        let song = chordpro_core::parse("{diagrams: off}").unwrap();
+        if let chordpro_core::ast::Line::Directive(d) = &song.lines[0] {
+            assert_eq!(
+                d.kind,
+                chordpro_core::ast::DirectiveKind::Diagrams,
+                "diagrams should parse as DirectiveKind::Diagrams"
+            );
+            assert_eq!(d.value, Some("off".to_string()));
+        } else {
+            panic!("expected a directive line");
+        }
     }
 
     // -- abc2svg delegate rendering tests -----------------------------------------

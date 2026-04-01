@@ -938,6 +938,12 @@ pub enum DirectiveKind {
     /// field using the generic `{meta}` directive syntax.
     Meta(String),
 
+    // -- Chord diagram control ------------------------------------------------
+    /// `{diagrams}` / `{diagrams: on}` / `{diagrams: off}` — control chord
+    /// diagram visibility. When set to "off", renderers suppress automatic
+    /// chord diagrams for the current song.
+    Diagrams,
+
     // -- Image directive ----------------------------------------------------
     /// `{image: src=filename}` — embeds an image with optional attributes.
     Image(ImageAttributes),
@@ -1051,9 +1057,10 @@ impl DirectiveKind {
             "tocsize" => Self::TocSize,
             "toccolour" | "toccolor" => Self::TocColour,
 
-            // Chord definitions
+            // Chord definitions and diagrams
             "define" => Self::Define,
             "chord" => Self::ChordDirective,
+            "diagrams" => Self::Diagrams,
 
             // Generic metadata
             "meta" => Self::Meta(String::new()),
@@ -1216,6 +1223,7 @@ impl DirectiveKind {
             Self::Columns => "columns",
             Self::Define => "define",
             Self::ChordDirective => "chord",
+            Self::Diagrams => "diagrams",
             Self::Meta(_) => "meta",
 
             Self::Image(_) => "image",

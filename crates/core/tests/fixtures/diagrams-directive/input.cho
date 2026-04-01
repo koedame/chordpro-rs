@@ -1,0 +1,5 @@
+{title: Diagrams Directive Test}
+{diagrams: off}
+[Am]Hello [G]world
+{diagrams: on}
+[C]Again
