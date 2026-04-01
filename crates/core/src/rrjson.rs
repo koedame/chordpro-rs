@@ -207,29 +207,56 @@ impl std::error::Error for ParseError {}
 // Public API
 // ---------------------------------------------------------------------------
 
+/// Result of parsing RRJSON, including any non-fatal warnings.
+#[derive(Debug)]
+pub struct ParseResult {
+    /// The parsed value.
+    pub value: Value,
+    /// Non-fatal warnings encountered during parsing (e.g., unsupported
+    /// include directives).
+    pub warnings: Vec<String>,
+}
+
 /// Parse a RRJSON string into a [`Value`].
 ///
 /// Accepts strict JSON, relaxed JSON, and RRJSON formats.
+/// Non-fatal warnings (e.g., unsupported include directives) are silently
+/// discarded. Use [`parse_rrjson_with_warnings`] to collect them.
 ///
 /// # Errors
 ///
 /// Returns a [`ParseError`] if the input is malformed.
 pub fn parse_rrjson(input: &str) -> Result<Value, ParseError> {
+    parse_rrjson_with_warnings(input).map(|r| r.value)
+}
+
+/// Parse a RRJSON string into a [`ParseResult`] containing the value and
+/// any non-fatal warnings.
+///
+/// # Errors
+///
+/// Returns a [`ParseError`] if the input is malformed.
+pub fn parse_rrjson_with_warnings(input: &str) -> Result<ParseResult, ParseError> {
     let mut parser = Parser::new(input);
     parser.skip_ws_and_comments()?;
 
     // RRJSON: if the input doesn't start with '{' or '[', treat it as
     // bare key-value pairs (implicit object).
-    if parser.peek() != Some('{') && parser.peek() != Some('[') {
-        return parser.parse_bare_object();
-    }
+    let value = if parser.peek() != Some('{') && parser.peek() != Some('[') {
+        parser.parse_bare_object()?
+    } else {
+        let value = parser.parse_value()?;
+        parser.skip_ws_and_comments()?;
+        if parser.pos < parser.input.len() {
+            return Err(parser.error("unexpected content after value"));
+        }
+        value
+    };
 
-    let value = parser.parse_value()?;
-    parser.skip_ws_and_comments()?;
-    if parser.pos < parser.input.len() {
-        return Err(parser.error("unexpected content after value"));
-    }
-    Ok(value)
+    Ok(ParseResult {
+        value,
+        warnings: parser.warnings,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +276,7 @@ struct Parser<'a> {
     input: &'a str,
     pos: usize,
     depth: usize,
+    warnings: Vec<String>,
 }
 
 impl<'a> Parser<'a> {
@@ -257,6 +285,7 @@ impl<'a> Parser<'a> {
             input,
             pos: 0,
             depth: 0,
+            warnings: Vec::new(),
         }
     }
 
@@ -698,6 +727,8 @@ impl<'a> Parser<'a> {
             // Skip "include" directives (not yet supported — warn and consume the line).
             // Check word boundary after "include" so keys like "includes" or
             // "include_path" are parsed normally as object keys.
+            // Also check that no ':' or '=' follows on the same line, which
+            // would indicate a valid key-value pair with key "include".
             if self.input[self.pos..].starts_with("include")
                 && self
                     .input
@@ -705,20 +736,26 @@ impl<'a> Parser<'a> {
                     .get(self.pos + 7)
                     .is_none_or(|&b| b == b' ' || b == b'\t' || b == b'"' || b == b'\'')
             {
-                let (line, col) = self.line_col();
-                let directive_line = if let Some(end) = self.input[self.pos..].find('\n') {
-                    let line_text = self.input[self.pos..self.pos + end].trim();
-                    self.pos += end + 1;
-                    line_text.to_string()
-                } else {
-                    let line_text = self.input[self.pos..].trim().to_string();
-                    self.pos = self.input.len();
-                    line_text
-                };
-                eprintln!(
-                    "warning: RRJSON include directives are not supported (line {line} column {col}): {directive_line}"
-                );
-                continue;
+                // Look ahead on the current line for ':' or '=' separator.
+                let rest_of_line = self.input[self.pos..].split('\n').next().unwrap_or("");
+                let has_separator = rest_of_line.contains(':') || rest_of_line.contains('=');
+
+                if !has_separator {
+                    let (line, col) = self.line_col();
+                    let directive_line = if let Some(end) = self.input[self.pos..].find('\n') {
+                        let line_text = self.input[self.pos..self.pos + end].trim();
+                        self.pos += end + 1;
+                        line_text.to_string()
+                    } else {
+                        let line_text = self.input[self.pos..].trim().to_string();
+                        self.pos = self.input.len();
+                        line_text
+                    };
+                    self.warnings.push(format!(
+                        "RRJSON include directives are not supported (line {line} column {col}): {directive_line}"
+                    ));
+                    continue;
+                }
             }
 
             let key = self.parse_key()?;
@@ -1222,6 +1259,38 @@ mod tests {
         let input = "included = true";
         let v = parse_rrjson(input).unwrap();
         assert_eq!(v["included"], Value::Bool(true));
+    }
+
+    #[test]
+    fn test_include_key_with_colon_separator() {
+        // "include" with a ':' separator should be parsed as a key-value pair
+        let input = "include : \"somefile.json\"";
+        let v = parse_rrjson(input).unwrap();
+        assert_eq!(v["include"], Value::String("somefile.json".to_string()));
+    }
+
+    #[test]
+    fn test_include_key_with_equals_separator() {
+        // "include" with an '=' separator should be parsed as a key-value pair
+        let input = "include = \"somefile.json\"";
+        let v = parse_rrjson(input).unwrap();
+        assert_eq!(v["include"], Value::String("somefile.json".to_string()));
+    }
+
+    #[test]
+    fn test_include_directive_produces_warning() {
+        let input = "include \"base.json\"\nkey = \"value\"";
+        let result = parse_rrjson_with_warnings(input).unwrap();
+        assert_eq!(result.value["key"], Value::String("value".to_string()));
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("include directives are not supported"));
+    }
+
+    #[test]
+    fn test_no_warnings_for_normal_input() {
+        let input = r#"{"key": "value"}"#;
+        let result = parse_rrjson_with_warnings(input).unwrap();
+        assert!(result.warnings.is_empty());
     }
 
     #[test]

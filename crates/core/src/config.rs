@@ -101,6 +101,16 @@ pub fn deep_merge(base: Value, overlay: Value) -> Value {
 // Config
 // ---------------------------------------------------------------------------
 
+/// Result of loading configuration, including any non-fatal warnings.
+#[derive(Debug)]
+pub struct ConfigLoadResult {
+    /// The loaded configuration.
+    pub config: Config,
+    /// Non-fatal warnings encountered during loading (parse errors in
+    /// optional config files, unsupported RRJSON directives, I/O issues).
+    pub warnings: Vec<String>,
+}
+
 /// A ChordPro configuration loaded from one or more sources.
 ///
 /// Wraps a [`Value::Object`] and provides convenience accessors.
@@ -271,60 +281,113 @@ impl Config {
     /// project-level config). `song_config` is an optional path to a
     /// song-specific config file.
     #[must_use]
-    pub fn load(project_dir: Option<&str>, song_config: Option<&str>) -> Self {
+    pub fn load(project_dir: Option<&str>, song_config: Option<&str>) -> ConfigLoadResult {
         let mut config = Self::defaults();
+        let mut warnings = Vec::new();
 
         // System config
         let system_path = PathBuf::from("/etc/chordpro.json");
-        if let Some(text) = read_file_if_exists(&system_path) {
-            match Self::parse(&text) {
+        if let Some(text) = read_file_if_exists(&system_path, &mut warnings) {
+            match Self::parse_collecting_warnings(&text, &mut warnings) {
                 Ok(sys) => config = config.merge(sys),
-                Err(e) => eprintln!(
-                    "warning: failed to parse config file {}: {e}",
+                Err(e) => warnings.push(format!(
+                    "failed to parse config file {}: {e}",
                     system_path.display()
-                ),
+                )),
             }
         }
 
         // User config: respect XDG_CONFIG_HOME, fall back to $HOME/.config
         if let Some(config_dir) = config_dir() {
             let user_path = config_dir.join("chordpro").join("chordpro.json");
-            if let Some(text) = read_file_if_exists(&user_path) {
-                match Self::parse(&text) {
+            if let Some(text) = read_file_if_exists(&user_path, &mut warnings) {
+                match Self::parse_collecting_warnings(&text, &mut warnings) {
                     Ok(user) => config = config.merge(user),
-                    Err(e) => eprintln!(
-                        "warning: failed to parse config file {}: {e}",
+                    Err(e) => warnings.push(format!(
+                        "failed to parse config file {}: {e}",
                         user_path.display()
-                    ),
+                    )),
                 }
             }
         }
 
+        // Snapshot delegate settings from trusted sources (system + user config).
+        // Project-level and song-specific configs must not silently enable
+        // delegate execution — only CLI flags, auto-detection, or explicit
+        // user config (~/.config/chordpro/) may enable delegates.
+        let trusted_abc2svg = config
+            .get_path("delegates.abc2svg")
+            .as_bool()
+            .unwrap_or(false);
+        let trusted_lilypond = config
+            .get_path("delegates.lilypond")
+            .as_bool()
+            .unwrap_or(false);
+
         // Project config
         if let Some(dir) = project_dir {
             let project_path = PathBuf::from(dir).join("chordpro.json");
-            if let Some(text) = read_file_if_exists(&project_path) {
-                match Self::parse(&text) {
+            if let Some(text) = read_file_if_exists(&project_path, &mut warnings) {
+                match Self::parse_collecting_warnings(&text, &mut warnings) {
                     Ok(proj) => config = config.merge(proj),
-                    Err(e) => eprintln!(
-                        "warning: failed to parse config file {}: {e}",
+                    Err(e) => warnings.push(format!(
+                        "failed to parse config file {}: {e}",
                         project_path.display()
-                    ),
+                    )),
                 }
             }
         }
 
         // Song-specific config
         if let Some(path) = song_config {
-            if let Some(text) = read_file_if_exists(Path::new(path)) {
-                match Self::parse(&text) {
+            if let Some(text) = read_file_if_exists(Path::new(path), &mut warnings) {
+                match Self::parse_collecting_warnings(&text, &mut warnings) {
                     Ok(song) => config = config.merge(song),
-                    Err(e) => eprintln!("warning: failed to parse config file {path}: {e}"),
+                    Err(e) => warnings.push(format!("failed to parse config file {path}: {e}")),
                 }
             }
         }
 
-        config
+        // Restore delegate settings to trusted values. If a project or song
+        // config attempted to enable a delegate, override it back and warn.
+        let project_abc2svg = config
+            .get_path("delegates.abc2svg")
+            .as_bool()
+            .unwrap_or(false);
+        let project_lilypond = config
+            .get_path("delegates.lilypond")
+            .as_bool()
+            .unwrap_or(false);
+
+        if project_abc2svg && !trusted_abc2svg {
+            config = config.with_define("delegates.abc2svg=false");
+            warnings.push(
+                "delegates.abc2svg was enabled by a project-level config file and has been \
+                 disabled for security; use --define delegates.abc2svg=true to enable"
+                    .to_string(),
+            );
+        }
+        if project_lilypond && !trusted_lilypond {
+            config = config.with_define("delegates.lilypond=false");
+            warnings.push(
+                "delegates.lilypond was enabled by a project-level config file and has been \
+                 disabled for security; use --define delegates.lilypond=true to enable"
+                    .to_string(),
+            );
+        }
+
+        ConfigLoadResult { config, warnings }
+    }
+
+    /// Parse a configuration from a RRJSON string, collecting warnings into
+    /// the provided vector.
+    fn parse_collecting_warnings(
+        input: &str,
+        warnings: &mut Vec<String>,
+    ) -> Result<Self, rrjson::ParseError> {
+        let result = rrjson::parse_rrjson_with_warnings(input)?;
+        warnings.extend(result.warnings);
+        Ok(Self { root: result.value })
     }
 }
 
@@ -355,14 +418,46 @@ fn build_nested_value(key: &str, value: Value) -> Option<Value> {
 /// to prevent accidental OOM from device files or very large inputs.
 const MAX_CONFIG_FILE_SIZE: u64 = 10 * 1024 * 1024;
 
+/// Open a file without following symlinks.
+///
+/// On Unix, uses `O_NOFOLLOW` via `OpenOptionsExt::custom_flags` to
+/// atomically reject symlinks at the kernel level. On non-Unix platforms,
+/// falls back to a plain `File::open` (the caller's pre-open symlink check
+/// is the only defense).
+fn open_no_follow(path: &Path) -> Result<File, std::io::Error> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // O_NOFOLLOW value from POSIX / Linux headers. The constant is
+        // stable across Linux (0o400000), macOS/FreeBSD (0x0100).
+        #[cfg(target_os = "linux")]
+        const O_NOFOLLOW: i32 = 0o400000;
+        #[cfg(target_os = "macos")]
+        const O_NOFOLLOW: i32 = 0x0100;
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        const O_NOFOLLOW: i32 = 0; // fallback: no effect
+
+        std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(O_NOFOLLOW)
+            .open(path)
+    }
+    #[cfg(not(unix))]
+    {
+        File::open(path)
+    }
+}
+
 /// Read a config file with symlink and size checks.
 ///
-/// 1. Checks `symlink_metadata` to reject symlinks before opening.
-/// 2. Opens the file, then re-checks metadata on the file descriptor to
-///    enforce the size limit — eliminating the TOCTOU window between the
-///    initial check and the actual read.
+/// 1. Pre-open `symlink_metadata` check for a user-friendly error message.
+/// 2. On Unix: opens with `O_NOFOLLOW` to atomically reject symlinks at
+///    the kernel level, eliminating the TOCTOU window between the metadata
+///    check and file open.
+/// 3. On non-Unix: retains the pre-open metadata check only.
+/// 4. Checks metadata on the file descriptor to enforce the size limit.
 fn read_config_file(path: &Path) -> Result<String, std::io::Error> {
-    // Pre-open symlink check (the only reliable way to detect symlinks).
+    // Pre-open symlink check — provides a clear error message on all platforms.
     let link_meta = std::fs::symlink_metadata(path)?;
     if link_meta.file_type().is_symlink() {
         return Err(std::io::Error::new(
@@ -371,8 +466,10 @@ fn read_config_file(path: &Path) -> Result<String, std::io::Error> {
         ));
     }
 
-    // Open the file, then check metadata on the fd to close the TOCTOU window.
-    let mut file = File::open(path)?;
+    // Open the file. On Unix, O_NOFOLLOW atomically rejects symlinks at
+    // the kernel level, closing the TOCTOU window between the metadata
+    // check above and the actual open.
+    let mut file = open_no_follow(path)?;
     let fd_meta = file.metadata()?;
 
     if fd_meta.len() > MAX_CONFIG_FILE_SIZE {
@@ -396,12 +493,12 @@ fn read_config_file(path: &Path) -> Result<String, std::io::Error> {
 ///
 /// Rejects files that are symlinks or exceed [`MAX_CONFIG_FILE_SIZE`], emitting
 /// a warning to stderr in either case.
-fn read_file_if_exists(path: &Path) -> Option<String> {
+fn read_file_if_exists(path: &Path, warnings: &mut Vec<String>) -> Option<String> {
     match read_config_file(path) {
         Ok(contents) => Some(contents),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => {
-            eprintln!("warning: skipping config file {}: {e}", path.display());
+            warnings.push(format!("skipping config file {}: {e}", path.display()));
             None
         }
     }
@@ -636,9 +733,9 @@ mod tests {
     fn test_load_with_no_files() {
         // load() should succeed even when no config files exist.
         // We use a non-existent project dir to ensure nothing loads.
-        let config = Config::load(Some("/nonexistent/path"), None);
+        let result = Config::load(Some("/nonexistent/path"), None);
         // Should still have defaults
-        assert!(!config.get("pdf").is_null());
+        assert!(!result.config.get("pdf").is_null());
     }
 
     #[test]
@@ -843,10 +940,16 @@ mod tests {
         )
         .unwrap();
 
-        let config = Config::load(Some(dir.path().to_str().unwrap()), None);
-        assert_eq!(config.get_path("settings.columns"), &Value::Number(3.0));
+        let result = Config::load(Some(dir.path().to_str().unwrap()), None);
+        assert_eq!(
+            result.config.get_path("settings.columns"),
+            &Value::Number(3.0)
+        );
         // Defaults should still be present for non-overridden keys
-        assert_eq!(config.get_path("pdf.margins.top"), &Value::Number(56.0));
+        assert_eq!(
+            result.config.get_path("pdf.margins.top"),
+            &Value::Number(56.0)
+        );
     }
 
     #[test]
@@ -855,9 +958,9 @@ mod tests {
         let song_path = dir.path().join("song.json");
         std::fs::write(&song_path, r#"{ "pdf": { "papersize": "letter" } }"#).unwrap();
 
-        let config = Config::load(None, Some(song_path.to_str().unwrap()));
+        let result = Config::load(None, Some(song_path.to_str().unwrap()));
         assert_eq!(
-            config.get_path("pdf.papersize"),
+            result.config.get_path("pdf.papersize"),
             &Value::String("letter".to_string())
         );
     }
@@ -878,14 +981,58 @@ mod tests {
         let song_path = song_dir.path().join("song.json");
         std::fs::write(&song_path, r#"{ "settings": { "columns": 4 } }"#).unwrap();
 
-        let config = Config::load(
+        let result = Config::load(
             Some(project_dir.path().to_str().unwrap()),
             Some(song_path.to_str().unwrap()),
         );
         // Song overrides project
-        assert_eq!(config.get_path("settings.columns"), &Value::Number(4.0));
+        assert_eq!(
+            result.config.get_path("settings.columns"),
+            &Value::Number(4.0)
+        );
         // Project setting not overridden by song
-        assert_eq!(config.get_path("settings.transpose"), &Value::Number(5.0));
+        assert_eq!(
+            result.config.get_path("settings.transpose"),
+            &Value::Number(5.0)
+        );
+    }
+
+    #[test]
+    fn test_project_config_cannot_enable_delegates() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("chordpro.json"),
+            r#"{ "delegates": { "abc2svg": true, "lilypond": true } }"#,
+        )
+        .unwrap();
+
+        let result = Config::load(Some(dir.path().to_str().unwrap()), None);
+        // Delegates should be reset to false
+        assert_eq!(
+            result.config.get_path("delegates.abc2svg"),
+            &Value::Bool(false)
+        );
+        assert_eq!(
+            result.config.get_path("delegates.lilypond"),
+            &Value::Bool(false)
+        );
+        // Warnings should be emitted
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("delegates.abc2svg")),
+            "expected delegate warning, got: {:?}",
+            result.warnings
+        );
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("delegates.lilypond")),
+            "expected delegate warning, got: {:?}",
+            result.warnings
+        );
     }
 
     #[test]
@@ -894,8 +1041,17 @@ mod tests {
         std::fs::write(dir.path().join("chordpro.json"), "{ invalid json !!!").unwrap();
 
         // Should not panic; defaults are still loaded
-        let config = Config::load(Some(dir.path().to_str().unwrap()), None);
-        assert!(!config.get("pdf").is_null());
+        let result = Config::load(Some(dir.path().to_str().unwrap()), None);
+        assert!(!result.config.get("pdf").is_null());
+        // Warning should be collected instead of printed to stderr
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("failed to parse")),
+            "expected parse warning, got: {:?}",
+            result.warnings
+        );
     }
 
     #[test]
@@ -916,15 +1072,19 @@ mod tests {
         let file_path = dir.path().join("config.json");
         std::fs::write(&file_path, r#"{"key": "value"}"#).unwrap();
 
-        let result = read_file_if_exists(&file_path);
+        let mut warnings = Vec::new();
+        let result = read_file_if_exists(&file_path, &mut warnings);
         assert!(result.is_some());
         assert!(result.unwrap().contains("key"));
+        assert!(warnings.is_empty());
     }
 
     #[test]
     fn test_read_file_if_exists_nonexistent() {
-        let result = read_file_if_exists(Path::new("/nonexistent/path/config.json"));
+        let mut warnings = Vec::new();
+        let result = read_file_if_exists(Path::new("/nonexistent/path/config.json"), &mut warnings);
         assert!(result.is_none());
+        assert!(warnings.is_empty());
     }
 
     #[cfg(unix)]
@@ -936,8 +1096,10 @@ mod tests {
         std::fs::write(&real_file, r#"{"key": "value"}"#).unwrap();
         std::os::unix::fs::symlink(&real_file, &link_path).unwrap();
 
-        let result = read_file_if_exists(&link_path);
+        let mut warnings = Vec::new();
+        let result = read_file_if_exists(&link_path, &mut warnings);
         assert!(result.is_none(), "symlink should be rejected");
+        assert!(!warnings.is_empty(), "should produce a warning for symlink");
     }
 
     // -- resolve() security tests ------------------------------------------------
