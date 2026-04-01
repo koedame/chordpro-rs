@@ -202,7 +202,7 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &C
     };
 
     // Phase 3: rebuild ToC with correct page numbers (offset by toc_page_count).
-    let mut toc_doc = PdfDocument::new();
+    let mut toc_doc = PdfDocument::from_config(config);
     toc_doc.text("Table of Contents", Font::HelveticaBold, TITLE_SIZE);
     toc_doc.newline(TITLE_SIZE + LINE_GAP * 2.0);
 
@@ -1433,6 +1433,7 @@ struct PdfDocument {
 
 impl PdfDocument {
     /// Create a new document with one empty page using default margins.
+    #[cfg(test)]
     fn new() -> Self {
         Self::with_margins(MARGIN_TOP, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT)
     }
@@ -2962,6 +2963,24 @@ mod toc_tests {
         let bytes = render_songs(&songs);
         assert!(bytes.starts_with(b"%PDF-1.4"));
         assert!(bytes.ends_with(b"%%EOF\n"));
+    }
+
+    #[test]
+    fn test_toc_with_custom_margins_produces_valid_pdf() {
+        use chordpro_core::config::Config;
+        let songs =
+            chordpro_core::parse_multi("{title: Song A}\nA\n{new_song}\n{title: Song B}\nB")
+                .unwrap();
+        // Use large custom margins to exercise the from_config path in the ToC rebuild.
+        let config = Config::parse(
+            r#"{ "pdf": { "margintop": 100, "marginbottom": 100, "marginleft": 100, "marginright": 100 } }"#,
+        )
+        .unwrap();
+        let bytes = render_songs_with_transpose(&songs, 0, &config);
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert!(bytes.ends_with(b"%%EOF\n"));
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("Table of Contents"));
     }
 }
 
