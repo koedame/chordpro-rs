@@ -114,9 +114,9 @@ fn sanitize_abc_content(input: &str) -> String {
             continue;
         }
 
-        // %%javascript <code> is a single-line JS directive.
-        if trimmed.starts_with("%%javascript") || trimmed.starts_with("%%JavaScript") {
-            let after = &trimmed["%%javascript".len()..];
+        // %%javascript <code> is a single-line JS directive (case-insensitive).
+        if trimmed.len() >= 12 && trimmed[..12].eq_ignore_ascii_case("%%javascript") {
+            let after = &trimmed[12..];
             if after.is_empty() || after.starts_with(' ') || after.starts_with('\t') {
                 continue;
             }
@@ -343,6 +343,29 @@ mod tests {
     #[test]
     fn sanitize_abc_case_insensitive_beginjs() {
         let input = "X:1\n%%BeginJS\nalert(1);\n%%EndJS\nK:C\n";
+        let result = super::sanitize_abc_content(input);
+        assert_eq!(result, "X:1\nK:C");
+    }
+
+    #[test]
+    fn sanitize_abc_case_insensitive_javascript() {
+        // All-caps
+        let input = "X:1\n%%JAVASCRIPT alert(1)\nK:C\n";
+        let result = super::sanitize_abc_content(input);
+        assert_eq!(result, "X:1\nK:C");
+
+        // Mixed case
+        let input = "X:1\n%%Javascript require('fs')\nK:C\n";
+        let result = super::sanitize_abc_content(input);
+        assert_eq!(result, "X:1\nK:C");
+
+        // Another mixed case variant
+        let input = "X:1\n%%jAvAsCrIpT evil()\nK:C\n";
+        let result = super::sanitize_abc_content(input);
+        assert_eq!(result, "X:1\nK:C");
+
+        // Bare directive without code
+        let input = "X:1\n%%JAVASCRIPT\nK:C\n";
         let result = super::sanitize_abc_content(input);
         assert_eq!(result, "X:1\nK:C");
     }
