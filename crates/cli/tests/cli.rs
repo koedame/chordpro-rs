@@ -305,6 +305,28 @@ fn test_define_invalid_syntax() {
 }
 
 #[test]
+fn test_define_empty_key_rejected() {
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args(["--define", "=value", &fixture("simple.cho")])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("error:"))
+        .stderr(predicate::str::contains("key must not be empty"));
+}
+
+#[test]
+fn test_define_whitespace_key_rejected() {
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args(["--define", "  =value", &fixture("simple.cho")])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("error:"))
+        .stderr(predicate::str::contains("key must not be empty"));
+}
+
+#[test]
 fn test_config_transpose_combined_with_cli() {
     let mut config_file = NamedTempFile::new().unwrap();
     // Config sets transpose=2

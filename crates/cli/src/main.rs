@@ -106,6 +106,11 @@ fn main() -> ExitCode {
             eprintln!("error: invalid --define syntax: {define} (expected key=value)");
             return ExitCode::FAILURE;
         }
+        let key = define.split('=').next().unwrap_or("");
+        if key.trim().is_empty() {
+            eprintln!("error: invalid --define syntax: {define} (key must not be empty)");
+            return ExitCode::FAILURE;
+        }
         config = config.with_define(define);
     }
 
