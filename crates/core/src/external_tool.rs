@@ -8,7 +8,10 @@
 //! All detection functions are safe to call even when the tools are not
 //! installed — they return `false` rather than panicking.
 
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Checks whether a command is available by attempting to run it.
 ///
@@ -47,6 +50,34 @@ pub fn has_lilypond() -> bool {
     is_available("lilypond")
 }
 
+/// Global counter for generating unique temp file names within a process.
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Generate a unique temporary file path with the given prefix and extension.
+///
+/// Uses PID + monotonic counter to avoid collisions across threads
+/// and sequential invocations within the same process.
+fn unique_temp_path(prefix: &str, ext: &str) -> std::path::PathBuf {
+    let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    std::env::temp_dir().join(format!("{prefix}_{pid}_{counter}.{ext}"))
+}
+
+/// Write content to a new temporary file using `O_EXCL` semantics.
+///
+/// The file is created with `create_new(true)` which maps to `O_CREAT | O_EXCL`
+/// on Unix, preventing symlink attacks and ensuring the file did not already exist.
+fn write_temp_file_exclusive(path: &std::path::Path, content: &str) -> Result<(), String> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|e| format!("failed to create temp file: {e}"))?;
+    file.write_all(content.as_bytes())
+        .map_err(|e| format!("failed to write temp file: {e}"))?;
+    Ok(())
+}
+
 /// Invoke `abc2svg` on ABC notation content and return the rendered SVG fragment.
 ///
 /// Writes `abc_content` to a temporary file, runs `abc2svg tosvg.js <file>`,
@@ -63,10 +94,9 @@ pub fn has_lilypond() -> bool {
 pub fn invoke_abc2svg(abc_content: &str) -> Result<String, String> {
     let sanitized = sanitize_abc_content(abc_content);
 
-    let tmp_dir = std::env::temp_dir();
-    let tmp_path = tmp_dir.join(format!("chordpro_abc_{}.abc", std::process::id()));
+    let tmp_path = unique_temp_path("chordpro_abc", "abc");
 
-    std::fs::write(&tmp_path, &sanitized).map_err(|e| format!("failed to write temp file: {e}"))?;
+    write_temp_file_exclusive(&tmp_path, &sanitized)?;
 
     let output = Command::new("abc2svg")
         .arg("tosvg.js")
@@ -162,10 +192,13 @@ fn extract_body_content(html: &str) -> Option<String> {
 /// - `lilypond` is not available or fails to execute
 /// - The output SVG file cannot be read
 pub fn invoke_lilypond(ly_content: &str) -> Result<String, String> {
-    let tmp_dir = std::env::temp_dir().join(format!("chordpro_ly_{}", std::process::id()));
+    let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let tmp_dir = std::env::temp_dir().join(format!("chordpro_ly_{pid}_{counter}"));
 
-    std::fs::create_dir_all(&tmp_dir)
-        .map_err(|e| format!("failed to create temp directory: {e}"))?;
+    // Use create_dir (not create_dir_all) to fail if the directory already exists,
+    // preventing symlink-based attacks on predictable paths.
+    std::fs::create_dir(&tmp_dir).map_err(|e| format!("failed to create temp directory: {e}"))?;
 
     let ly_path = tmp_dir.join("input.ly");
     let output_prefix = tmp_dir.join("output");
@@ -219,6 +252,27 @@ mod tests {
     #[test]
     fn nonexistent_tool_returns_false() {
         assert!(!is_available("this-command-definitely-does-not-exist-xyz"));
+    }
+
+    #[test]
+    fn unique_temp_paths_are_distinct() {
+        let paths: Vec<_> = (0..100)
+            .map(|_| super::unique_temp_path("test", "tmp"))
+            .collect();
+        // All paths should be unique thanks to the atomic counter.
+        let unique: std::collections::HashSet<_> = paths.iter().collect();
+        assert_eq!(unique.len(), paths.len());
+    }
+
+    #[test]
+    fn write_temp_file_exclusive_prevents_overwrite() {
+        let path = super::unique_temp_path("test_excl", "tmp");
+        // First write succeeds.
+        super::write_temp_file_exclusive(&path, "hello").unwrap();
+        // Second write to same path must fail (O_EXCL semantics).
+        let result = super::write_temp_file_exclusive(&path, "world");
+        assert!(result.is_err());
+        let _ = std::fs::remove_file(&path);
     }
 
     // The following tests are #[ignore] because they depend on external tools.
