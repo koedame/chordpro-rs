@@ -590,7 +590,6 @@ fn open_no_follow(path: &Path) -> Result<File, std::io::Error> {
                 kernel-level symlink protection is disabled. Add the platform's \
                 O_NOFOLLOW constant to open_no_follow() for full protection.")]
             const UNSUPPORTED: i32 = 0;
-            #[allow(deprecated)]
             UNSUPPORTED
         };
 
