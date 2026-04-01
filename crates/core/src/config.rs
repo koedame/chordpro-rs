@@ -418,14 +418,46 @@ fn build_nested_value(key: &str, value: Value) -> Option<Value> {
 /// to prevent accidental OOM from device files or very large inputs.
 const MAX_CONFIG_FILE_SIZE: u64 = 10 * 1024 * 1024;
 
+/// Open a file without following symlinks.
+///
+/// On Unix, uses `O_NOFOLLOW` via `OpenOptionsExt::custom_flags` to
+/// atomically reject symlinks at the kernel level. On non-Unix platforms,
+/// falls back to a plain `File::open` (the caller's pre-open symlink check
+/// is the only defense).
+fn open_no_follow(path: &Path) -> Result<File, std::io::Error> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // O_NOFOLLOW value from POSIX / Linux headers. The constant is
+        // stable across Linux (0o400000), macOS/FreeBSD (0x0100).
+        #[cfg(target_os = "linux")]
+        const O_NOFOLLOW: i32 = 0o400000;
+        #[cfg(target_os = "macos")]
+        const O_NOFOLLOW: i32 = 0x0100;
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        const O_NOFOLLOW: i32 = 0; // fallback: no effect
+
+        std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(O_NOFOLLOW)
+            .open(path)
+    }
+    #[cfg(not(unix))]
+    {
+        File::open(path)
+    }
+}
+
 /// Read a config file with symlink and size checks.
 ///
-/// 1. Checks `symlink_metadata` to reject symlinks before opening.
-/// 2. Opens the file, then re-checks metadata on the file descriptor to
-///    enforce the size limit — eliminating the TOCTOU window between the
-///    initial check and the actual read.
+/// 1. Pre-open `symlink_metadata` check for a user-friendly error message.
+/// 2. On Unix: opens with `O_NOFOLLOW` to atomically reject symlinks at
+///    the kernel level, eliminating the TOCTOU window between the metadata
+///    check and file open.
+/// 3. On non-Unix: retains the pre-open metadata check only.
+/// 4. Checks metadata on the file descriptor to enforce the size limit.
 fn read_config_file(path: &Path) -> Result<String, std::io::Error> {
-    // Pre-open symlink check (the only reliable way to detect symlinks).
+    // Pre-open symlink check — provides a clear error message on all platforms.
     let link_meta = std::fs::symlink_metadata(path)?;
     if link_meta.file_type().is_symlink() {
         return Err(std::io::Error::new(
@@ -434,8 +466,10 @@ fn read_config_file(path: &Path) -> Result<String, std::io::Error> {
         ));
     }
 
-    // Open the file, then check metadata on the fd to close the TOCTOU window.
-    let mut file = File::open(path)?;
+    // Open the file. On Unix, O_NOFOLLOW atomically rejects symlinks at
+    // the kernel level, closing the TOCTOU window between the metadata
+    // check above and the actual open.
+    let mut file = open_no_follow(path)?;
     let fd_meta = file.metadata()?;
 
     if fd_meta.len() > MAX_CONFIG_FILE_SIZE {
