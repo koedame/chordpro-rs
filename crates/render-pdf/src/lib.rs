@@ -63,23 +63,6 @@ impl PdfFormattingState {
     }
 }
 
-/// Extract the transpose delta from song-level config overrides.
-///
-/// Parses `settings.transpose` from the override list. Returns `0` if the
-/// key is absent or the value is not a valid number.
-fn song_transpose_delta(overrides: &[(&str, &str)]) -> i8 {
-    for &(key, value) in overrides.iter().rev() {
-        if key == "settings.transpose" {
-            return value
-                .trim()
-                .parse::<f64>()
-                .unwrap_or(0.0)
-                .clamp(f64::from(i8::MIN), f64::from(i8::MAX)) as i8;
-        }
-    }
-    0
-}
-
 // ---------------------------------------------------------------------------
 // Layout constants (units: PDF points, 1 pt = 1/72 inch)
 // ---------------------------------------------------------------------------
@@ -324,7 +307,7 @@ fn render_song_into_doc(
     // Extract song-level transpose delta from {+config.settings.transpose}.
     // The base config transpose is already folded into cli_transpose by the caller.
     let song_overrides = song.config_overrides();
-    let song_transpose_delta = song_transpose_delta(&song_overrides);
+    let song_transpose_delta = Config::song_transpose_delta(&song_overrides);
     let (combined_transpose, _) =
         chordpro_core::transpose::combine_transpose(cli_transpose, song_transpose_delta);
     let mut transpose_offset: i8 = combined_transpose;

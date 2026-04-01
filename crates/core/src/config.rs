@@ -372,6 +372,25 @@ impl Config {
         config
     }
 
+    /// Extract the `settings.transpose` value from song-level config overrides.
+    ///
+    /// Scans the override list in reverse order (last wins) for
+    /// `settings.transpose` and parses it as an `i8` semitone delta.
+    /// Returns `0` if the key is absent or the value is not a valid number.
+    #[must_use]
+    pub fn song_transpose_delta(overrides: &[(&str, &str)]) -> i8 {
+        for &(key, value) in overrides.iter().rev() {
+            if key == "settings.transpose" {
+                return value
+                    .trim()
+                    .parse::<f64>()
+                    .unwrap_or(0.0)
+                    .clamp(f64::from(i8::MIN), f64::from(i8::MAX)) as i8;
+            }
+        }
+        0
+    }
+
     /// Build a configuration by loading and merging from all sources.
     ///
     /// Loads: defaults → system → user → project → song-specific.
