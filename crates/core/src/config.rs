@@ -548,6 +548,7 @@ static PRESET_UKULELE: &str = r#"{
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn test_defaults_load() {
@@ -835,29 +836,23 @@ mod tests {
 
     #[test]
     fn test_load_project_config() {
-        let dir = std::env::temp_dir().join("chordpro_test_load_project");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = tempdir().unwrap();
         std::fs::write(
-            dir.join("chordpro.json"),
+            dir.path().join("chordpro.json"),
             r#"{ "settings": { "columns": 3 } }"#,
         )
         .unwrap();
 
-        let config = Config::load(Some(dir.to_str().unwrap()), None);
+        let config = Config::load(Some(dir.path().to_str().unwrap()), None);
         assert_eq!(config.get_path("settings.columns"), &Value::Number(3.0));
         // Defaults should still be present for non-overridden keys
         assert_eq!(config.get_path("pdf.margins.top"), &Value::Number(56.0));
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn test_load_song_config() {
-        let dir = std::env::temp_dir().join("chordpro_test_load_song");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let song_path = dir.join("song.json");
+        let dir = tempdir().unwrap();
+        let song_path = dir.path().join("song.json");
         std::fs::write(&song_path, r#"{ "pdf": { "papersize": "letter" } }"#).unwrap();
 
         let config = Config::load(None, Some(song_path.to_str().unwrap()));
@@ -865,86 +860,65 @@ mod tests {
             config.get_path("pdf.papersize"),
             &Value::String("letter".to_string())
         );
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn test_load_project_and_song_merge_precedence() {
-        let project_dir = std::env::temp_dir().join("chordpro_test_merge_prec_proj");
-        let song_dir = std::env::temp_dir().join("chordpro_test_merge_prec_song");
-        let _ = std::fs::remove_dir_all(&project_dir);
-        let _ = std::fs::remove_dir_all(&song_dir);
-        std::fs::create_dir_all(&project_dir).unwrap();
-        std::fs::create_dir_all(&song_dir).unwrap();
+        let project_dir = tempdir().unwrap();
+        let song_dir = tempdir().unwrap();
 
         // Project sets columns=2 and transpose=5
         std::fs::write(
-            project_dir.join("chordpro.json"),
+            project_dir.path().join("chordpro.json"),
             r#"{ "settings": { "columns": 2, "transpose": 5 } }"#,
         )
         .unwrap();
 
         // Song overrides columns=4
-        let song_path = song_dir.join("song.json");
+        let song_path = song_dir.path().join("song.json");
         std::fs::write(&song_path, r#"{ "settings": { "columns": 4 } }"#).unwrap();
 
         let config = Config::load(
-            Some(project_dir.to_str().unwrap()),
+            Some(project_dir.path().to_str().unwrap()),
             Some(song_path.to_str().unwrap()),
         );
         // Song overrides project
         assert_eq!(config.get_path("settings.columns"), &Value::Number(4.0));
         // Project setting not overridden by song
         assert_eq!(config.get_path("settings.transpose"), &Value::Number(5.0));
-
-        let _ = std::fs::remove_dir_all(&project_dir);
-        let _ = std::fs::remove_dir_all(&song_dir);
     }
 
     #[test]
     fn test_load_invalid_project_config_continues() {
-        let dir = std::env::temp_dir().join("chordpro_test_invalid_config");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("chordpro.json"), "{ invalid json !!!").unwrap();
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("chordpro.json"), "{ invalid json !!!").unwrap();
 
         // Should not panic; defaults are still loaded
-        let config = Config::load(Some(dir.to_str().unwrap()), None);
+        let config = Config::load(Some(dir.path().to_str().unwrap()), None);
         assert!(!config.get("pdf").is_null());
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn test_resolve_from_temp_file() {
-        let dir = std::env::temp_dir().join("chordpro_test_resolve_file");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let file_path = dir.join("custom.json");
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("custom.json");
         std::fs::write(&file_path, r#"{ "custom": true }"#).unwrap();
 
         let config = Config::resolve(file_path.to_str().unwrap()).unwrap();
         assert_eq!(config.get("custom"), &Value::Bool(true));
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // -- File size / symlink guard tests --------------------------------------
 
     #[test]
     fn test_read_file_if_exists_normal_file() {
-        let dir = std::env::temp_dir().join("chordpro_test_read_normal");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let file_path = dir.join("config.json");
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("config.json");
         std::fs::write(&file_path, r#"{"key": "value"}"#).unwrap();
 
         let result = read_file_if_exists(&file_path);
         assert!(result.is_some());
         assert!(result.unwrap().contains("key"));
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -956,18 +930,14 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn test_read_file_if_exists_rejects_symlink() {
-        let dir = std::env::temp_dir().join("chordpro_test_symlink");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let real_file = dir.join("real.json");
-        let link_path = dir.join("link.json");
+        let dir = tempdir().unwrap();
+        let real_file = dir.path().join("real.json");
+        let link_path = dir.path().join("link.json");
         std::fs::write(&real_file, r#"{"key": "value"}"#).unwrap();
         std::os::unix::fs::symlink(&real_file, &link_path).unwrap();
 
         let result = read_file_if_exists(&link_path);
         assert!(result.is_none(), "symlink should be rejected");
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // -- resolve() security tests ------------------------------------------------
@@ -975,32 +945,24 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn test_resolve_rejects_symlink() {
-        let dir = std::env::temp_dir().join("chordpro_test_resolve_symlink");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let real_file = dir.join("real.json");
-        let link_path = dir.join("link.json");
+        let dir = tempdir().unwrap();
+        let real_file = dir.path().join("real.json");
+        let link_path = dir.path().join("link.json");
         std::fs::write(&real_file, r#"{"key": "value"}"#).unwrap();
         std::os::unix::fs::symlink(&real_file, &link_path).unwrap();
 
         let result = Config::resolve(link_path.to_str().unwrap());
         assert!(result.is_err(), "resolve() should reject symlinks");
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn test_read_config_file_normal() {
-        let dir = std::env::temp_dir().join("chordpro_test_read_config_normal");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let file_path = dir.join("config.json");
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("config.json");
         std::fs::write(&file_path, r#"{"ok": true}"#).unwrap();
 
         let text = read_config_file(&file_path).unwrap();
         assert!(text.contains("ok"));
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1013,18 +975,14 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn test_read_config_file_rejects_symlink() {
-        let dir = std::env::temp_dir().join("chordpro_test_read_config_symlink");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let real_file = dir.join("real.json");
-        let link_path = dir.join("link.json");
+        let dir = tempdir().unwrap();
+        let real_file = dir.path().join("real.json");
+        let link_path = dir.path().join("link.json");
         std::fs::write(&real_file, r#"{"key": "value"}"#).unwrap();
         std::os::unix::fs::symlink(&real_file, &link_path).unwrap();
 
         let result = read_config_file(&link_path);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

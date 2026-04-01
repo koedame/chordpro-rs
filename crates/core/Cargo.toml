@@ -7,3 +7,6 @@ license.workspace = true
 description = "ChordPro parser, AST, and transforms"
 
 [dependencies]
+
+[dev-dependencies]
+tempfile = "3"
