@@ -359,6 +359,7 @@ fn render_song_into_doc(song: &Song, cli_transpose: i8, doc: &mut PdfDocument) {
 }
 
 /// Parse and render a ChordPro source string to PDF bytes.
+#[must_use = "parse errors should be handled"]
 pub fn try_render(input: &str) -> Result<Vec<u8>, chordpro_core::ParseError> {
     let song = chordpro_core::parse(input)?;
     Ok(render_song(&song))

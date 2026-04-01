@@ -158,6 +158,7 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &C
 /// the input cannot be parsed.
 ///
 /// For pre-parsed input, use [`render_song`] directly.
+#[must_use = "parse errors should be handled"]
 pub fn try_render(input: &str) -> Result<String, chordpro_core::ParseError> {
     let song = chordpro_core::parse(input)?;
     Ok(render_song(&song))

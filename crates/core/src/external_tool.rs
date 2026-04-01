@@ -103,13 +103,13 @@ fn sanitize_abc_content(input: &str) -> String {
         let trimmed = line.trim();
 
         if in_js_block {
-            if trimmed == "%%endjs" || trimmed.eq_ignore_ascii_case("%%endjs") {
+            if trimmed.eq_ignore_ascii_case("%%endjs") {
                 in_js_block = false;
             }
             continue;
         }
 
-        if trimmed == "%%beginjs" || trimmed.eq_ignore_ascii_case("%%beginjs") {
+        if trimmed.eq_ignore_ascii_case("%%beginjs") {
             in_js_block = true;
             continue;
         }
