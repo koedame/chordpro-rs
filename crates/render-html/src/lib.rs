@@ -832,12 +832,20 @@ fn is_uri_attr(name: &str) -> bool {
 ///
 /// Removes event handler attributes (`on*`) entirely and strips URI attributes
 /// (`href`, `src`, `xlink:href`) that use dangerous schemes.
+/// Sanitize attributes within an HTML/SVG tag, stripping event handlers
+/// and dangerous URI schemes.
+///
+/// This function operates at the byte level for performance. This is safe
+/// because HTML/SVG tag names, attribute names, and structural characters
+/// (`<`, `>`, `=`, `"`, `'`, `/`, whitespace) are all ASCII. Attribute
+/// *values* are extracted via string slicing on the original `&str`, which
+/// preserves UTF-8 correctness for non-ASCII content.
 fn sanitize_tag_attrs(tag: &str) -> String {
     let mut result = String::with_capacity(tag.len());
     let bytes = tag.as_bytes();
     let mut i = 0;
 
-    // Copy the '<' and tag name.
+    // Copy the '<' and tag name (always ASCII in valid HTML/SVG).
     while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'>' && bytes[i] != b'/' {
         result.push(bytes[i] as char);
         i += 1;
@@ -1169,7 +1177,8 @@ fn render_image(attrs: &chordpro_core::ast::ImageAttributes, html: &mut String) 
 
 /// Open a `<section>` with a class and optional label.
 fn render_section_open(class: &str, label: &str, value: &Option<String>, html: &mut String) {
-    html.push_str(&format!("<section class=\"{class}\">\n"));
+    let safe_class = sanitize_css_class(class);
+    html.push_str(&format!("<section class=\"{safe_class}\">\n"));
     let display_label = match value {
         Some(v) if !v.is_empty() => format!("{label}: {}", escape(v)),
         _ => label.to_string(),
@@ -1224,6 +1233,33 @@ fn render_comment(style: CommentStyle, text: &str, html: &mut String) {
 // ===========================================================================
 // Tests
 // ===========================================================================
+
+#[cfg(test)]
+mod sanitize_tag_attrs_tests {
+    use super::*;
+
+    #[test]
+    fn test_preserves_normal_attrs() {
+        let tag = "<svg width=\"100\" height=\"50\">";
+        assert_eq!(sanitize_tag_attrs(tag), tag);
+    }
+
+    #[test]
+    fn test_strips_event_handler() {
+        let tag = "<svg onclick=\"alert(1)\" width=\"100\">";
+        let result = sanitize_tag_attrs(tag);
+        assert!(!result.contains("onclick"));
+        assert!(result.contains("width"));
+    }
+
+    #[test]
+    fn test_non_ascii_in_attr_value_preserved() {
+        let tag = "<text title=\"日本語テスト\" x=\"10\">";
+        let result = sanitize_tag_attrs(tag);
+        assert!(result.contains("日本語テスト"));
+        assert!(result.contains("x=\"10\""));
+    }
+}
 
 #[cfg(test)]
 mod tests {
