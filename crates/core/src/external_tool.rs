@@ -161,6 +161,61 @@ fn sanitize_abc_content(input: &str) -> String {
     output
 }
 
+/// Dangerous Scheme function names that should be stripped from Lilypond content.
+///
+/// These functions can escape the `-dsafe` sandbox or access the filesystem
+/// if a future Lilypond version has a `-dsafe` bypass.
+const DANGEROUS_SCHEME_FUNCTIONS: &[&str] = &[
+    "system",
+    "getenv",
+    "open-input-file",
+    "open-output-file",
+    "open-file",
+    "primitive-load",
+    "primitive-load-path",
+    "eval-string",
+    "ly:gulp-file",
+    "ly:system",
+];
+
+/// Strip dangerous Scheme directives from Lilypond content as defense-in-depth.
+///
+/// Lilypond's `-dsafe` flag sandboxes the embedded Scheme interpreter, but as a
+/// secondary layer of protection, this function removes lines containing known
+/// dangerous Scheme function calls (e.g., `#(system ...)`, `#(getenv ...)`).
+fn sanitize_lilypond_content(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+
+    for line in input.lines() {
+        if line_contains_dangerous_scheme(line) {
+            continue;
+        }
+        if !output.is_empty() {
+            output.push('\n');
+        }
+        output.push_str(line);
+    }
+
+    output
+}
+
+/// Check if a line contains a dangerous Scheme function call.
+///
+/// Matches patterns like `#(system ...)` or `#(ly:system ...)` anywhere in
+/// the line, case-insensitively.
+fn line_contains_dangerous_scheme(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    for &func in DANGEROUS_SCHEME_FUNCTIONS {
+        // Match #(func or #( func (with optional whitespace after paren)
+        let pattern1 = format!("#({func}");
+        let pattern2 = format!("#( {func}");
+        if lower.contains(&pattern1) || lower.contains(&pattern2) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Extract content after `<body>` from an HTML string.
 ///
 /// Looks for a `</body>` closing tag first; if absent (abc2svg omits it),
@@ -192,6 +247,8 @@ fn extract_body_content(html: &str) -> Option<String> {
 /// - `lilypond` is not available or fails to execute
 /// - The output SVG file cannot be read
 pub fn invoke_lilypond(ly_content: &str) -> Result<String, String> {
+    let sanitized = sanitize_lilypond_content(ly_content);
+
     let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
     let tmp_dir = std::env::temp_dir().join(format!("chordpro_ly_{pid}_{counter}"));
@@ -203,7 +260,7 @@ pub fn invoke_lilypond(ly_content: &str) -> Result<String, String> {
     let ly_path = tmp_dir.join("input.ly");
     let output_prefix = tmp_dir.join("output");
 
-    std::fs::write(&ly_path, ly_content).map_err(|e| {
+    std::fs::write(&ly_path, &sanitized).map_err(|e| {
         let _ = std::fs::remove_dir_all(&tmp_dir);
         format!("failed to write temp file: {e}")
     })?;
@@ -430,6 +487,67 @@ mod tests {
         let input = "X:1\n%%javascriptfoo bar\nK:C\n";
         let result = super::sanitize_abc_content(input);
         assert!(result.contains("%%javascriptfoo"));
+    }
+
+    #[test]
+    fn sanitize_lilypond_strips_system_call() {
+        let input = "\\relative c' { c4 d e f }\n#(system \"echo pwned\")\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert!(!result.contains("system"));
+        assert!(result.contains("\\relative"));
+    }
+
+    #[test]
+    fn sanitize_lilypond_strips_getenv() {
+        let input = "\\relative c' { c4 }\n#(getenv \"HOME\")\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert!(!result.contains("getenv"));
+    }
+
+    #[test]
+    fn sanitize_lilypond_strips_file_access() {
+        let input = "#(open-input-file \"/etc/passwd\")\n\\relative c' { c4 }\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert!(!result.contains("open-input-file"));
+        assert!(result.contains("\\relative"));
+    }
+
+    #[test]
+    fn sanitize_lilypond_strips_ly_system() {
+        let input = "\\relative c' { c4 }\n#(ly:system \"rm -rf /\")\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert!(!result.contains("ly:system"));
+    }
+
+    #[test]
+    fn sanitize_lilypond_case_insensitive() {
+        let input = "#(SYSTEM \"echo pwned\")\n\\relative c' { c4 }\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert!(!result.contains("SYSTEM"));
+    }
+
+    #[test]
+    fn sanitize_lilypond_preserves_normal_content() {
+        let input = "\\version \"2.24.0\"\n\\relative c' {\n  c4 d e f |\n  g2 g |\n}\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert_eq!(
+            result,
+            "\\version \"2.24.0\"\n\\relative c' {\n  c4 d e f |\n  g2 g |\n}"
+        );
+    }
+
+    #[test]
+    fn sanitize_lilypond_strips_eval_string() {
+        let input = "#(eval-string \"(system \\\"id\\\")\")\n\\relative c' { c4 }\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert!(!result.contains("eval-string"));
+    }
+
+    #[test]
+    fn sanitize_lilypond_strips_gulp_file() {
+        let input = "#(ly:gulp-file \"/etc/passwd\")\n\\relative c' { c4 }\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert!(!result.contains("ly:gulp-file"));
     }
 
     #[test]
