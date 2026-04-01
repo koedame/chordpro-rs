@@ -23,6 +23,12 @@
 //! assert!(svg.contains("Am"));
 //! ```
 
+/// Minimum number of strings for a valid chord diagram.
+const MIN_STRINGS: usize = 2;
+
+/// Maximum number of strings for a valid chord diagram (covers 12-string guitar).
+const MAX_STRINGS: usize = 12;
+
 /// Data needed to render a chord diagram.
 #[derive(Debug, Clone)]
 pub struct DiagramData {
@@ -33,12 +39,17 @@ pub struct DiagramData {
     /// When present, diagram titles should show this instead of `name`.
     pub display_name: Option<String>,
     /// Number of strings (e.g., 6 for guitar, 4 for ukulele).
+    ///
+    /// Valid range: 2–12 (enforced by [`from_raw`](Self::from_raw)).
     pub strings: usize,
     /// Number of frets shown in the diagram.
     pub frets_shown: usize,
     /// The base fret (1 = open position, >1 shows fret number).
     pub base_fret: u32,
     /// Fret values for each string: -1 = muted (x), 0 = open, 1+ = fret number.
+    ///
+    /// Positive values are clamped to `frets_shown` to prevent rendering
+    /// outside the visible grid.
     pub frets: Vec<i32>,
     /// Optional finger numbers for each string (0 = none).
     pub fingers: Vec<u8>,
@@ -73,6 +84,13 @@ impl DiagramData {
     ///
     /// `num_strings` sets a minimum string count; the actual count will be
     /// the maximum of this value and the number of fret values parsed.
+    ///
+    /// Returns `None` if:
+    /// - No fret values are provided
+    /// - The resulting string count is outside the valid range (2–12)
+    ///
+    /// Positive fret values exceeding `frets_shown` (5) are clamped to
+    /// prevent rendering outside the visible grid.
     #[must_use]
     pub fn from_raw(name: &str, raw: &str, num_strings: usize) -> Option<Self> {
         let mut base_fret: u32 = 1;
@@ -119,11 +137,33 @@ impl DiagramData {
             return None;
         }
 
+        let strings = num_strings.max(frets.len());
+
+        // Validate string count is within reasonable range.
+        if !(MIN_STRINGS..=MAX_STRINGS).contains(&strings) {
+            return None;
+        }
+
+        let frets_shown: usize = 5;
+
+        // Clamp positive fret values to the visible range to prevent
+        // rendering dots outside the fret grid.
+        let frets: Vec<i32> = frets
+            .into_iter()
+            .map(|f| {
+                if f > frets_shown as i32 {
+                    frets_shown as i32
+                } else {
+                    f
+                }
+            })
+            .collect();
+
         Some(Self {
             name: name.to_string(),
             display_name: None,
-            strings: num_strings.max(frets.len()),
-            frets_shown: 5,
+            strings,
+            frets_shown,
             base_fret,
             frets,
             fingers,
@@ -393,5 +433,146 @@ mod tests {
     fn test_from_raw_display_name_is_none() {
         let data = DiagramData::from_raw_infer("Am", "base-fret 1 frets x 0 2 2 1 0").unwrap();
         assert!(data.display_name.is_none());
+    }
+
+    // --- num_strings validation (#467) ---
+
+    #[test]
+    fn test_from_raw_zero_strings_rejected() {
+        // Single fret value -> 1 string, below MIN_STRINGS
+        assert!(DiagramData::from_raw("X", "frets 0", 0).is_none());
+    }
+
+    #[test]
+    fn test_from_raw_one_string_rejected() {
+        assert!(DiagramData::from_raw("X", "frets 0", 1).is_none());
+    }
+
+    #[test]
+    fn test_from_raw_two_strings_accepted() {
+        let data = DiagramData::from_raw("X", "frets 0 0", 0).unwrap();
+        assert_eq!(data.strings, 2);
+    }
+
+    #[test]
+    fn test_from_raw_twelve_strings_accepted() {
+        let data = DiagramData::from_raw("X", "frets 0 0 0 0 0 0 0 0 0 0 0 0", 0).unwrap();
+        assert_eq!(data.strings, 12);
+    }
+
+    #[test]
+    fn test_from_raw_thirteen_strings_rejected() {
+        assert!(DiagramData::from_raw("X", "frets 0 0 0 0 0 0 0 0 0 0 0 0 0", 0,).is_none());
+    }
+
+    #[test]
+    fn test_from_raw_num_strings_forces_too_many() {
+        // 6 frets but num_strings=13 -> rejected
+        assert!(DiagramData::from_raw("X", "frets 0 0 0 0 0 0", 13).is_none());
+    }
+
+    // --- Fret value clamping (#469) ---
+
+    #[test]
+    fn test_fret_exceeding_range_clamped() {
+        let data = DiagramData::from_raw("X", "base-fret 1 frets 0 12 0 0 0 0", 6).unwrap();
+        // Fret 12 should be clamped to frets_shown (5)
+        assert_eq!(data.frets[1], 5);
+    }
+
+    #[test]
+    fn test_fret_at_boundary_not_clamped() {
+        let data = DiagramData::from_raw("X", "base-fret 1 frets 0 5 0 0 0 0", 6).unwrap();
+        assert_eq!(data.frets[1], 5);
+    }
+
+    #[test]
+    fn test_fret_within_range_unchanged() {
+        let data = DiagramData::from_raw("X", "base-fret 1 frets 0 3 0 0 0 0", 6).unwrap();
+        assert_eq!(data.frets[1], 3);
+    }
+
+    #[test]
+    fn test_muted_and_open_not_clamped() {
+        let data = DiagramData::from_raw("X", "frets x 0 1 2 3 4", 6).unwrap();
+        assert_eq!(data.frets[0], -1); // muted
+        assert_eq!(data.frets[1], 0); // open
+    }
+
+    #[test]
+    fn test_extreme_fret_value_clamped() {
+        let data = DiagramData::from_raw("X", "frets 1000 0 0 0 0 0", 6).unwrap();
+        assert_eq!(data.frets[0], 5);
+    }
+
+    // --- Edge case tests (#472) ---
+
+    #[test]
+    fn test_seven_string_instrument() {
+        let data = DiagramData::from_raw("X", "frets 0 0 0 0 0 0 0", 7).unwrap();
+        assert_eq!(data.strings, 7);
+        let svg = render_svg(&data);
+        assert!(svg.contains("<svg"));
+    }
+
+    #[test]
+    fn test_eight_string_instrument() {
+        let data = DiagramData::from_raw("X", "frets 0 0 0 0 0 0 0 0", 8).unwrap();
+        assert_eq!(data.strings, 8);
+        let svg = render_svg(&data);
+        assert!(svg.contains("<svg"));
+    }
+
+    #[test]
+    fn test_twelve_string_renders_without_panic() {
+        let data = DiagramData::from_raw("G12", "frets 0 0 0 0 0 0 0 0 0 0 0 0", 12).unwrap();
+        let svg = render_svg(&data);
+        assert!(svg.contains("G12"));
+    }
+
+    #[test]
+    fn test_fewer_fingers_than_frets() {
+        let data = DiagramData::from_raw("Am", "frets x 0 2 2 1 0 fingers 0 0 2", 6).unwrap();
+        assert_eq!(data.frets.len(), 6);
+        assert_eq!(data.fingers.len(), 3);
+        // Should render without panic
+        let svg = render_svg(&data);
+        assert!(svg.contains("<svg"));
+    }
+
+    #[test]
+    fn test_empty_frets_rejected() {
+        assert!(DiagramData::from_raw("X", "base-fret 1", 6).is_none());
+    }
+
+    #[test]
+    fn test_non_numeric_fret_treated_as_muted() {
+        let data = DiagramData::from_raw("X", "frets abc 0 0 0 0 0", 6).unwrap();
+        // Non-numeric values parsed as -1 (same as 'x')
+        assert_eq!(data.frets[0], -1);
+    }
+
+    #[test]
+    fn test_extreme_base_fret() {
+        let data = DiagramData::from_raw("X", "base-fret 1000 frets 1 2 3 4 5 6", 6).unwrap();
+        assert_eq!(data.base_fret, 1000);
+        let svg = render_svg(&data);
+        assert!(svg.contains("1000fr"));
+    }
+
+    #[test]
+    fn test_all_muted_strings() {
+        let data = DiagramData::from_raw("X", "frets x x x x x x", 6).unwrap();
+        assert!(data.frets.iter().all(|&f| f == -1));
+        let svg = render_svg(&data);
+        assert!(svg.contains("<svg"));
+    }
+
+    #[test]
+    fn test_all_open_strings() {
+        let data = DiagramData::from_raw("Open", "frets 0 0 0 0 0 0", 6).unwrap();
+        assert!(data.frets.iter().all(|&f| f == 0));
+        let svg = render_svg(&data);
+        assert!(svg.contains("<svg"));
     }
 }
