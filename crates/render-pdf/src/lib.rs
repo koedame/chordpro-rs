@@ -3956,7 +3956,9 @@ mod jpeg_tests {
 
     #[test]
     fn test_custom_margins_from_config() {
-        let config = Config::defaults().with_define("pdf.margins.top=100");
+        let config = Config::defaults()
+            .with_define("pdf.margins.top=100")
+            .unwrap();
         let doc = PdfDocument::from_config(&config);
         assert!((doc.margin_top - 100.0).abs() < 0.01);
         // Other margins should keep defaults.
@@ -3967,21 +3969,25 @@ mod jpeg_tests {
 
     #[test]
     fn test_negative_margin_falls_back_to_default() {
-        let config = Config::defaults().with_define("pdf.margins.top=-100");
+        let config = Config::defaults()
+            .with_define("pdf.margins.top=-100")
+            .unwrap();
         let doc = PdfDocument::from_config(&config);
         assert!((doc.margin_top - MARGIN_TOP).abs() < 0.01);
     }
 
     #[test]
     fn test_zero_margin_is_valid() {
-        let config = Config::defaults().with_define("pdf.margins.top=0");
+        let config = Config::defaults().with_define("pdf.margins.top=0").unwrap();
         let doc = PdfDocument::from_config(&config);
         assert!(doc.margin_top.abs() < 0.01);
     }
 
     #[test]
     fn test_excessive_margin_falls_back_to_default() {
-        let config = Config::defaults().with_define("pdf.margins.left=1000");
+        let config = Config::defaults()
+            .with_define("pdf.margins.left=1000")
+            .unwrap();
         let doc = PdfDocument::from_config(&config);
         assert!((doc.margin_left - MARGIN_LEFT).abs() < 0.01);
     }
@@ -3990,7 +3996,9 @@ mod jpeg_tests {
     fn test_custom_margins_affect_output() {
         let song = chordpro_core::parse("{title: Test}\nHello").unwrap();
         let default_pdf = render_song(&song);
-        let config = Config::defaults().with_define("pdf.margins.top=200");
+        let config = Config::defaults()
+            .with_define("pdf.margins.top=200")
+            .unwrap();
         let custom_pdf = render_song_with_transpose(&song, 0, &config);
         // Different margins produce different PDF output.
         assert_ne!(default_pdf, custom_pdf);

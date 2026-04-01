@@ -68,6 +68,29 @@ impl std::error::Error for ConfigError {
     }
 }
 
+/// An error from applying a `--define key=value` override.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DefineError {
+    /// The input does not contain an `=` separator.
+    MissingEquals,
+    /// The key (before `=`) is empty or whitespace-only.
+    EmptyKey,
+    /// The dotted key exceeds the maximum nesting depth.
+    ExcessiveDepth,
+}
+
+impl fmt::Display for DefineError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingEquals => write!(f, "invalid --define syntax (expected key=value)"),
+            Self::EmptyKey => write!(f, "key must not be empty"),
+            Self::ExcessiveDepth => write!(f, "key exceeds maximum nesting depth"),
+        }
+    }
+}
+
+impl std::error::Error for DefineError {}
+
 // ---------------------------------------------------------------------------
 // Deep merge
 // ---------------------------------------------------------------------------
@@ -100,6 +123,16 @@ pub(crate) fn deep_merge(base: Value, overlay: Value) -> Value {
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
+
+/// Result of resolving a configuration name (preset or file path),
+/// including any non-fatal warnings from RRJSON parsing.
+#[derive(Debug)]
+pub struct ConfigResolveResult {
+    /// The resolved configuration.
+    pub config: Config,
+    /// Non-fatal warnings (e.g., unsupported RRJSON include directives).
+    pub warnings: Vec<String>,
+}
 
 /// Result of loading configuration, including any non-fatal warnings.
 #[derive(Debug)]
@@ -220,19 +253,26 @@ impl Config {
     ///
     /// Returns [`ConfigError::Io`] if the file cannot be read, or
     /// [`ConfigError::Parse`] if the content is malformed.
-    pub fn resolve(name: &str) -> Result<Self, ConfigError> {
+    pub fn resolve(name: &str) -> Result<ConfigResolveResult, ConfigError> {
         // Try preset first
         if let Some(preset) = Self::preset(name) {
-            return Ok(preset);
+            return Ok(ConfigResolveResult {
+                config: preset,
+                warnings: Vec::new(),
+            });
         }
         // Try as a file path — apply the same security checks as hierarchical config
         let text = read_config_file(Path::new(name)).map_err(|e| ConfigError::Io {
             path: name.to_string(),
             source: e,
         })?;
-        Self::parse(&text).map_err(|e| ConfigError::Parse {
+        let result = rrjson::parse_rrjson_with_warnings(&text).map_err(|e| ConfigError::Parse {
             path: name.to_string(),
             source: e,
+        })?;
+        Ok(ConfigResolveResult {
+            config: Self { root: result.value },
+            warnings: result.warnings,
         })
     }
 
@@ -242,15 +282,19 @@ impl Config {
     /// The value is parsed as RRJSON (so `20` becomes a number, `"hello"`
     /// becomes a string, etc.). If the value cannot be parsed, it is
     /// treated as a plain string.
-    #[must_use]
-    pub fn with_define(self, define: &str) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DefineError`] if the input has no `=`, the key is empty,
+    /// or the dotted key exceeds the maximum nesting depth.
+    pub fn with_define(self, define: &str) -> Result<Self, DefineError> {
         let Some(eq_pos) = define.find('=') else {
-            return self;
+            return Err(DefineError::MissingEquals);
         };
         let key = define[..eq_pos].trim();
         let raw_value = define[eq_pos + 1..].trim();
         if key.is_empty() {
-            return self;
+            return Err(DefineError::EmptyKey);
         }
 
         // Try to parse the value as a JSON value; fall back to string.
@@ -263,13 +307,12 @@ impl Config {
             .unwrap_or_else(|| Value::String(raw_value.to_string()));
 
         // Build a nested object from the dot-separated key.
-        // If the key exceeds the nesting depth limit, ignore the define.
         let Some(overlay) = build_nested_value(key, value) else {
-            return self;
+            return Err(DefineError::ExcessiveDepth);
         };
-        Config {
+        Ok(Config {
             root: deep_merge(self.root, overlay),
-        }
+        })
     }
 
     /// Apply song-level config overrides from `{+config.KEY: VALUE}` directives.
@@ -297,7 +340,10 @@ impl Config {
                 ));
                 continue;
             }
-            config = config.with_define(&format!("{key}={value}"));
+            // Song overrides always have well-formed key=value; unwrap is safe.
+            config = config
+                .with_define(&format!("{key}={value}"))
+                .expect("song override has valid key=value");
         }
         config
     }
@@ -390,7 +436,10 @@ impl Config {
             .unwrap_or(false);
 
         if project_abc2svg && !trusted_abc2svg {
-            config = config.with_define("delegates.abc2svg=false");
+            // Hardcoded key=value — unwrap is safe.
+            config = config
+                .with_define("delegates.abc2svg=false")
+                .expect("hardcoded define is valid");
             warnings.push(
                 "delegates.abc2svg was enabled by a project-level config file and has been \
                  disabled for security; use --define delegates.abc2svg=true to enable"
@@ -398,7 +447,10 @@ impl Config {
             );
         }
         if project_lilypond && !trusted_lilypond {
-            config = config.with_define("delegates.lilypond=false");
+            // Hardcoded key=value — unwrap is safe.
+            config = config
+                .with_define("delegates.lilypond=false")
+                .expect("hardcoded define is valid");
             warnings.push(
                 "delegates.lilypond was enabled by a project-level config file and has been \
                  disabled for security; use --define delegates.lilypond=true to enable"
@@ -810,25 +862,27 @@ mod tests {
 
     #[test]
     fn test_define_simple_number() {
-        let config = Config::empty().with_define("key=42");
+        let config = Config::empty().with_define("key=42").unwrap();
         assert_eq!(config.get("key"), &Value::Number(42.0));
     }
 
     #[test]
     fn test_define_string() {
-        let config = Config::empty().with_define(r#"key="hello""#);
+        let config = Config::empty().with_define(r#"key="hello""#).unwrap();
         assert_eq!(config.get("key"), &Value::String("hello".to_string()));
     }
 
     #[test]
     fn test_define_dotted_key() {
-        let config = Config::empty().with_define("pdf.chorus.indent=20");
+        let config = Config::empty().with_define("pdf.chorus.indent=20").unwrap();
         assert_eq!(config.get_path("pdf.chorus.indent"), &Value::Number(20.0));
     }
 
     #[test]
     fn test_define_overrides_existing() {
-        let config = Config::defaults().with_define("pdf.margins.top=100");
+        let config = Config::defaults()
+            .with_define("pdf.margins.top=100")
+            .unwrap();
         assert_eq!(config.get_path("pdf.margins.top"), &Value::Number(100.0));
         // Other margins should be unchanged
         assert_eq!(config.get_path("pdf.margins.left"), &Value::Number(56.0));
@@ -836,41 +890,55 @@ mod tests {
 
     #[test]
     fn test_define_bool() {
-        let config = Config::empty().with_define("flag=true");
+        let config = Config::empty().with_define("flag=true").unwrap();
         assert_eq!(config.get("flag"), &Value::Bool(true));
     }
 
     #[test]
     fn test_define_unquoted_string_fallback() {
         // Values that aren't valid JSON fall back to string
-        let config = Config::empty().with_define("key=hello world");
+        let config = Config::empty().with_define("key=hello world").unwrap();
         assert_eq!(config.get("key"), &Value::String("hello world".to_string()));
     }
 
     #[test]
-    fn test_define_no_equals_ignored() {
-        let config = Config::empty().with_define("noequalssign");
-        assert!(config.get("noequalssign").is_null());
+    fn test_define_no_equals_returns_error() {
+        let result = Config::empty().with_define("noequalssign");
+        assert_eq!(result.unwrap_err(), DefineError::MissingEquals);
+    }
+
+    #[test]
+    fn test_define_empty_key_returns_error() {
+        let result = Config::empty().with_define("=value");
+        assert_eq!(result.unwrap_err(), DefineError::EmptyKey);
+    }
+
+    #[test]
+    fn test_define_whitespace_key_returns_error() {
+        let result = Config::empty().with_define("  =value");
+        assert_eq!(result.unwrap_err(), DefineError::EmptyKey);
     }
 
     #[test]
     fn test_multiple_defines() {
         let config = Config::empty()
             .with_define("a=1")
+            .unwrap()
             .with_define("b=2")
-            .with_define("a=3");
+            .unwrap()
+            .with_define("a=3")
+            .unwrap();
         assert_eq!(config.get("a"), &Value::Number(3.0));
         assert_eq!(config.get("b"), &Value::Number(2.0));
     }
 
     #[test]
     fn test_define_excessive_depth_rejected() {
-        // A dotted key with more than MAX_DEFINE_DEPTH segments should be ignored.
+        // A dotted key with more than MAX_DEFINE_DEPTH segments should be rejected.
         let segments: Vec<String> = (0..=MAX_DEFINE_DEPTH).map(|i| format!("k{i}")).collect();
         let deep_key = segments.join(".");
-        let config = Config::empty().with_define(&format!("{deep_key}=1"));
-        // The define should have been silently ignored
-        assert!(config.get("k0").is_null());
+        let result = Config::empty().with_define(&format!("{deep_key}=1"));
+        assert_eq!(result.unwrap_err(), DefineError::ExcessiveDepth);
     }
 
     #[test]
@@ -878,7 +946,7 @@ mod tests {
         // Exactly MAX_DEFINE_DEPTH segments should be accepted.
         let segments: Vec<String> = (0..MAX_DEFINE_DEPTH).map(|i| format!("k{i}")).collect();
         let key = segments.join(".");
-        let config = Config::empty().with_define(&format!("{key}=42"));
+        let config = Config::empty().with_define(&format!("{key}=42")).unwrap();
         assert!(!config.get("k0").is_null());
     }
 
@@ -928,9 +996,10 @@ mod tests {
 
     #[test]
     fn test_resolve_preset() {
-        let config = Config::resolve("guitar").expect("guitar should resolve");
+        let result = Config::resolve("guitar").expect("guitar should resolve");
+        assert!(result.warnings.is_empty());
         assert_eq!(
-            config.get_path("instrument.type"),
+            result.config.get_path("instrument.type"),
             &Value::String("guitar".to_string())
         );
     }
@@ -961,7 +1030,7 @@ mod tests {
 
     #[test]
     fn test_define_empty_value() {
-        let config = Config::empty().with_define("key=");
+        let config = Config::empty().with_define("key=").unwrap();
         assert_eq!(config.get("key"), &Value::String(String::new()));
     }
 
@@ -1096,8 +1165,8 @@ mod tests {
         let file_path = dir.path().join("custom.json");
         std::fs::write(&file_path, r#"{ "custom": true }"#).unwrap();
 
-        let config = Config::resolve(file_path.to_str().unwrap()).unwrap();
-        assert_eq!(config.get("custom"), &Value::Bool(true));
+        let result = Config::resolve(file_path.to_str().unwrap()).unwrap();
+        assert_eq!(result.config.get("custom"), &Value::Bool(true));
     }
 
     // -- File size / symlink guard tests --------------------------------------

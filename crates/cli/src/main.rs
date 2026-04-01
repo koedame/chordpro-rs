@@ -82,7 +82,12 @@ fn main() -> ExitCode {
     // Apply --config files/presets in order (preset names resolved first)
     for config_name in &cli.configs {
         match chordpro_core::config::Config::resolve(config_name) {
-            Ok(overlay) => config = config.merge(overlay),
+            Ok(result) => {
+                for warning in &result.warnings {
+                    eprintln!("warning: {config_name}: {warning}");
+                }
+                config = config.merge(result.config);
+            }
             Err(e) => {
                 eprintln!("error: {e}");
                 return ExitCode::FAILURE;
@@ -94,25 +99,25 @@ fn main() -> ExitCode {
     // This runs after user configs but before --define, so explicit
     // --define delegates.abc2svg=false can still override.
     if chordpro_core::external_tool::has_abc2svg() {
-        config = config.with_define("delegates.abc2svg=true");
+        // Hardcoded key=value — unwrap is safe.
+        config = config
+            .with_define("delegates.abc2svg=true")
+            .expect("hardcoded define is valid");
     }
     if chordpro_core::external_tool::has_lilypond() {
-        config = config.with_define("delegates.lilypond=true");
+        // Hardcoded key=value — unwrap is safe.
+        config = config
+            .with_define("delegates.lilypond=true")
+            .expect("hardcoded define is valid");
     }
 
     // Apply --define overrides (highest precedence)
     for define in &cli.defines {
-        match define.split_once('=') {
-            None => {
-                eprintln!("error: invalid --define syntax: {define} (expected key=value)");
+        match config.with_define(define) {
+            Ok(updated) => config = updated,
+            Err(e) => {
+                eprintln!("error: invalid --define: {define} ({e})");
                 return ExitCode::FAILURE;
-            }
-            Some((key, _)) if key.trim().is_empty() => {
-                eprintln!("error: invalid --define syntax: {define} (key must not be empty)");
-                return ExitCode::FAILURE;
-            }
-            Some(_) => {
-                config = config.with_define(define);
             }
         }
     }

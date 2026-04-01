@@ -2173,8 +2173,9 @@ Verse text\n\
         }
         let input = "{start_of_abc}\nX:1\nT:Test\nK:C\n{end_of_abc}";
         let song = chordpro_core::parse(input).unwrap();
-        let config =
-            chordpro_core::config::Config::defaults().with_define("delegates.abc2svg=true");
+        let config = chordpro_core::config::Config::defaults()
+            .with_define("delegates.abc2svg=true")
+            .unwrap();
         let html = render_song_with_transpose(&song, 0, &config);
         assert!(html.contains("<section class=\"abc\">"));
         assert!(html.contains("<pre>"));
@@ -2189,8 +2190,9 @@ Verse text\n\
         }
         let input = "{start_of_abc: Melody}\nX:1\n{end_of_abc}";
         let song = chordpro_core::parse(input).unwrap();
-        let config =
-            chordpro_core::config::Config::defaults().with_define("delegates.abc2svg=true");
+        let config = chordpro_core::config::Config::defaults()
+            .with_define("delegates.abc2svg=true")
+            .unwrap();
         let html = render_song_with_transpose(&song, 0, &config);
         assert!(html.contains("ABC: Melody"));
         assert!(html.contains("<pre>"));
@@ -2202,8 +2204,9 @@ Verse text\n\
         // Requires abc2svg installed. Run with: cargo test -- --ignored
         let input = "{start_of_abc}\nX:1\nT:Test\nM:4/4\nK:C\nCDEF|GABc|\n{end_of_abc}";
         let song = chordpro_core::parse(input).unwrap();
-        let config =
-            chordpro_core::config::Config::defaults().with_define("delegates.abc2svg=true");
+        let config = chordpro_core::config::Config::defaults()
+            .with_define("delegates.abc2svg=true")
+            .unwrap();
         let html = render_song_with_transpose(&song, 0, &config);
         assert!(html.contains("<section class=\"abc\">"));
         assert!(
@@ -2231,8 +2234,9 @@ Verse text\n\
         }
         let input = "{start_of_ly}\n\\relative c' { c4 }\n{end_of_ly}";
         let song = chordpro_core::parse(input).unwrap();
-        let config =
-            chordpro_core::config::Config::defaults().with_define("delegates.lilypond=true");
+        let config = chordpro_core::config::Config::defaults()
+            .with_define("delegates.lilypond=true")
+            .unwrap();
         let html = render_song_with_transpose(&song, 0, &config);
         assert!(html.contains("<section class=\"ly\">"));
         assert!(html.contains("<pre>"));
@@ -2245,8 +2249,9 @@ Verse text\n\
         // Requires lilypond installed. Run with: cargo test -- --ignored
         let input = "{start_of_ly}\n\\relative c' { c4 d e f | g2 g | }\n{end_of_ly}";
         let song = chordpro_core::parse(input).unwrap();
-        let config =
-            chordpro_core::config::Config::defaults().with_define("delegates.lilypond=true");
+        let config = chordpro_core::config::Config::defaults()
+            .with_define("delegates.lilypond=true")
+            .unwrap();
         let html = render_song_with_transpose(&song, 0, &config);
         assert!(html.contains("<section class=\"ly\">"));
         assert!(
