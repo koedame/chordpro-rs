@@ -75,6 +75,8 @@ pub enum DefineError {
     MissingEquals,
     /// The key (before `=`) is empty or whitespace-only.
     EmptyKey,
+    /// The dotted key contains an empty segment (e.g., `"a..b"`, `".a"`, `"a."`).
+    EmptySegment,
     /// The dotted key exceeds the maximum nesting depth.
     ExcessiveDepth,
 }
@@ -84,6 +86,7 @@ impl fmt::Display for DefineError {
         match self {
             Self::MissingEquals => write!(f, "invalid --define syntax (expected key=value)"),
             Self::EmptyKey => write!(f, "key must not be empty"),
+            Self::EmptySegment => write!(f, "key contains empty segment"),
             Self::ExcessiveDepth => write!(f, "key exceeds maximum nesting depth"),
         }
     }
@@ -294,6 +297,9 @@ impl Config {
         let raw_value = define[eq_pos + 1..].trim();
         if key.is_empty() {
             return Err(DefineError::EmptyKey);
+        }
+        if key.split('.').any(|s| s.is_empty()) {
+            return Err(DefineError::EmptySegment);
         }
 
         // Try to parse the value as a JSON value; fall back to string.
@@ -971,6 +977,24 @@ mod tests {
         let deep_key = segments.join(".");
         let result = Config::empty().with_define(&format!("{deep_key}=1"));
         assert_eq!(result.unwrap_err(), DefineError::ExcessiveDepth);
+    }
+
+    #[test]
+    fn test_define_double_dot_rejected() {
+        let result = Config::empty().with_define("a..b=1");
+        assert_eq!(result.unwrap_err(), DefineError::EmptySegment);
+    }
+
+    #[test]
+    fn test_define_leading_dot_rejected() {
+        let result = Config::empty().with_define(".a=1");
+        assert_eq!(result.unwrap_err(), DefineError::EmptySegment);
+    }
+
+    #[test]
+    fn test_define_trailing_dot_rejected() {
+        let result = Config::empty().with_define("a.=1");
+        assert_eq!(result.unwrap_err(), DefineError::EmptySegment);
     }
 
     #[test]
