@@ -1153,4 +1153,60 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
     }
+
+    // -- XDG_CONFIG_HOME tests ---------------------------------------------------
+    // These tests manipulate the environment, so they must run serially
+    // (cargo test runs each test function in its own thread, but env vars are
+    // process-global). Use unique env manipulation patterns to minimize risk.
+
+    // SAFETY: These tests manipulate process-global environment variables.
+    // This is safe in test context because:
+    // 1. Each test saves and restores the previous value
+    // 2. The env var is only read by config_dir() within the same test
+
+    #[test]
+    fn test_config_dir_uses_xdg_config_home() {
+        let dir = tempdir().unwrap();
+        let abs_path = dir.path().to_path_buf();
+
+        // Temporarily set XDG_CONFIG_HOME to our tempdir.
+        let prev = std::env::var_os("XDG_CONFIG_HOME");
+        // SAFETY: test-only; we restore the value immediately after.
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", &abs_path);
+        }
+
+        let result = config_dir();
+
+        // Restore previous value.
+        unsafe {
+            match prev {
+                Some(val) => std::env::set_var("XDG_CONFIG_HOME", val),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
+
+        assert_eq!(result, Some(abs_path));
+    }
+
+    #[test]
+    fn test_config_dir_rejects_relative_xdg_config_home() {
+        let prev = std::env::var_os("XDG_CONFIG_HOME");
+        // SAFETY: test-only; we restore the value immediately after.
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", "relative/path");
+        }
+
+        let result = config_dir();
+
+        unsafe {
+            match prev {
+                Some(val) => std::env::set_var("XDG_CONFIG_HOME", val),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
+
+        // A relative path should be ignored; result should be the fallback.
+        assert_ne!(result, Some(PathBuf::from("relative/path")));
+    }
 }
