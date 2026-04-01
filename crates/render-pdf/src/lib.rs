@@ -1423,27 +1423,42 @@ impl PdfDocument {
         }
     }
 
+    /// Maximum allowed margin value in points. A4 short side is 595pt, so
+    /// margins above half that are unreasonable.
+    const MAX_MARGIN: f32 = 297.0;
+
+    /// Validate and clamp a margin value. Returns the default if the value is
+    /// negative, non-finite, or exceeds `MAX_MARGIN`.
+    fn validate_margin(value: f32, default: f32, name: &str) -> f32 {
+        if !value.is_finite() || !(0.0..=Self::MAX_MARGIN).contains(&value) {
+            eprintln!("warning: invalid pdf.margins.{name} value {value}, using default {default}");
+            default
+        } else {
+            value
+        }
+    }
+
     /// Create a new document reading margins from config.
     fn from_config(config: &Config) -> Self {
         let top = config
             .get_path("pdf.margins.top")
             .as_f64()
-            .map(|v| v as f32)
+            .map(|v| Self::validate_margin(v as f32, MARGIN_TOP, "top"))
             .unwrap_or(MARGIN_TOP);
         let bottom = config
             .get_path("pdf.margins.bottom")
             .as_f64()
-            .map(|v| v as f32)
+            .map(|v| Self::validate_margin(v as f32, MARGIN_BOTTOM, "bottom"))
             .unwrap_or(MARGIN_BOTTOM);
         let left = config
             .get_path("pdf.margins.left")
             .as_f64()
-            .map(|v| v as f32)
+            .map(|v| Self::validate_margin(v as f32, MARGIN_LEFT, "left"))
             .unwrap_or(MARGIN_LEFT);
         let right = config
             .get_path("pdf.margins.right")
             .as_f64()
-            .map(|v| v as f32)
+            .map(|v| Self::validate_margin(v as f32, MARGIN_RIGHT, "right"))
             .unwrap_or(MARGIN_RIGHT);
         Self::with_margins(top, bottom, left, right)
     }
@@ -3754,6 +3769,27 @@ mod jpeg_tests {
         assert!((doc.margin_bottom - MARGIN_BOTTOM).abs() < 0.01);
         assert!((doc.margin_left - MARGIN_LEFT).abs() < 0.01);
         assert!((doc.margin_right - MARGIN_RIGHT).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_negative_margin_falls_back_to_default() {
+        let config = Config::defaults().with_define("pdf.margins.top=-100");
+        let doc = PdfDocument::from_config(&config);
+        assert!((doc.margin_top - MARGIN_TOP).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_zero_margin_is_valid() {
+        let config = Config::defaults().with_define("pdf.margins.top=0");
+        let doc = PdfDocument::from_config(&config);
+        assert!(doc.margin_top.abs() < 0.01);
+    }
+
+    #[test]
+    fn test_excessive_margin_falls_back_to_default() {
+        let config = Config::defaults().with_define("pdf.margins.left=1000");
+        let doc = PdfDocument::from_config(&config);
+        assert!((doc.margin_left - MARGIN_LEFT).abs() < 0.01);
     }
 
     #[test]
