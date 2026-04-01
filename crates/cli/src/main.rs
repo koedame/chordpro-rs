@@ -173,25 +173,41 @@ fn main() -> ExitCode {
     let combined_bytes;
 
     if is_binary {
-        combined_bytes = chordpro_render_pdf::render_songs_with_transpose(
+        let result = chordpro_render_pdf::render_songs_with_warnings(
             &all_songs,
             effective_transpose,
             &config,
         );
+        for w in &result.warnings {
+            eprintln!("warning: {w}");
+        }
+        combined_bytes = result.output;
         combined_text = String::new();
     } else {
         combined_bytes = Vec::new();
         combined_text = match cli.format {
-            Format::Text => chordpro_render_text::render_songs_with_transpose(
-                &all_songs,
-                effective_transpose,
-                &config,
-            ),
-            Format::Html => chordpro_render_html::render_songs_with_transpose(
-                &all_songs,
-                effective_transpose,
-                &config,
-            ),
+            Format::Text => {
+                let result = chordpro_render_text::render_songs_with_warnings(
+                    &all_songs,
+                    effective_transpose,
+                    &config,
+                );
+                for w in &result.warnings {
+                    eprintln!("warning: {w}");
+                }
+                result.output
+            }
+            Format::Html => {
+                let result = chordpro_render_html::render_songs_with_warnings(
+                    &all_songs,
+                    effective_transpose,
+                    &config,
+                );
+                for w in &result.warnings {
+                    eprintln!("warning: {w}");
+                }
+                result.output
+            }
             Format::Pdf => unreachable!(),
         };
     }

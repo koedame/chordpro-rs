@@ -10,6 +10,7 @@
 use chordpro_core::ast::{CommentStyle, DirectiveKind, ImageAttributes, Line, LyricsLine, Song};
 use chordpro_core::config::Config;
 use chordpro_core::inline_markup::TextSpan;
+use chordpro_core::render_result::RenderResult;
 use chordpro_core::transpose::transpose_chord;
 
 use flate2::Compression;
@@ -138,11 +139,32 @@ pub fn render_song(song: &Song) -> Vec<u8> {
 ///
 /// The `cli_transpose` parameter is added to any in-file `{transpose}` directive
 /// values, allowing the CLI `--transpose` flag to combine with in-file directives.
+///
+/// Warnings are printed to stderr via `eprintln!`. Use
+/// [`render_song_with_warnings`] to capture them programmatically.
 #[must_use]
 pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Config) -> Vec<u8> {
-    let mut doc = PdfDocument::from_config(config);
-    render_song_into_doc(song, cli_transpose, &mut doc);
-    doc.build_pdf()
+    let result = render_song_with_warnings(song, cli_transpose, config);
+    for w in &result.warnings {
+        eprintln!("warning: {w}");
+    }
+    result.output
+}
+
+/// Render a [`Song`] AST to PDF bytes, returning warnings programmatically.
+///
+/// This is the structured variant of [`render_song_with_transpose`]. Instead
+/// of printing warnings to stderr, they are collected into
+/// [`RenderResult::warnings`].
+pub fn render_song_with_warnings(
+    song: &Song,
+    cli_transpose: i8,
+    config: &Config,
+) -> RenderResult<Vec<u8>> {
+    let mut warnings = Vec::new();
+    let mut doc = PdfDocument::from_config_with_warnings(config, &mut warnings);
+    render_song_into_doc(song, cli_transpose, &mut doc, &mut warnings);
+    RenderResult::with_warnings(doc.build_pdf(), warnings)
 }
 
 /// Render multiple [`Song`]s into a single multi-page PDF document.
@@ -158,14 +180,38 @@ pub fn render_songs(songs: &[Song]) -> Vec<u8> {
 /// Each song starts on a new page (except the first). When there are two or
 /// more songs, a Table of Contents page is prepended with song titles and
 /// page numbers.
+///
+/// Warnings are printed to stderr via `eprintln!`. Use
+/// [`render_songs_with_warnings`] to capture them programmatically.
 #[must_use]
 pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &Config) -> Vec<u8> {
+    let result = render_songs_with_warnings(songs, cli_transpose, config);
+    for w in &result.warnings {
+        eprintln!("warning: {w}");
+    }
+    result.output
+}
+
+/// Render multiple [`Song`]s into a single PDF, returning warnings programmatically.
+///
+/// This is the structured variant of [`render_songs_with_transpose`]. Instead
+/// of printing warnings to stderr, they are collected into
+/// [`RenderResult::warnings`].
+pub fn render_songs_with_warnings(
+    songs: &[Song],
+    cli_transpose: i8,
+    config: &Config,
+) -> RenderResult<Vec<u8>> {
+    let mut warnings = Vec::new();
+
     if songs.len() == 1 {
-        return render_song_with_transpose(&songs[0], cli_transpose, config);
+        let mut doc = PdfDocument::from_config_with_warnings(config, &mut warnings);
+        render_song_into_doc(&songs[0], cli_transpose, &mut doc, &mut warnings);
+        return RenderResult::with_warnings(doc.build_pdf(), warnings);
     }
 
     // Phase 1: render all songs and record which page each starts on.
-    let mut body_doc = PdfDocument::from_config(config);
+    let mut body_doc = PdfDocument::from_config_with_warnings(config, &mut warnings);
     let mut toc_entries: Vec<(String, usize)> = Vec::new(); // (title, page_index)
 
     for (i, song) in songs.iter().enumerate() {
@@ -180,11 +226,11 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &C
             .unwrap_or("Untitled")
             .to_string();
         toc_entries.push((title, start_page));
-        render_song_into_doc(song, cli_transpose, &mut body_doc);
+        render_song_into_doc(song, cli_transpose, &mut body_doc, &mut warnings);
     }
 
     // Phase 2: generate ToC pages.
-    let mut toc_doc = PdfDocument::from_config(config);
+    let mut toc_doc = PdfDocument::from_config_with_warnings(config, &mut warnings);
     toc_doc.text("Table of Contents", Font::HelveticaBold, TITLE_SIZE);
     toc_doc.newline(TITLE_SIZE + LINE_GAP * 2.0);
 
@@ -202,7 +248,7 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &C
     };
 
     // Phase 3: rebuild ToC with correct page numbers (offset by toc_page_count).
-    let mut toc_doc = PdfDocument::from_config(config);
+    let mut toc_doc = PdfDocument::from_config_with_warnings(config, &mut warnings);
     toc_doc.text("Table of Contents", Font::HelveticaBold, TITLE_SIZE);
     toc_doc.newline(TITLE_SIZE + LINE_GAP * 2.0);
 
@@ -230,7 +276,7 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &C
         combined.push_page(page_ops);
     }
 
-    combined.build_pdf()
+    RenderResult::with_warnings(combined.build_pdf(), warnings)
 }
 
 /// Render a single song's content into an existing [`PdfDocument`].
@@ -238,7 +284,12 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &C
 /// This is the shared implementation used by both [`render_song_with_transpose`]
 /// and [`render_songs_with_transpose`]. It does not call `build_pdf`; the caller
 /// is responsible for finalising the document.
-fn render_song_into_doc(song: &Song, cli_transpose: i8, doc: &mut PdfDocument) {
+fn render_song_into_doc(
+    song: &Song,
+    cli_transpose: i8,
+    doc: &mut PdfDocument,
+    warnings: &mut Vec<String>,
+) {
     let mut transpose_offset: i8 = cli_transpose;
     let mut fmt_state = PdfFormattingState::default();
 
@@ -280,10 +331,10 @@ fn render_song_into_doc(song: &Song, cli_transpose: i8, doc: &mut PdfDocument) {
                     let (combined, saturated) =
                         chordpro_core::transpose::combine_transpose(file_offset, cli_transpose);
                     if saturated {
-                        eprintln!(
-                            "warning: transpose offset {file_offset} + {cli_transpose} \
+                        warnings.push(format!(
+                            "transpose offset {file_offset} + {cli_transpose} \
                              exceeds i8 range, clamped to {combined}"
-                        );
+                        ));
                     }
                     transpose_offset = combined;
                     continue;
@@ -1472,9 +1523,11 @@ impl PdfDocument {
 
     /// Validate and clamp a margin value. Returns the default if the value is
     /// negative, non-finite, or exceeds `MAX_MARGIN`.
-    fn validate_margin(value: f32, default: f32, name: &str) -> f32 {
+    fn validate_margin(value: f32, default: f32, name: &str, warnings: &mut Vec<String>) -> f32 {
         if !value.is_finite() || !(0.0..=Self::MAX_MARGIN).contains(&value) {
-            eprintln!("warning: invalid pdf.margins.{name} value {value}, using default {default}");
+            warnings.push(format!(
+                "invalid pdf.margins.{name} value {value}, using default {default}"
+            ));
             default
         } else {
             value
@@ -1482,26 +1535,40 @@ impl PdfDocument {
     }
 
     /// Create a new document reading margins from config.
+    ///
+    /// Warnings are printed to stderr. Use [`from_config_with_warnings`](Self::from_config_with_warnings)
+    /// to capture them programmatically.
+    #[cfg(test)]
     fn from_config(config: &Config) -> Self {
+        let mut warnings = Vec::new();
+        let doc = Self::from_config_with_warnings(config, &mut warnings);
+        for w in &warnings {
+            eprintln!("warning: {w}");
+        }
+        doc
+    }
+
+    /// Create a new document reading margins from config, collecting warnings.
+    fn from_config_with_warnings(config: &Config, warnings: &mut Vec<String>) -> Self {
         let top = config
             .get_path("pdf.margins.top")
             .as_f64()
-            .map(|v| Self::validate_margin(v as f32, MARGIN_TOP, "top"))
+            .map(|v| Self::validate_margin(v as f32, MARGIN_TOP, "top", warnings))
             .unwrap_or(MARGIN_TOP);
         let bottom = config
             .get_path("pdf.margins.bottom")
             .as_f64()
-            .map(|v| Self::validate_margin(v as f32, MARGIN_BOTTOM, "bottom"))
+            .map(|v| Self::validate_margin(v as f32, MARGIN_BOTTOM, "bottom", warnings))
             .unwrap_or(MARGIN_BOTTOM);
         let left = config
             .get_path("pdf.margins.left")
             .as_f64()
-            .map(|v| Self::validate_margin(v as f32, MARGIN_LEFT, "left"))
+            .map(|v| Self::validate_margin(v as f32, MARGIN_LEFT, "left", warnings))
             .unwrap_or(MARGIN_LEFT);
         let right = config
             .get_path("pdf.margins.right")
             .as_f64()
-            .map(|v| Self::validate_margin(v as f32, MARGIN_RIGHT, "right"))
+            .map(|v| Self::validate_margin(v as f32, MARGIN_RIGHT, "right", warnings))
             .unwrap_or(MARGIN_RIGHT);
         Self::with_margins(top, bottom, left, right)
     }
@@ -2921,7 +2988,8 @@ mod column_tests {
     fn test_render_song_into_doc_helper() {
         let song = chordpro_core::parse("{title: Test}\n[Am]Hello").unwrap();
         let mut doc = PdfDocument::new();
-        render_song_into_doc(&song, 0, &mut doc);
+        let mut warnings = Vec::new();
+        render_song_into_doc(&song, 0, &mut doc, &mut warnings);
         // Document should have 1 page with content
         assert_eq!(doc.page_count(), 1);
         let pdf = doc.build_pdf();

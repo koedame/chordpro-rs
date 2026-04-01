@@ -10,6 +10,7 @@ pub mod image_path;
 pub mod inline_markup;
 pub mod lexer;
 pub mod parser;
+pub mod render_result;
 pub mod rrjson;
 pub mod selector;
 pub mod token;
@@ -23,6 +24,7 @@ pub use parser::{
     parse_lenient, parse_lenient_with_options, parse_multi, parse_multi_lenient,
     parse_multi_lenient_with_options, parse_multi_with_options, parse_with_options,
 };
+pub use render_result::RenderResult;
 pub use token::{Position, Span, Token, TokenKind};
 
 /// Returns the library version.

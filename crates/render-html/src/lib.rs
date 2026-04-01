@@ -19,6 +19,7 @@ use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
 use chordpro_core::config::Config;
 use chordpro_core::escape::escape_xml as escape;
 use chordpro_core::inline_markup::{SpanAttributes, TextSpan};
+use chordpro_core::render_result::RenderResult;
 use chordpro_core::transpose::transpose_chord;
 
 /// Maximum number of chorus recall directives allowed per song.
@@ -131,8 +132,29 @@ pub fn render_song(song: &Song) -> String {
 ///
 /// The `cli_transpose` parameter is added to any in-file `{transpose}` directive
 /// values, allowing the CLI `--transpose` flag to combine with in-file directives.
+///
+/// Warnings are printed to stderr via `eprintln!`. Use
+/// [`render_song_with_warnings`] to capture them programmatically.
 #[must_use]
 pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Config) -> String {
+    let result = render_song_with_warnings(song, cli_transpose, config);
+    for w in &result.warnings {
+        eprintln!("warning: {w}");
+    }
+    result.output
+}
+
+/// Render a [`Song`] AST to an HTML5 document, returning warnings programmatically.
+///
+/// This is the structured variant of [`render_song_with_transpose`]. Instead
+/// of printing warnings to stderr, they are collected into
+/// [`RenderResult::warnings`].
+pub fn render_song_with_warnings(
+    song: &Song,
+    cli_transpose: i8,
+    config: &Config,
+) -> RenderResult<String> {
+    let mut warnings = Vec::new();
     let title = song.metadata.title.as_deref().unwrap_or("Untitled");
     let mut html = String::new();
     html.push_str(&format!(
@@ -142,9 +164,9 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
     html.push_str("<style>\n");
     html.push_str(CSS);
     html.push_str("</style>\n</head>\n<body>\n");
-    render_song_body(song, cli_transpose, config, &mut html);
+    render_song_body(song, cli_transpose, config, &mut html, &mut warnings);
     html.push_str("</body>\n</html>\n");
-    html
+    RenderResult::with_warnings(html, warnings)
 }
 
 /// Render the `<div class="song">...</div>` body for a single song into `html`.
@@ -152,7 +174,13 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
 /// This is the shared implementation used by both single-song and multi-song
 /// rendering. It appends directly to the provided buffer without any document
 /// wrapper (`<html>`, `<head>`, etc.).
-fn render_song_body(song: &Song, cli_transpose: i8, config: &Config, html: &mut String) {
+fn render_song_body(
+    song: &Song,
+    cli_transpose: i8,
+    config: &Config,
+    html: &mut String,
+    warnings: &mut Vec<String>,
+) {
     let _ = config;
     let mut transpose_offset: i8 = cli_transpose;
     let mut fmt_state = FormattingState::default();
@@ -239,10 +267,10 @@ fn render_song_body(song: &Song, cli_transpose: i8, config: &Config, html: &mut 
                     let (combined, saturated) =
                         chordpro_core::transpose::combine_transpose(file_offset, cli_transpose);
                     if saturated {
-                        eprintln!(
-                            "warning: transpose offset {file_offset} + {cli_transpose} \
+                        warnings.push(format!(
+                            "transpose offset {file_offset} + {cli_transpose} \
                              exceeds i8 range, clamped to {combined}"
-                        );
+                        ));
                     }
                     transpose_offset = combined;
                     continue;
@@ -270,10 +298,10 @@ fn render_song_body(song: &Song, cli_transpose: i8, config: &Config, html: &mut 
                             render_chorus_recall(&directive.value, &chorus_html, html);
                             chorus_recall_count += 1;
                         } else if chorus_recall_count == MAX_CHORUS_RECALLS {
-                            eprintln!(
-                                "warning: chorus recall limit ({MAX_CHORUS_RECALLS}) reached, \
+                            warnings.push(format!(
+                                "chorus recall limit ({MAX_CHORUS_RECALLS}) reached, \
                                  further recalls suppressed"
-                            );
+                            ));
                             chorus_recall_count += 1;
                         }
                     }
@@ -391,13 +419,40 @@ pub fn render_songs(songs: &[Song]) -> String {
 /// When there is only one song, this is identical to [`render_song_with_transpose`].
 /// For multiple songs, the document uses the first song's title and separates
 /// each song with an `<hr class="song-separator">`.
+///
+/// Warnings are printed to stderr via `eprintln!`. Use
+/// [`render_songs_with_warnings`] to capture them programmatically.
 #[must_use]
 pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &Config) -> String {
+    let result = render_songs_with_warnings(songs, cli_transpose, config);
+    for w in &result.warnings {
+        eprintln!("warning: {w}");
+    }
+    result.output
+}
+
+/// Render multiple [`Song`]s into a single HTML5 document, returning warnings
+/// programmatically.
+///
+/// This is the structured variant of [`render_songs_with_transpose`]. Instead
+/// of printing warnings to stderr, they are collected into
+/// [`RenderResult::warnings`].
+pub fn render_songs_with_warnings(
+    songs: &[Song],
+    cli_transpose: i8,
+    config: &Config,
+) -> RenderResult<String> {
+    let mut warnings = Vec::new();
     if songs.len() <= 1 {
-        return songs
+        let output = songs
             .first()
-            .map(|s| render_song_with_transpose(s, cli_transpose, config))
+            .map(|s| {
+                let r = render_song_with_warnings(s, cli_transpose, config);
+                warnings = r.warnings;
+                r.output
+            })
             .unwrap_or_default();
+        return RenderResult::with_warnings(output, warnings);
     }
     // Use the first song's title for the document
     let mut html = String::new();
@@ -417,11 +472,11 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &C
         if i > 0 {
             html.push_str("<hr class=\"song-separator\">\n");
         }
-        render_song_body(song, cli_transpose, config, &mut html);
+        render_song_body(song, cli_transpose, config, &mut html, &mut warnings);
     }
 
     html.push_str("</body>\n</html>\n");
-    html
+    RenderResult::with_warnings(html, warnings)
 }
 
 /// Parse a ChordPro source string and render it to HTML.

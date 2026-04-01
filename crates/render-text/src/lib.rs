@@ -5,6 +5,7 @@
 
 use chordpro_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
 use chordpro_core::config::Config;
+use chordpro_core::render_result::RenderResult;
 use chordpro_core::transpose::transpose_chord;
 use unicode_width::UnicodeWidthStr;
 
@@ -35,8 +36,40 @@ pub fn render_song(song: &Song) -> String {
 ///
 /// The `cli_transpose` parameter is added to any in-file `{transpose}` directive
 /// values, allowing the CLI `--transpose` flag to combine with in-file directives.
+///
+/// Warnings are printed to stderr via `eprintln!`. Use
+/// [`render_song_with_warnings`] to capture them programmatically.
 #[must_use]
 pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Config) -> String {
+    let result = render_song_with_warnings(song, cli_transpose, config);
+    for w in &result.warnings {
+        eprintln!("warning: {w}");
+    }
+    result.output
+}
+
+/// Render a [`Song`] AST to plain text, returning warnings programmatically.
+///
+/// This is the structured variant of [`render_song_with_transpose`]. Instead
+/// of printing warnings to stderr, they are collected into
+/// [`RenderResult::warnings`].
+pub fn render_song_with_warnings(
+    song: &Song,
+    cli_transpose: i8,
+    config: &Config,
+) -> RenderResult<String> {
+    let mut warnings = Vec::new();
+    let output = render_song_impl(song, cli_transpose, config, &mut warnings);
+    RenderResult::with_warnings(output, warnings)
+}
+
+/// Internal implementation that renders a song and collects warnings.
+fn render_song_impl(
+    song: &Song,
+    cli_transpose: i8,
+    config: &Config,
+    warnings: &mut Vec<String>,
+) -> String {
     // Config is plumbed through for future use (e.g., suppress_empty_chords).
     let _ = config;
     let mut output = Vec::new();
@@ -76,10 +109,10 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                     let (combined, saturated) =
                         chordpro_core::transpose::combine_transpose(file_offset, cli_transpose);
                     if saturated {
-                        eprintln!(
-                            "warning: transpose offset {file_offset} + {cli_transpose} \
+                        warnings.push(format!(
+                            "transpose offset {file_offset} + {cli_transpose} \
                              exceeds i8 range, clamped to {combined}"
-                        );
+                        ));
                     }
                     transpose_offset = combined;
                     continue;
@@ -102,10 +135,10 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                             render_chorus_recall(&directive.value, &chorus_lines, &mut output);
                             chorus_recall_count += 1;
                         } else if chorus_recall_count == MAX_CHORUS_RECALLS {
-                            eprintln!(
-                                "warning: chorus recall limit ({MAX_CHORUS_RECALLS}) reached, \
+                            warnings.push(format!(
+                                "chorus recall limit ({MAX_CHORUS_RECALLS}) reached, \
                                  further recalls suppressed"
-                            );
+                            ));
                             chorus_recall_count += 1;
                         }
                     }
@@ -157,12 +190,33 @@ pub fn render_songs(songs: &[Song]) -> String {
 }
 
 /// Render multiple [`Song`]s to plain text with transposition.
+///
+/// Warnings are printed to stderr via `eprintln!`. Use
+/// [`render_songs_with_warnings`] to capture them programmatically.
 #[must_use]
 pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &Config) -> String {
+    let result = render_songs_with_warnings(songs, cli_transpose, config);
+    for w in &result.warnings {
+        eprintln!("warning: {w}");
+    }
+    result.output
+}
+
+/// Render multiple [`Song`]s to plain text, returning warnings programmatically.
+///
+/// This is the structured variant of [`render_songs_with_transpose`]. Instead
+/// of printing warnings to stderr, they are collected into
+/// [`RenderResult::warnings`].
+pub fn render_songs_with_warnings(
+    songs: &[Song],
+    cli_transpose: i8,
+    config: &Config,
+) -> RenderResult<String> {
+    let mut warnings = Vec::new();
     let mut parts: Vec<String> = songs
         .iter()
         .map(|song| {
-            render_song_with_transpose(song, cli_transpose, config)
+            render_song_impl(song, cli_transpose, config, &mut warnings)
                 .trim_end()
                 .to_string()
         })
@@ -171,7 +225,7 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &C
     if let Some(last) = parts.last_mut() {
         last.push('\n');
     }
-    parts.join("\n\n")
+    RenderResult::with_warnings(parts.join("\n\n"), warnings)
 }
 
 /// Parse a ChordPro source string and render it to plain text.
