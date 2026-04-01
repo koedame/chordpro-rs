@@ -145,11 +145,19 @@ pub fn render_songs(songs: &[Song]) -> String {
 /// Render multiple [`Song`]s to plain text with transposition.
 #[must_use]
 pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &Config) -> String {
-    songs
+    let mut parts: Vec<String> = songs
         .iter()
-        .map(|song| render_song_with_transpose(song, cli_transpose, config))
-        .collect::<Vec<_>>()
-        .join("\n\n")
+        .map(|song| {
+            render_song_with_transpose(song, cli_transpose, config)
+                .trim_end()
+                .to_string()
+        })
+        .collect();
+    // Ensure the final output ends with a newline.
+    if let Some(last) = parts.last_mut() {
+        last.push('\n');
+    }
+    parts.join("\n\n")
 }
 
 /// Parse a ChordPro source string and render it to plain text.
@@ -638,8 +646,13 @@ mod multi_song_tests {
         assert!(output.contains("Hello"));
         assert!(output.contains("Song Two"));
         assert!(output.contains("G\nWorld"));
-        // Two songs are separated by a blank line (double newline between them)
+        // Two songs are separated by exactly one blank line (double newline).
         assert!(output.contains("\n\n"));
+        // Must NOT contain triple newline.
+        assert!(
+            !output.contains("\n\n\n"),
+            "Should not have triple newline between songs"
+        );
     }
 
     #[test]
