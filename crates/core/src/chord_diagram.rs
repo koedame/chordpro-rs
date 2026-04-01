@@ -276,6 +276,17 @@ pub fn render_svg(data: &DiagramData) -> String {
             svg.push_str(&format!(
                 "<circle cx=\"{x}\" cy=\"{y}\" r=\"{DOT_RADIUS}\" fill=\"black\"/>\n"
             ));
+            // Finger number inside the dot (if available and non-zero)
+            if let Some(&finger) = data.fingers.get(i) {
+                if finger > 0 {
+                    svg.push_str(&format!(
+                        "<text x=\"{x}\" y=\"{}\" text-anchor=\"middle\" \
+                         font-family=\"sans-serif\" font-size=\"8\" \
+                         fill=\"white\">{finger}</text>\n",
+                        y + 3.0
+                    ));
+                }
+            }
         }
     }
 
@@ -440,6 +451,79 @@ mod tests {
     fn test_from_raw_display_name_is_none() {
         let data = DiagramData::from_raw_infer("Am", "base-fret 1 frets x 0 2 2 1 0").unwrap();
         assert!(data.display_name.is_none());
+    }
+
+    // --- Finger number rendering (#473) ---
+
+    #[test]
+    fn test_render_svg_with_finger_numbers() {
+        let data = DiagramData {
+            name: "C".to_string(),
+            display_name: None,
+            strings: 6,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![-1, 3, 2, 0, 1, 0],
+            fingers: vec![0, 3, 2, 0, 1, 0],
+        };
+        let svg = render_svg(&data);
+        // Fingers 3, 2, 1 should appear as white text inside dots
+        assert!(svg.contains("fill=\"white\">3</text>"));
+        assert!(svg.contains("fill=\"white\">2</text>"));
+        assert!(svg.contains("fill=\"white\">1</text>"));
+    }
+
+    #[test]
+    fn test_render_svg_zero_finger_not_shown() {
+        let data = DiagramData {
+            name: "Am".to_string(),
+            display_name: None,
+            strings: 6,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![-1, 0, 2, 2, 1, 0],
+            fingers: vec![0, 0, 2, 3, 1, 0],
+        };
+        let svg = render_svg(&data);
+        // Finger 0 should NOT appear
+        assert!(!svg.contains("fill=\"white\">0</text>"));
+        // Non-zero fingers should appear
+        assert!(svg.contains("fill=\"white\">2</text>"));
+        assert!(svg.contains("fill=\"white\">3</text>"));
+        assert!(svg.contains("fill=\"white\">1</text>"));
+    }
+
+    #[test]
+    fn test_render_svg_no_fingers_no_crash() {
+        let data = DiagramData {
+            name: "G".to_string(),
+            display_name: None,
+            strings: 6,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![3, 2, 0, 0, 0, 3],
+            fingers: vec![],
+        };
+        let svg = render_svg(&data);
+        assert!(svg.contains("<svg"));
+        assert!(!svg.contains("fill=\"white\""));
+    }
+
+    #[test]
+    fn test_render_svg_fewer_fingers_than_frets() {
+        let data = DiagramData {
+            name: "Am".to_string(),
+            display_name: None,
+            strings: 6,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![-1, 0, 2, 2, 1, 0],
+            fingers: vec![0, 0, 2],
+        };
+        let svg = render_svg(&data);
+        // Should only render finger 2, no crash for missing fingers
+        assert!(svg.contains("fill=\"white\">2</text>"));
+        assert!(svg.contains("<svg"));
     }
 
     // --- num_strings validation (#467) ---

@@ -918,6 +918,13 @@ fn render_chord_diagram_pdf(
             // Fretted: filled dot
             let y = grid_top - (fret as f32 - 0.5) * cell_h;
             doc.filled_circle_at(x, y, 3.0);
+            // Finger number inside the dot (if available and non-zero)
+            if let Some(&finger) = data.fingers.get(i) {
+                if finger > 0 {
+                    let label = finger.to_string();
+                    doc.white_text_at(&label, Font::Helvetica, 5.0, x - 1.5, y - 1.5);
+                }
+            }
         }
     }
 
@@ -1580,6 +1587,20 @@ impl PdfDocument {
         ops.push(format!("{} {} Td", fmt_f32(x), fmt_f32(y)));
         ops.push(format!("({}) Tj", pdf_escape(text)));
         ops.push("ET".to_string());
+    }
+
+    /// Emit a text string at absolute coordinates in white.
+    ///
+    /// Used for finger numbers inside filled dots in chord diagrams.
+    fn white_text_at(&mut self, text: &str, font: Font, size: f32, x: f32, y: f32) {
+        let ops = self.current_page_mut();
+        ops.push("BT".to_string());
+        ops.push("1 1 1 rg".to_string()); // white fill color
+        ops.push(format!("{} {} Tf", font.pdf_name(), fmt_f32(size)));
+        ops.push(format!("{} {} Td", fmt_f32(x), fmt_f32(y)));
+        ops.push(format!("({}) Tj", pdf_escape(text)));
+        ops.push("ET".to_string());
+        ops.push("0 0 0 rg".to_string()); // reset to black
     }
 
     /// Move the Y cursor down. May trigger a column/page break if past bottom margin.
