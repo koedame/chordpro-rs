@@ -399,6 +399,104 @@ fn test_no_default_configs() {
         .stdout(predicate::str::contains("Hello world"));
 }
 
+// --- --define with special characters ---
+
+#[test]
+fn test_define_value_containing_equals() {
+    // Value contains '=' — only the first '=' should split key from value.
+    // The string value "a=b" should be stored as-is.
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args(["--define", "metadata.separator=a=b", &fixture("simple.cho")])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_define_value_containing_colon() {
+    // Value contains ':' — should be treated as a plain string.
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([
+            "--define",
+            "metadata.separator=key: value",
+            &fixture("simple.cho"),
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_define_value_containing_spaces() {
+    // Value with spaces — should be stored as a string.
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([
+            "--define",
+            "metadata.separator=hello world",
+            &fixture("simple.cho"),
+        ])
+        .assert()
+        .success();
+}
+
+// --- --no-default-configs edge cases ---
+
+#[test]
+fn test_no_default_configs_with_missing_config_file() {
+    // --no-default-configs combined with --config pointing to a nonexistent file
+    // should fail gracefully with an error message.
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([
+            "--no-default-configs",
+            "--config",
+            "/tmp/nonexistent_chordpro_config_12345.json",
+            &fixture("simple.cho"),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("error:"));
+}
+
+#[test]
+fn test_no_default_configs_still_applies_define() {
+    // --no-default-configs skips system/user/project configs, but --define
+    // should still work on top of built-in defaults.
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([
+            "--no-default-configs",
+            "--define",
+            "settings.transpose=3",
+            &fixture("simple.cho"),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("A#"));
+}
+
+#[test]
+fn test_no_default_configs_still_applies_config_file() {
+    // --no-default-configs skips system/user/project configs, but an explicit
+    // --config file should still be merged.
+    let mut config_file = NamedTempFile::new().unwrap();
+    write!(config_file, r#"{{ "settings": {{ "transpose": 3 }} }}"#).unwrap();
+    config_file.flush().unwrap();
+
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([
+            "--no-default-configs",
+            "--config",
+            config_file.path().to_str().unwrap(),
+            &fixture("simple.cho"),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("A#"));
+}
+
 // --- Song-level config overrides ---
 
 #[test]
