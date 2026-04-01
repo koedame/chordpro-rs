@@ -78,7 +78,7 @@ impl std::error::Error for ConfigError {
 /// - Arrays are replaced entirely (not concatenated).
 /// - Scalar values in `overlay` replace those in `base`.
 #[must_use]
-pub fn deep_merge(base: Value, overlay: Value) -> Value {
+pub(crate) fn deep_merge(base: Value, overlay: Value) -> Value {
     match (base, overlay) {
         (Value::Object(mut base_entries), Value::Object(overlay_entries)) => {
             for (key, overlay_val) in overlay_entries {
