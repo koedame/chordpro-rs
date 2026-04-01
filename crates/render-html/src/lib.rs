@@ -133,21 +133,32 @@ pub fn render_song(song: &Song) -> String {
 /// values, allowing the CLI `--transpose` flag to combine with in-file directives.
 #[must_use]
 pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Config) -> String {
-    let _ = config;
-    let mut html = String::new();
-    let mut transpose_offset: i8 = cli_transpose;
-    let mut fmt_state = FormattingState::default();
-
     let title = song.metadata.title.as_deref().unwrap_or("Untitled");
+    let mut html = String::new();
     html.push_str(&format!(
         "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>{}</title>\n",
         escape(title)
     ));
     html.push_str("<style>\n");
     html.push_str(CSS);
-    html.push_str("</style>\n</head>\n<body>\n<div class=\"song\">\n");
+    html.push_str("</style>\n</head>\n<body>\n");
+    render_song_body(song, cli_transpose, config, &mut html);
+    html.push_str("</body>\n</html>\n");
+    html
+}
 
-    render_metadata(&song.metadata, &mut html);
+/// Render the `<div class="song">...</div>` body for a single song into `html`.
+///
+/// This is the shared implementation used by both single-song and multi-song
+/// rendering. It appends directly to the provided buffer without any document
+/// wrapper (`<html>`, `<head>`, etc.).
+fn render_song_body(song: &Song, cli_transpose: i8, config: &Config, html: &mut String) {
+    let _ = config;
+    let mut transpose_offset: i8 = cli_transpose;
+    let mut fmt_state = FormattingState::default();
+    html.push_str("<div class=\"song\">\n");
+
+    render_metadata(&song.metadata, html);
 
     // Tracks whether a multi-column div is currently open.
     let mut columns_open = false;
@@ -242,7 +253,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                 }
                 match &directive.kind {
                     DirectiveKind::StartOfChorus => {
-                        render_section_open("chorus", "Chorus", &directive.value, &mut html);
+                        render_section_open("chorus", "Chorus", &directive.value, html);
                         // Begin collecting chorus content.
                         chorus_buf = Some(String::new());
                     }
@@ -256,7 +267,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                     }
                     DirectiveKind::Chorus => {
                         if chorus_recall_count < MAX_CHORUS_RECALLS {
-                            render_chorus_recall(&directive.value, &chorus_html, &mut html);
+                            render_chorus_recall(&directive.value, &chorus_html, html);
                             chorus_recall_count += 1;
                         } else if chorus_recall_count == MAX_CHORUS_RECALLS {
                             eprintln!(
@@ -311,7 +322,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                     }
                     DirectiveKind::EndOfAbc if abc_buf.is_some() => {
                         if let Some(abc_content) = abc_buf.take() {
-                            render_abc_with_fallback(&abc_content, &abc_label, &mut html);
+                            render_abc_with_fallback(&abc_content, &abc_label, html);
                             abc_label = None;
                         }
                     }
@@ -321,7 +332,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                     }
                     DirectiveKind::EndOfLy if ly_buf.is_some() => {
                         if let Some(ly_content) = ly_buf.take() {
-                            render_ly_with_fallback(&ly_content, &ly_label, &mut html);
+                            render_ly_with_fallback(&ly_content, &ly_label, html);
                             ly_label = None;
                         }
                     }
@@ -366,8 +377,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
         html.push_str("</div>\n");
     }
 
-    html.push_str("</div>\n</body>\n</html>\n");
-    html
+    html.push_str("</div>\n");
 }
 
 /// Render multiple [`Song`]s into a single HTML5 document.
@@ -407,16 +417,7 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &C
         if i > 0 {
             html.push_str("<hr class=\"song-separator\">\n");
         }
-        // Render each song as a full document, then extract the <div class="song">...</div> body.
-        let song_html = render_song_with_transpose(song, cli_transpose, config);
-        let song_start = "<div class=\"song\">";
-        let body_end = "</div>\n</body>";
-        if let Some(start) = song_html.find(song_start) {
-            if let Some(end) = song_html.rfind(body_end) {
-                html.push_str(&song_html[start..end + "</div>".len()]);
-                html.push('\n');
-            }
-        }
+        render_song_body(song, cli_transpose, config, &mut html);
     }
 
     html.push_str("</body>\n</html>\n");
