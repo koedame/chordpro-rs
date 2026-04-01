@@ -842,6 +842,9 @@ fn render_chord_diagram_pdf(
     data: &chordpro_core::chord_diagram::DiagramData,
     doc: &mut PdfDocument,
 ) {
+    // PDF cell dimensions in points (1 pt = 1/72 inch). Intentionally
+    // smaller than the SVG renderer's 16x20 px because PDF targets printed
+    // pages where diagrams sit alongside text and must be compact.
     let cell_w: f32 = 10.0;
     let cell_h: f32 = 12.0;
     let num_strings = data.strings;

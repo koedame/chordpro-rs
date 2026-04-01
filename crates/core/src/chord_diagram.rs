@@ -175,7 +175,14 @@ impl DiagramData {
 // SVG rendering constants
 // ---------------------------------------------------------------------------
 
+/// Cell width in SVG user units (pixels at 1:1 zoom).
+///
+/// Intentionally larger than the PDF renderer's 10.0 pt because SVG
+/// diagrams target on-screen display where more generous spacing
+/// improves readability. The PDF renderer uses smaller values (10x12 pt)
+/// suited for printed page layout.
 const CELL_W: f32 = 16.0;
+/// Cell height in SVG user units. See [`CELL_W`] for rationale.
 const CELL_H: f32 = 20.0;
 const TOP_MARGIN: f32 = 30.0;
 const LEFT_MARGIN: f32 = 20.0;
