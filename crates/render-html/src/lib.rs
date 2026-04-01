@@ -646,59 +646,80 @@ fn sanitize_css_class(s: &str) -> String {
 /// files. The ChordPro specification allows raw SVG passthrough, but script
 /// injection is never legitimate in music notation.
 fn sanitize_svg_content(input: &str) -> String {
+    // Dangerous elements that are stripped entirely (opening tag through closing tag).
+    const DANGEROUS_TAGS: &[&str] = &["script", "foreignobject", "iframe", "object", "embed"];
+
     let mut result = String::with_capacity(input.len());
     let mut chars = input.char_indices().peekable();
     let bytes = input.as_bytes();
 
     while let Some((i, c)) = chars.next() {
         if c == '<' {
-            // Check for <script or </script
             let rest = &input[i..];
-            let rest_lower = if rest.len() > 10 { &rest[..10] } else { rest };
-            if starts_with_ignore_case(rest_lower, "<script")
-                && rest.len() > 7
-                && (bytes
-                    .get(i + 7)
-                    .is_none_or(|b| b.is_ascii_whitespace() || *b == b'>' || *b == b'/'))
-            {
-                // Skip until after </script> or end of input.
-                if let Some(end) = find_end_tag_ignore_case(input, i, "script") {
-                    // Advance chars past the closing tag.
-                    while let Some(&(j, _)) = chars.peek() {
-                        if j >= end {
-                            break;
+            let rest_upper = if rest.len() > 20 { &rest[..20] } else { rest };
+
+            // Check for opening dangerous tags: <tag or <tag> or <tag ...>
+            let mut matched = false;
+            for tag in DANGEROUS_TAGS {
+                let prefix = format!("<{tag}");
+                if starts_with_ignore_case(rest_upper, &prefix)
+                    && rest.len() > prefix.len()
+                    && bytes
+                        .get(i + prefix.len())
+                        .is_none_or(|b| b.is_ascii_whitespace() || *b == b'>' || *b == b'/')
+                {
+                    // Skip until after </tag> or end of input.
+                    if let Some(end) = find_end_tag_ignore_case(input, i, tag) {
+                        while let Some(&(j, _)) = chars.peek() {
+                            if j >= end {
+                                break;
+                            }
+                            chars.next();
                         }
-                        chars.next();
+                    } else {
+                        // No closing tag — skip to end of input.
+                        return result;
                     }
-                } else {
-                    // No closing tag — skip to end of input.
+                    matched = true;
                     break;
                 }
+            }
+            if matched {
                 continue;
             }
-            if starts_with_ignore_case(rest_lower, "</script")
-                && rest.len() > 8
-                && (bytes
-                    .get(i + 8)
-                    .is_none_or(|b| b.is_ascii_whitespace() || *b == b'>'))
-            {
-                // Stray closing script tag — skip it.
-                while let Some(&(_, ch)) = chars.peek() {
-                    chars.next();
-                    if ch == '>' {
-                        break;
+
+            // Check for stray closing dangerous tags: </tag>
+            for tag in DANGEROUS_TAGS {
+                let prefix = format!("</{tag}");
+                if starts_with_ignore_case(rest_upper, &prefix)
+                    && rest.len() > prefix.len()
+                    && bytes
+                        .get(i + prefix.len())
+                        .is_none_or(|b| b.is_ascii_whitespace() || *b == b'>')
+                {
+                    // Skip past the closing >.
+                    while let Some(&(_, ch)) = chars.peek() {
+                        chars.next();
+                        if ch == '>' {
+                            break;
+                        }
                     }
+                    matched = true;
+                    break;
                 }
+            }
+            if matched {
                 continue;
             }
+
             result.push(c);
         } else {
             result.push(c);
         }
     }
 
-    // Strip event handler attributes (on*="...") from HTML/SVG tags.
-    strip_event_handlers(&result)
+    // Strip event handler attributes and dangerous URI schemes.
+    strip_dangerous_attrs(&result)
 }
 
 /// Check if `s` starts with `prefix` (ASCII case-insensitive).
@@ -744,10 +765,11 @@ fn find_end_tag_ignore_case(input: &str, start: usize, tag: &str) -> Option<usiz
     None
 }
 
-/// Remove event handler attributes (`on*="..."` or `on*='...'`) from HTML/SVG
-/// tags. Only operates inside `<...>` delimiters to avoid false positives in
-/// text content.
-fn strip_event_handlers(input: &str) -> String {
+/// Strip dangerous attributes from HTML/SVG tags: event handlers (`on*`) and
+/// URI attributes (`href`, `src`, `xlink:href`) with dangerous schemes
+/// (`javascript:`, `vbscript:`, `data:`). Only operates inside `<...>`
+/// delimiters to avoid false positives in text content.
+fn strip_dangerous_attrs(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut pos = 0;
     let bytes = input.as_bytes();
@@ -758,7 +780,7 @@ fn strip_event_handlers(input: &str) -> String {
             if let Some(gt) = bytes[pos..].iter().position(|&b| b == b'>') {
                 let tag_end = pos + gt + 1;
                 let tag_content = &input[pos..tag_end];
-                result.push_str(&remove_on_attrs(tag_content));
+                result.push_str(&sanitize_tag_attrs(tag_content));
                 pos = tag_end;
             } else {
                 result.push_str(&input[pos..]);
@@ -772,8 +794,30 @@ fn strip_event_handlers(input: &str) -> String {
     result
 }
 
-/// Remove `on*=` attributes from a single HTML/SVG tag string.
-fn remove_on_attrs(tag: &str) -> String {
+/// Check if a URI value starts with a dangerous scheme (`javascript:`,
+/// `vbscript:`, `data:`), ignoring leading whitespace and case.
+fn has_dangerous_uri_scheme(value: &str) -> bool {
+    let trimmed = value.trim_start();
+    let lower: String = trimmed
+        .chars()
+        .take(20)
+        .flat_map(|c| c.to_lowercase())
+        .collect();
+    lower.starts_with("javascript:") || lower.starts_with("vbscript:") || lower.starts_with("data:")
+}
+
+/// Check if an attribute name is a URI-bearing attribute that needs scheme
+/// validation.
+fn is_uri_attr(name: &str) -> bool {
+    let lower: String = name.chars().flat_map(|c| c.to_lowercase()).collect();
+    lower == "href" || lower == "src" || lower == "xlink:href"
+}
+
+/// Sanitize attributes in a single HTML/SVG tag string.
+///
+/// Removes event handler attributes (`on*`) entirely and strips URI attributes
+/// (`href`, `src`, `xlink:href`) that use dangerous schemes.
+fn sanitize_tag_attrs(tag: &str) -> String {
     let mut result = String::with_capacity(tag.len());
     let bytes = tag.as_bytes();
     let mut i = 0;
@@ -818,52 +862,50 @@ fn remove_on_attrs(tag: &str) -> String {
                 .next()
                 .is_some_and(|c| c.is_ascii_alphabetic());
 
-        if is_event_handler {
-            // Skip the attribute value if present.
-            if i < bytes.len() && bytes[i] == b'=' {
-                i += 1; // skip '='
-                if i < bytes.len() && (bytes[i] == b'"' || bytes[i] == b'\'') {
-                    let quote = bytes[i];
-                    i += 1;
-                    while i < bytes.len() && bytes[i] != quote {
-                        i += 1;
-                    }
-                    if i < bytes.len() {
-                        i += 1; // skip closing quote
-                    }
-                } else {
-                    // Unquoted value — skip to whitespace or >.
-                    while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'>' {
-                        i += 1;
-                    }
-                }
-            }
-            // Attribute stripped — don't copy it.
-        } else {
-            // Copy the attribute as-is.
-            result.push_str(attr_name);
-            if i < bytes.len() && bytes[i] == b'=' {
-                result.push('=');
+        // Extract the attribute value (if any) without copying yet.
+        let value_start = i;
+        let mut attr_value: Option<String> = None;
+        if i < bytes.len() && bytes[i] == b'=' {
+            i += 1; // skip '='
+            if i < bytes.len() && (bytes[i] == b'"' || bytes[i] == b'\'') {
+                let quote = bytes[i];
                 i += 1;
-                if i < bytes.len() && (bytes[i] == b'"' || bytes[i] == b'\'') {
-                    let quote = bytes[i];
-                    result.push(quote as char);
+                let val_start = i;
+                while i < bytes.len() && bytes[i] != quote {
                     i += 1;
-                    while i < bytes.len() && bytes[i] != quote {
-                        result.push(bytes[i] as char);
-                        i += 1;
-                    }
-                    if i < bytes.len() {
-                        result.push(quote as char);
-                        i += 1;
-                    }
-                } else {
-                    while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'>' {
-                        result.push(bytes[i] as char);
-                        i += 1;
-                    }
+                }
+                attr_value = Some(tag[val_start..i].to_string());
+                if i < bytes.len() {
+                    i += 1; // skip closing quote
+                }
+            } else {
+                // Unquoted value.
+                let val_start = i;
+                while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'>' {
+                    i += 1;
+                }
+                attr_value = Some(tag[val_start..i].to_string());
+            }
+        }
+
+        if is_event_handler {
+            // Strip event handler attributes entirely.
+            continue;
+        }
+
+        if is_uri_attr(attr_name) {
+            if let Some(ref val) = attr_value {
+                if has_dangerous_uri_scheme(val) {
+                    // Strip the attribute if it uses a dangerous URI scheme.
+                    continue;
                 }
             }
+        }
+
+        // Copy the attribute as-is.
+        result.push_str(&tag[attr_start..value_start]);
+        if attr_value.is_some() {
+            result.push_str(&tag[value_start..i]);
         }
     }
 
@@ -2085,6 +2127,113 @@ mod delegate_tests {
         assert!(!html.contains("SCRIPT"), "case-insensitive script removal");
         assert!(!html.contains("alert"));
         assert!(html.contains("<svg/>"));
+    }
+
+    #[test]
+    fn test_svg_section_strips_foreignobject() {
+        let input = "{start_of_svg}\n<svg><foreignObject><body onload=\"alert(1)\"></body></foreignObject><rect width=\"10\"/></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(
+            !html.contains("foreignObject"),
+            "foreignObject must be stripped"
+        );
+        assert!(
+            !html.contains("foreignobject"),
+            "foreignObject (lowercase) must be stripped"
+        );
+        assert!(
+            html.contains("<rect width=\"10\"/>"),
+            "safe content must be preserved"
+        );
+    }
+
+    #[test]
+    fn test_svg_section_strips_iframe() {
+        let input = "{start_of_svg}\n<svg><iframe src=\"javascript:alert(1)\"></iframe><circle r=\"5\"/></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(!html.contains("iframe"), "iframe must be stripped");
+        assert!(html.contains("<circle r=\"5\"/>"));
+    }
+
+    #[test]
+    fn test_svg_section_strips_object_and_embed() {
+        let input = "{start_of_svg}\n<svg><object data=\"evil.swf\"></object><embed src=\"evil.swf\"></embed><rect/></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(!html.contains("object"), "object must be stripped");
+        assert!(!html.contains("embed"), "embed must be stripped");
+        assert!(html.contains("<rect/>"));
+    }
+
+    #[test]
+    fn test_svg_section_strips_javascript_uri_in_href() {
+        let input = "{start_of_svg}\n<svg><a href=\"javascript:alert(1)\"><text>Click</text></a></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(
+            !html.contains("javascript:"),
+            "javascript: URI must be stripped from href"
+        );
+        assert!(html.contains("<text>Click</text>"));
+    }
+
+    #[test]
+    fn test_svg_section_strips_vbscript_uri() {
+        let input = "{start_of_svg}\n<svg><a href=\"vbscript:MsgBox\"><text>Click</text></a></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(
+            !html.contains("vbscript:"),
+            "vbscript: URI must be stripped"
+        );
+    }
+
+    #[test]
+    fn test_svg_section_strips_data_uri_in_use() {
+        let input = "{start_of_svg}\n<svg><use href=\"data:image/svg+xml;base64,PHN2Zy8+\"/></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(
+            !html.contains("data:"),
+            "data: URI must be stripped from use href"
+        );
+    }
+
+    #[test]
+    fn test_svg_section_strips_javascript_uri_case_insensitive() {
+        let input = "{start_of_svg}\n<svg><a href=\"JaVaScRiPt:alert(1)\"><text>X</text></a></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(
+            !html.to_lowercase().contains("javascript:"),
+            "case-insensitive javascript: URI must be stripped"
+        );
+    }
+
+    #[test]
+    fn test_svg_section_strips_xlink_href_dangerous_uri() {
+        let input =
+            "{start_of_svg}\n<svg><use xlink:href=\"javascript:alert(1)\"/></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(
+            !html.contains("javascript:"),
+            "javascript: URI in xlink:href must be stripped"
+        );
+    }
+
+    #[test]
+    fn test_svg_section_preserves_safe_href() {
+        let input = "{start_of_svg}\n<svg><a href=\"https://example.com\"><text>Link</text></a></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(
+            html.contains("href=\"https://example.com\""),
+            "safe https: href must be preserved"
+        );
+    }
+
+    #[test]
+    fn test_svg_section_preserves_fragment_href() {
+        let input = "{start_of_svg}\n<svg><use href=\"#myShape\"/></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(
+            html.contains("href=\"#myShape\""),
+            "fragment-only href must be preserved"
+        );
     }
 
     #[test]
