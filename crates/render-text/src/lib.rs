@@ -8,6 +8,10 @@ use chordpro_core::config::Config;
 use chordpro_core::transpose::transpose_chord;
 use unicode_width::UnicodeWidthStr;
 
+/// Maximum number of chorus recall directives allowed per song.
+/// Prevents output amplification from malicious inputs with many `{chorus}` lines.
+const MAX_CHORUS_RECALLS: usize = 1000;
+
 /// Render a [`Song`] AST to plain text.
 ///
 /// The output format:
@@ -42,6 +46,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
     let mut chorus_lines: Vec<String> = Vec::new();
     // Temporary buffer for collecting chorus content while inside a chorus section.
     let mut chorus_buf: Option<Vec<String>> = None;
+    let mut chorus_recall_count: usize = 0;
 
     render_metadata(&song.metadata, &mut output);
 
@@ -93,7 +98,16 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                         }
                     }
                     DirectiveKind::Chorus => {
-                        render_chorus_recall(&directive.value, &chorus_lines, &mut output);
+                        if chorus_recall_count < MAX_CHORUS_RECALLS {
+                            render_chorus_recall(&directive.value, &chorus_lines, &mut output);
+                            chorus_recall_count += 1;
+                        } else if chorus_recall_count == MAX_CHORUS_RECALLS {
+                            eprintln!(
+                                "warning: chorus recall limit ({MAX_CHORUS_RECALLS}) reached, \
+                                 further recalls suppressed"
+                            );
+                            chorus_recall_count += 1;
+                        }
                     }
                     _ => {
                         let mut target = Vec::new();
@@ -848,6 +862,23 @@ Second chorus
         let output = render(input);
         // The recall should use "Second chorus", not "First chorus"
         assert!(output.ends_with("[Chorus]\nSecond chorus\n"));
+    }
+
+    #[test]
+    fn test_chorus_recall_limit_exceeded() {
+        // Generate input with more chorus recalls than the limit.
+        let mut input = String::from("{start_of_chorus}\nChorus\n{end_of_chorus}\n");
+        for _ in 0..1005 {
+            input.push_str("{chorus}\n");
+        }
+        let output = render(&input);
+        // Count occurrences of the chorus content (excluding the original).
+        let recall_count = output.matches("[Chorus]\nChorus").count() - 1; // subtract original
+        assert_eq!(
+            recall_count,
+            super::MAX_CHORUS_RECALLS,
+            "should stop at MAX_CHORUS_RECALLS"
+        );
     }
 }
 

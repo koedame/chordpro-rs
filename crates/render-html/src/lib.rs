@@ -21,6 +21,10 @@ use chordpro_core::escape::escape_xml as escape;
 use chordpro_core::inline_markup::{SpanAttributes, TextSpan};
 use chordpro_core::transpose::transpose_chord;
 
+/// Maximum number of chorus recall directives allowed per song.
+/// Prevents output amplification from malicious inputs with many `{chorus}` lines.
+const MAX_CHORUS_RECALLS: usize = 1000;
+
 /// Maximum number of CSS columns allowed.
 /// Matches `MAX_COLUMNS` in the PDF renderer.
 const MAX_COLUMNS: u32 = 32;
@@ -173,6 +177,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
     let mut chorus_html = String::new();
     // Temporary buffer for collecting chorus content while inside a chorus section.
     let mut chorus_buf: Option<String> = None;
+    let mut chorus_recall_count: usize = 0;
 
     for line in &song.lines {
         match line {
@@ -250,7 +255,16 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                         }
                     }
                     DirectiveKind::Chorus => {
-                        render_chorus_recall(&directive.value, &chorus_html, &mut html);
+                        if chorus_recall_count < MAX_CHORUS_RECALLS {
+                            render_chorus_recall(&directive.value, &chorus_html, &mut html);
+                            chorus_recall_count += 1;
+                        } else if chorus_recall_count == MAX_CHORUS_RECALLS {
+                            eprintln!(
+                                "warning: chorus recall limit ({MAX_CHORUS_RECALLS}) reached, \
+                                 further recalls suppressed"
+                            );
+                            chorus_recall_count += 1;
+                        }
                     }
                     DirectiveKind::Columns => {
                         // Clamp to 1..=32 to prevent degenerate CSS output.
