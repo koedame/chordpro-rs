@@ -253,6 +253,9 @@ fn render_song_into_doc(song: &Song, cli_transpose: i8, doc: &mut PdfDocument) {
         doc.newline(SUBTITLE_SIZE + LINE_GAP);
     }
 
+    // Controls whether chord diagrams are rendered. Set by {diagrams: off/on}.
+    let mut show_diagrams = true;
+
     // Stores the AST lines of the most recently defined chorus body for replay.
     let mut chorus_body: Vec<Line> = Vec::new();
     // Temporary buffer for collecting chorus content while inside a chorus section.
@@ -267,6 +270,10 @@ fn render_song_into_doc(song: &Song, cli_transpose: i8, doc: &mut PdfDocument) {
                 render_lyrics(lyrics, transpose_offset, &fmt_state, doc);
             }
             Line::Directive(d) if !d.kind.is_metadata() => {
+                if d.kind == DirectiveKind::Diagrams {
+                    show_diagrams = !matches!(d.value.as_deref(), Some("off"));
+                    continue;
+                }
                 if d.kind == DirectiveKind::Transpose {
                     let file_offset: i8 =
                         d.value.as_deref().and_then(|v| v.parse().ok()).unwrap_or(0);
@@ -330,7 +337,7 @@ fn render_song_into_doc(song: &Song, cli_transpose: i8, doc: &mut PdfDocument) {
                         if let Some(buf) = chorus_buf.as_mut() {
                             buf.push(line.clone());
                         }
-                        render_directive(d, doc);
+                        render_directive(d, show_diagrams, doc);
                     }
                 }
             }
@@ -523,8 +530,12 @@ fn render_section_label(directive: &chordpro_core::ast::Directive, doc: &mut Pdf
     }
 }
 
-fn render_directive(directive: &chordpro_core::ast::Directive, doc: &mut PdfDocument) {
-    if directive.kind == DirectiveKind::Define {
+fn render_directive(
+    directive: &chordpro_core::ast::Directive,
+    show_diagrams: bool,
+    doc: &mut PdfDocument,
+) {
+    if directive.kind == DirectiveKind::Define && show_diagrams {
         if let Some(ref value) = directive.value {
             let def = chordpro_core::ast::ChordDefinition::parse_value(value);
             if let Some(ref raw) = def.raw {
@@ -939,7 +950,7 @@ fn render_chorus_recall(
             Line::Lyrics(lyrics) => render_lyrics(lyrics, transpose_offset, fmt_state, doc),
             Line::Comment(style, text) => render_comment(*style, text, doc),
             Line::Empty => doc.newline(LINE_GAP * 2.0),
-            Line::Directive(d) if !d.kind.is_metadata() => render_directive(d, doc),
+            Line::Directive(d) if !d.kind.is_metadata() => render_directive(d, true, doc),
             _ => {}
         }
     }
