@@ -132,6 +132,9 @@ const MAX_IMAGE_PIXELS: u32 = 10_000;
 /// Maximum number of images that can be embedded in a single PDF document.
 /// Prevents memory exhaustion from documents with many large image directives.
 const MAX_IMAGES: usize = 1_000;
+/// Maximum number of chorus recall directives allowed per song.
+/// Prevents output amplification from malicious inputs with many `{chorus}` lines.
+const MAX_CHORUS_RECALLS: usize = 1000;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -345,6 +348,7 @@ fn render_song_into_doc(
     let mut chorus_body: Vec<Line> = Vec::new();
     // Temporary buffer for collecting chorus content while inside a chorus section.
     let mut chorus_buf: Option<Vec<Line>> = None;
+    let mut chorus_recall_count: usize = 0;
 
     for line in &song.lines {
         match line {
@@ -388,13 +392,22 @@ fn render_song_into_doc(
                         }
                     }
                     DirectiveKind::Chorus => {
-                        render_chorus_recall(
-                            &d.value,
-                            &chorus_body,
-                            transpose_offset,
-                            &fmt_state,
-                            doc,
-                        );
+                        if chorus_recall_count < MAX_CHORUS_RECALLS {
+                            render_chorus_recall(
+                                &d.value,
+                                &chorus_body,
+                                transpose_offset,
+                                &fmt_state,
+                                doc,
+                            );
+                            chorus_recall_count += 1;
+                        } else if chorus_recall_count == MAX_CHORUS_RECALLS {
+                            warnings.push(format!(
+                                "chorus recall limit ({MAX_CHORUS_RECALLS}) reached, \
+                                 further recalls suppressed"
+                            ));
+                            chorus_recall_count += 1;
+                        }
                     }
                     // All page control directives ({new_page}, {new_physical_page},
                     // {column_break}, {columns}) are intentionally excluded from the
@@ -2439,6 +2452,24 @@ Sing along
         assert!(bytes.starts_with(b"%PDF"));
         let content = String::from_utf8_lossy(&bytes);
         assert!(content.contains("Chorus"));
+    }
+
+    #[test]
+    fn test_chorus_recall_limit_exceeded() {
+        let mut input = String::from("{start_of_chorus}\nChorus line\n{end_of_chorus}\n");
+        for _ in 0..1005 {
+            input.push_str("{chorus}\n");
+        }
+        let song = chordpro_core::parse(&input).unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert!(result.output.starts_with(b"%PDF"));
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("chorus recall limit")),
+            "should warn when chorus recall limit is exceeded"
+        );
     }
 
     #[test]

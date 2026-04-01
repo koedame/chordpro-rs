@@ -111,14 +111,16 @@ Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src 
 - **Size limits**:
   - `MAX_IMAGE_FILE_SIZE`: 50 MB per image file.
   - `MAX_DECOMPRESSED_SIZE`: 256 MB for PNG IDAT decompression.
-  - `MAX_IMAGE_PIXELS`: 10,000 px per dimension.
+  - `MAX_IMAGE_PIXELS`: 10,000 px per dimension (render clamp — images larger
+    than this are scaled down for rendering, not rejected).
   - `MAX_IMAGES`: 1,000 images per document.
   - `MAX_PAGES`: 10,000 pages per document.
 
 ### Output Amplification Prevention
 
 - **Chorus recall limit**: `{chorus}` directives are capped at 1,000 recalls
-  per song to prevent output amplification from malicious input.
+  per song across all renderers (text, HTML, PDF) to prevent output
+  amplification from malicious input.
 
 ## Dependency Policy
 
