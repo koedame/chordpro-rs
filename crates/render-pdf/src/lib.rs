@@ -1191,16 +1191,29 @@ fn separate_alpha(
     bit_depth: u8,
     color_type: u8,
 ) -> Option<PngInfo> {
-    // Decompress the IDAT zlib stream.
-    let mut decoder = ZlibDecoder::new(idat_data);
-    let mut raw = Vec::new();
-    if decoder.read_to_end(&mut raw).is_err() {
-        return None;
-    }
-
     let w = width as usize;
     let h = height as usize;
     let bytes_per_sample = if bit_depth == 16 { 2 } else { 1 };
+
+    // Compute expected decompressed size from IHDR dimensions and apply a
+    // safety cap to prevent memory exhaustion from high-compression-ratio PNGs.
+    // Each row has a 1-byte filter prefix plus (width * channels * bytes_per_sample).
+    let channels: usize = match color_type {
+        4 => 2, // gray + alpha
+        6 => 4, // RGBA
+        _ => return None,
+    };
+    let expected_size = h.checked_mul(1 + w * channels * bytes_per_sample)?;
+    // Hard cap at 256 MB regardless of declared dimensions.
+    const MAX_DECOMPRESSED_SIZE: u64 = 256 * 1024 * 1024;
+    let limit = (expected_size as u64).min(MAX_DECOMPRESSED_SIZE);
+
+    // Decompress the IDAT zlib stream with size limit.
+    let mut decoder = ZlibDecoder::new(idat_data).take(limit + 1);
+    let mut raw = Vec::new();
+    if decoder.read_to_end(&mut raw).is_err() || raw.len() as u64 > limit {
+        return None;
+    }
 
     // Channels in the raw decompressed data (including alpha).
     let (color_channels, alpha_channels) = match color_type {
