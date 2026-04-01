@@ -1,0 +1,4 @@
+{title: Config Override Song}
+{+config.settings.transpose: 2}
+
+[G]Hello [C]world

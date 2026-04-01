@@ -272,6 +272,36 @@ impl Config {
         }
     }
 
+    /// Apply song-level config overrides from `{+config.KEY: VALUE}` directives.
+    ///
+    /// Returns a new `Config` with the overrides applied, plus any warnings
+    /// (e.g., blocked delegate keys). Security-sensitive keys under
+    /// `delegates.*` are blocked and produce a warning.
+    #[must_use]
+    pub fn with_song_overrides(
+        self,
+        overrides: &[(&str, &str)],
+        warnings: &mut Vec<String>,
+    ) -> Self {
+        /// Keys that cannot be set from song-level config directives.
+        const BLOCKED_PREFIXES: &[&str] = &["delegates."];
+
+        let mut config = self;
+        for &(key, value) in overrides {
+            if BLOCKED_PREFIXES
+                .iter()
+                .any(|prefix| key.starts_with(prefix))
+            {
+                warnings.push(format!(
+                    "{key} cannot be overridden from a song-level config directive"
+                ));
+                continue;
+            }
+            config = config.with_define(&format!("{key}={value}"));
+        }
+        config
+    }
+
     /// Build a configuration by loading and merging from all sources.
     ///
     /// Loads: defaults → system → user → project → song-specific.
@@ -1208,5 +1238,77 @@ mod tests {
 
         // A relative path should be ignored; result should be the fallback.
         assert_ne!(result, Some(PathBuf::from("relative/path")));
+    }
+
+    // -- with_song_overrides tests --------------------------------------------
+
+    #[test]
+    fn test_song_overrides_apply() {
+        let config = Config::defaults();
+        let mut warnings = Vec::new();
+        let overrides = vec![("pdf.margins.top", "100")];
+        let config = config.with_song_overrides(&overrides, &mut warnings);
+        assert_eq!(config.get_path("pdf.margins.top"), &Value::Number(100.0));
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_song_overrides_multiple() {
+        let config = Config::defaults();
+        let mut warnings = Vec::new();
+        let overrides = vec![("pdf.margins.top", "100"), ("settings.transpose", "3")];
+        let config = config.with_song_overrides(&overrides, &mut warnings);
+        assert_eq!(config.get_path("pdf.margins.top"), &Value::Number(100.0));
+        assert_eq!(config.get_path("settings.transpose"), &Value::Number(3.0));
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_song_overrides_block_delegates() {
+        let config = Config::defaults();
+        let mut warnings = Vec::new();
+        let overrides = vec![
+            ("delegates.abc2svg", "true"),
+            ("delegates.lilypond", "true"),
+        ];
+        let config = config.with_song_overrides(&overrides, &mut warnings);
+        // Delegate keys should remain at their default (false)
+        assert_eq!(config.get_path("delegates.abc2svg"), &Value::Bool(false));
+        assert_eq!(config.get_path("delegates.lilypond"), &Value::Bool(false));
+        assert_eq!(warnings.len(), 2);
+        assert!(warnings[0].contains("delegates.abc2svg"));
+        assert!(warnings[1].contains("delegates.lilypond"));
+    }
+
+    #[test]
+    fn test_song_overrides_empty_is_noop() {
+        let config = Config::defaults();
+        let original_top = config.get_path("pdf.margins.top").clone();
+        let mut warnings = Vec::new();
+        let config = config.with_song_overrides(&[], &mut warnings);
+        assert_eq!(config.get_path("pdf.margins.top"), &original_top);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_song_overrides_do_not_persist_across_songs() {
+        let base = Config::defaults();
+        let mut warnings = Vec::new();
+
+        // Song 1 overrides margins
+        let song1_config = base
+            .clone()
+            .with_song_overrides(&[("pdf.margins.top", "100")], &mut warnings);
+        assert_eq!(
+            song1_config.get_path("pdf.margins.top"),
+            &Value::Number(100.0)
+        );
+
+        // Song 2 uses the same base config — should NOT see song 1's override
+        let song2_config = base.clone().with_song_overrides(&[], &mut warnings);
+        assert_eq!(
+            song2_config.get_path("pdf.margins.top"),
+            &Value::Number(56.0)
+        );
     }
 }

@@ -3791,4 +3791,102 @@ mod delegate_tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 2);
     }
+
+    // -- Config override directives -------------------------------------------
+
+    #[test]
+    fn config_override_basic() {
+        let result = lines("{+config.pdf.margins.top: 100}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(
+                d.kind,
+                DirectiveKind::ConfigOverride("pdf.margins.top".to_string())
+            );
+            assert_eq!(d.value.as_deref(), Some("100"));
+            assert_eq!(d.name, "+config.pdf.margins.top");
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn config_override_string_value() {
+        let result = lines("{+config.pdf.theme.foreground: blue}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(
+                d.kind,
+                DirectiveKind::ConfigOverride("pdf.theme.foreground".to_string())
+            );
+            assert_eq!(d.value.as_deref(), Some("blue"));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn config_override_no_value() {
+        let result = lines("{+config.settings.lyrics_only}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(
+                d.kind,
+                DirectiveKind::ConfigOverride("settings.lyrics_only".to_string())
+            );
+            assert_eq!(d.value, None);
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn config_override_case_insensitive() {
+        let result = lines("{+Config.PDF.Margins.Top: 50}");
+        if let Line::Directive(ref d) = result[0] {
+            assert_eq!(
+                d.kind,
+                DirectiveKind::ConfigOverride("pdf.margins.top".to_string())
+            );
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn bare_plus_config_is_unknown() {
+        // {+config} without a dot-separated key is Unknown
+        let result = lines("{+config: something}");
+        if let Line::Directive(ref d) = result[0] {
+            assert!(matches!(d.kind, DirectiveKind::Unknown(_)));
+        } else {
+            panic!("expected directive");
+        }
+    }
+
+    #[test]
+    fn config_overrides_extracted_from_song() {
+        let song = crate::parse(
+            "{title: Test}\n{+config.pdf.margins.top: 100}\n{+config.settings.transpose: 2}\n",
+        )
+        .unwrap();
+        let overrides = song.config_overrides();
+        assert_eq!(overrides.len(), 2);
+        assert_eq!(overrides[0], ("pdf.margins.top", "100"));
+        assert_eq!(overrides[1], ("settings.transpose", "2"));
+    }
+
+    #[test]
+    fn config_overrides_empty_when_none() {
+        let song = crate::parse("{title: Test}\n[G]Hello\n").unwrap();
+        assert!(song.config_overrides().is_empty());
+    }
+
+    #[test]
+    fn config_overrides_not_in_multi_song_leak() {
+        let songs = crate::parse_multi(
+            "{title: A}\n{+config.settings.transpose: 5}\n{new_song}\n{title: B}\n",
+        )
+        .unwrap();
+        assert_eq!(songs.len(), 2);
+        assert_eq!(songs[0].config_overrides().len(), 1);
+        assert!(songs[1].config_overrides().is_empty());
+    }
 }

@@ -62,6 +62,29 @@ impl Song {
         }
     }
 
+    /// Extracts `{+config.KEY: VALUE}` overrides from this song's directives.
+    ///
+    /// Returns a list of `(key, value)` pairs in directive order. The key is
+    /// the dot-separated config path (e.g., `"pdf.chorus.indent"`), and the
+    /// value is the raw string from the directive.
+    ///
+    /// These overrides are scoped to this song and should not leak to other
+    /// songs in a multi-song file.
+    #[must_use]
+    pub fn config_overrides(&self) -> Vec<(&str, &str)> {
+        let mut overrides = Vec::new();
+        for line in &self.lines {
+            if let Line::Directive(directive) = line {
+                if let DirectiveKind::ConfigOverride(ref key) = directive.kind {
+                    if let Some(ref value) = directive.value {
+                        overrides.push((key.as_str(), value.as_str()));
+                    }
+                }
+            }
+        }
+        overrides
+    }
+
     /// Resolves `{define}` display and format attributes to matching chords.
     ///
     /// Scans all `{define}` directives in the song, collecting `display` and
@@ -955,6 +978,14 @@ pub enum DirectiveKind {
     /// `{image: src=filename}` — embeds an image with optional attributes.
     Image(ImageAttributes),
 
+    // -- Config override directives -----------------------------------------
+    /// `{+config.KEY: VALUE}` — overrides a configuration value for this song.
+    ///
+    /// The contained `String` is the dot-separated config key path
+    /// (e.g., `"pdf.chorus.indent"`). The directive value holds the new
+    /// setting (e.g., `"20"`).
+    ConfigOverride(String),
+
     // -- Unknown ------------------------------------------------------------
     /// A directive not recognized as a standard ChordPro directive.
     /// The original directive name (lowercased) is preserved.
@@ -1078,6 +1109,12 @@ impl DirectiveKind {
 
             // Custom sections (start_of_X / end_of_X)
             other => {
+                // Config override: {+config.KEY: VALUE}
+                if let Some(key) = other.strip_prefix("+config.") {
+                    if !key.is_empty() {
+                        return Self::ConfigOverride(key.to_string());
+                    }
+                }
                 if let Some(section) = other.strip_prefix("start_of_") {
                     if !section.is_empty() {
                         return Self::StartOfSection(section.to_string());
@@ -1234,6 +1271,7 @@ impl DirectiveKind {
             Self::Meta(_) => "meta",
 
             Self::Image(_) => "image",
+            Self::ConfigOverride(key) => key.as_str(),
             Self::StartOfSection(name) | Self::EndOfSection(name) | Self::Unknown(name) => {
                 name.as_str()
             }
@@ -1250,6 +1288,7 @@ impl DirectiveKind {
         match self {
             Self::StartOfSection(name) => format!("start_of_{name}"),
             Self::EndOfSection(name) => format!("end_of_{name}"),
+            Self::ConfigOverride(key) => format!("+config.{key}"),
             _ => self.canonical_name().to_string(),
         }
     }

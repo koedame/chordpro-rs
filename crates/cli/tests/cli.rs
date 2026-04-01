@@ -398,3 +398,30 @@ fn test_no_default_configs() {
         .success()
         .stdout(predicate::str::contains("Hello world"));
 }
+
+// --- Song-level config overrides ---
+
+#[test]
+fn test_song_config_override_transpose() {
+    // {+config.settings.transpose: 2} should transpose G→A and C→D
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .arg(fixture("config-override.cho"))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("A     D"))
+        .stdout(predicate::str::contains("Hello world"));
+}
+
+#[test]
+fn test_song_config_override_combined_with_cli_transpose() {
+    // Song has {+config.settings.transpose: 2}, CLI adds --transpose 1
+    // Total = 3 semitones: G→A# and C→D#
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([&fixture("config-override.cho"), "--transpose", "1"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("A#"))
+        .stdout(predicate::str::contains("Hello world"));
+}

@@ -1,0 +1,4 @@
+{title: Config Override Test}
+{+config.pdf.margins.top: 100}
+{+config.settings.transpose: 2}
+[G]Hello [C]world

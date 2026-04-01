@@ -13,6 +13,23 @@ use unicode_width::UnicodeWidthStr;
 /// Prevents output amplification from malicious inputs with many `{chorus}` lines.
 const MAX_CHORUS_RECALLS: usize = 1000;
 
+/// Extract the transpose delta from song-level config overrides.
+///
+/// Parses `settings.transpose` from the override list. Returns `0` if the
+/// key is absent or the value is not a valid number.
+fn song_transpose_delta(overrides: &[(&str, &str)]) -> i8 {
+    for &(key, value) in overrides.iter().rev() {
+        if key == "settings.transpose" {
+            return value
+                .trim()
+                .parse::<f64>()
+                .unwrap_or(0.0)
+                .clamp(f64::from(i8::MIN), f64::from(i8::MAX)) as i8;
+        }
+    }
+    0
+}
+
 /// Render a [`Song`] AST to plain text.
 ///
 /// The output format:
@@ -70,10 +87,24 @@ fn render_song_impl(
     config: &Config,
     warnings: &mut Vec<String>,
 ) -> String {
-    // Config is plumbed through for future use (e.g., suppress_empty_chords).
-    let _ = config;
+    // Apply song-level config overrides ({+config.KEY: VALUE} directives).
+    let song_overrides = song.config_overrides();
+    let song_config;
+    let _config = if song_overrides.is_empty() {
+        config
+    } else {
+        song_config = config
+            .clone()
+            .with_song_overrides(&song_overrides, warnings);
+        &song_config
+    };
+    // Extract song-level transpose delta from {+config.settings.transpose}.
+    // The base config transpose is already folded into cli_transpose by the caller.
+    let song_transpose_delta = song_transpose_delta(&song_overrides);
     let mut output = Vec::new();
-    let mut transpose_offset: i8 = cli_transpose;
+    let (combined_transpose, _) =
+        chordpro_core::transpose::combine_transpose(cli_transpose, song_transpose_delta);
+    let mut transpose_offset: i8 = combined_transpose;
     // Stores the rendered text lines of the most recently defined chorus,
     // excluding the "[Chorus]" header itself. Used by `{chorus}` recall.
     let mut chorus_lines: Vec<String> = Vec::new();

@@ -1,0 +1,104 @@
+Song {
+    metadata: Metadata {
+        title: Some(
+            "Config Override Test",
+        ),
+        subtitles: [],
+        artists: [],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: None,
+        tempo: None,
+        time: None,
+        capo: None,
+        sort_title: None,
+        sort_artist: None,
+        arrangers: [],
+        copyright: None,
+        duration: None,
+        tags: [],
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "title",
+                value: Some(
+                    "Config Override Test",
+                ),
+                kind: Title,
+                selector: None,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "+config.pdf.margins.top",
+                value: Some(
+                    "100",
+                ),
+                kind: ConfigOverride(
+                    "pdf.margins.top",
+                ),
+                selector: None,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "+config.settings.transpose",
+                value: Some(
+                    "2",
+                ),
+                kind: ConfigOverride(
+                    "settings.transpose",
+                ),
+                selector: None,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "G",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: G,
+                                        root_accidental: None,
+                                        quality: Major,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                                display: None,
+                            },
+                        ),
+                        text: "Hello ",
+                        spans: [],
+                    },
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "C",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: C,
+                                        root_accidental: None,
+                                        quality: Major,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                                display: None,
+                            },
+                        ),
+                        text: "world",
+                        spans: [],
+                    },
+                ],
+            },
+        ),
+    ],
+}
