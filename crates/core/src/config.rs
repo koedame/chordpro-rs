@@ -311,6 +311,19 @@ impl Config {
             }
         }
 
+        // Snapshot delegate settings from trusted sources (system + user config).
+        // Project-level and song-specific configs must not silently enable
+        // delegate execution — only CLI flags, auto-detection, or explicit
+        // user config (~/.config/chordpro/) may enable delegates.
+        let trusted_abc2svg = config
+            .get_path("delegates.abc2svg")
+            .as_bool()
+            .unwrap_or(false);
+        let trusted_lilypond = config
+            .get_path("delegates.lilypond")
+            .as_bool()
+            .unwrap_or(false);
+
         // Project config
         if let Some(dir) = project_dir {
             let project_path = PathBuf::from(dir).join("chordpro.json");
@@ -333,6 +346,34 @@ impl Config {
                     Err(e) => warnings.push(format!("failed to parse config file {path}: {e}")),
                 }
             }
+        }
+
+        // Restore delegate settings to trusted values. If a project or song
+        // config attempted to enable a delegate, override it back and warn.
+        let project_abc2svg = config
+            .get_path("delegates.abc2svg")
+            .as_bool()
+            .unwrap_or(false);
+        let project_lilypond = config
+            .get_path("delegates.lilypond")
+            .as_bool()
+            .unwrap_or(false);
+
+        if project_abc2svg && !trusted_abc2svg {
+            config = config.with_define("delegates.abc2svg=false");
+            warnings.push(
+                "delegates.abc2svg was enabled by a project-level config file and has been \
+                 disabled for security; use --define delegates.abc2svg=true to enable"
+                    .to_string(),
+            );
+        }
+        if project_lilypond && !trusted_lilypond {
+            config = config.with_define("delegates.lilypond=false");
+            warnings.push(
+                "delegates.lilypond was enabled by a project-level config file and has been \
+                 disabled for security; use --define delegates.lilypond=true to enable"
+                    .to_string(),
+            );
         }
 
         ConfigLoadResult { config, warnings }
@@ -919,6 +960,44 @@ mod tests {
         assert_eq!(
             result.config.get_path("settings.transpose"),
             &Value::Number(5.0)
+        );
+    }
+
+    #[test]
+    fn test_project_config_cannot_enable_delegates() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("chordpro.json"),
+            r#"{ "delegates": { "abc2svg": true, "lilypond": true } }"#,
+        )
+        .unwrap();
+
+        let result = Config::load(Some(dir.path().to_str().unwrap()), None);
+        // Delegates should be reset to false
+        assert_eq!(
+            result.config.get_path("delegates.abc2svg"),
+            &Value::Bool(false)
+        );
+        assert_eq!(
+            result.config.get_path("delegates.lilypond"),
+            &Value::Bool(false)
+        );
+        // Warnings should be emitted
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("delegates.abc2svg")),
+            "expected delegate warning, got: {:?}",
+            result.warnings
+        );
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("delegates.lilypond")),
+            "expected delegate warning, got: {:?}",
+            result.warnings
         );
     }
 
