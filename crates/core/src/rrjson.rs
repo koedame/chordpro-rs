@@ -240,6 +240,11 @@ pub fn parse_rrjson(input: &str) -> Result<Value, ParseError> {
 /// from deeply nested input.
 const MAX_NESTING_DEPTH: usize = 64;
 
+/// Maximum number of entries allowed in a single array or object.
+/// Prevents memory amplification from large flat collections within the
+/// 10 MB file size limit.
+const MAX_ENTRIES: usize = 10_000;
+
 struct Parser<'a> {
     input: &'a str,
     pos: usize,
@@ -399,7 +404,12 @@ impl<'a> Parser<'a> {
             if dot_segments >= MAX_NESTING_DEPTH {
                 return Err(self.error("dotted key exceeds maximum nesting depth"));
             }
+            self.validate_dotted_key(&key)?;
             self.insert_dotted_key(&mut entries, &key, value);
+
+            if entries.len() > MAX_ENTRIES {
+                return Err(self.error("maximum object entry count exceeded"));
+            }
 
             self.skip_ws_and_comments()?;
             match self.peek() {
@@ -441,6 +451,10 @@ impl<'a> Parser<'a> {
             }
 
             items.push(self.parse_value()?);
+
+            if items.len() > MAX_ENTRIES {
+                return Err(self.error("maximum array entry count exceeded"));
+            }
 
             self.skip_ws_and_comments()?;
             match self.peek() {
@@ -633,6 +647,9 @@ impl<'a> Parser<'a> {
         let n: f64 = num_str
             .parse()
             .map_err(|_| self.error(&format!("invalid number: {num_str}")))?;
+        if !n.is_finite() {
+            return Err(self.error(&format!("number out of range: {num_str}")));
+        }
         Ok(Value::Number(n))
     }
 
@@ -720,7 +737,12 @@ impl<'a> Parser<'a> {
             if dot_segments >= MAX_NESTING_DEPTH {
                 return Err(self.error("dotted key exceeds maximum nesting depth"));
             }
+            self.validate_dotted_key(&key)?;
             self.insert_dotted_key(&mut entries, &key, value);
+
+            if entries.len() > MAX_ENTRIES {
+                return Err(self.error("maximum object entry count exceeded"));
+            }
 
             // Optional separator (comma, semicolon, or newline-separated)
             self.skip_ws_and_comments()?;
@@ -733,6 +755,21 @@ impl<'a> Parser<'a> {
     }
 
     // -- Dot-separated key expansion ------------------------------------------
+
+    /// Validate that a dotted key has no empty segments.
+    ///
+    /// Keys like `a..b`, `.a`, `a.`, and `.` are rejected because they would
+    /// produce objects with empty-string keys.
+    fn validate_dotted_key(&self, key: &str) -> Result<(), ParseError> {
+        if key.contains('.') {
+            for segment in key.split('.') {
+                if segment.is_empty() {
+                    return Err(self.error(&format!("dotted key has empty segment: \"{key}\"")));
+                }
+            }
+        }
+        Ok(())
+    }
 
     /// Insert a value at a potentially dot-separated key path.
     ///
@@ -1352,7 +1389,8 @@ mod tests {
         // Values outside i64 range should not be cast to i64
         assert_eq!(Value::Number(1e20).to_string(), "100000000000000000000");
         assert_eq!(Value::Number(-1e20).to_string(), "-100000000000000000000");
-        // Infinity and NaN use f64 display
+        // Non-finite values cannot be produced by the parser (rejected at parse time),
+        // but Display still handles them if constructed directly.
         assert_eq!(Value::Number(f64::INFINITY).to_string(), "inf");
         assert_eq!(Value::Number(f64::NEG_INFINITY).to_string(), "-inf");
     }
@@ -1478,5 +1516,112 @@ mod tests {
             result.is_ok(),
             "dotted key at depth limit should be accepted"
         );
+    }
+
+    // --- Non-finite number rejection (#452) ---
+
+    #[test]
+    fn test_parse_rejects_infinity() {
+        let result = parse_rrjson(r#"{"x": 1e309}"#);
+        assert!(result.is_err(), "1e309 should be rejected as infinite");
+        assert!(result.unwrap_err().message.contains("out of range"));
+    }
+
+    #[test]
+    fn test_parse_rejects_negative_infinity() {
+        let result = parse_rrjson(r#"{"x": -1e309}"#);
+        assert!(result.is_err(), "-1e309 should be rejected as infinite");
+    }
+
+    #[test]
+    fn test_parse_accepts_large_but_finite_number() {
+        let result = parse_rrjson(r#"{"x": 1e308}"#);
+        assert!(result.is_ok(), "1e308 is large but finite");
+    }
+
+    // --- Entry count limit (#458) ---
+
+    #[test]
+    fn test_array_entry_limit_exceeded() {
+        assert_eq!(MAX_ENTRIES, 10_000);
+
+        // Build a compact array with MAX_ENTRIES + 1 entries.
+        let mut input = String::with_capacity(MAX_ENTRIES * 2 + 2);
+        input.push('[');
+        for i in 0..=MAX_ENTRIES {
+            if i > 0 {
+                input.push(',');
+            }
+            input.push('1');
+        }
+        input.push(']');
+        let result = parse_rrjson(&input);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("maximum array entry count")
+        );
+    }
+
+    #[test]
+    fn test_object_entry_limit_exceeded() {
+        assert_eq!(MAX_ENTRIES, 10_000);
+
+        // Build a compact object with MAX_ENTRIES + 1 entries using unquoted keys.
+        let mut input = String::with_capacity(MAX_ENTRIES * 10 + 2);
+        input.push('{');
+        for i in 0..=MAX_ENTRIES {
+            if i > 0 {
+                input.push(',');
+            }
+            input.push_str(&format!("k{i}:1"));
+        }
+        input.push('}');
+        let result = parse_rrjson(&input);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("maximum object entry count")
+        );
+    }
+
+    // --- Empty dotted key segments (#462) ---
+
+    #[test]
+    fn test_dotted_key_empty_segment_double_dot() {
+        let result = parse_rrjson("a..b = 1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("empty segment"));
+    }
+
+    #[test]
+    fn test_dotted_key_empty_segment_leading_dot() {
+        let result = parse_rrjson(r#"{".a": 1}"#);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("empty segment"));
+    }
+
+    #[test]
+    fn test_dotted_key_empty_segment_trailing_dot() {
+        let result = parse_rrjson(r#"{"a.": 1}"#);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("empty segment"));
+    }
+
+    #[test]
+    fn test_dotted_key_single_dot() {
+        let result = parse_rrjson(r#"{".": 1}"#);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("empty segment"));
+    }
+
+    #[test]
+    fn test_dotted_key_valid_segments() {
+        let result = parse_rrjson("a.b.c = 1");
+        assert!(result.is_ok());
     }
 }
