@@ -19,6 +19,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// successfully). Returns `false` if the command is not found or cannot
 /// be executed.
 ///
+/// # Security
+///
+/// The `command` parameter is passed directly to [`std::process::Command::new`].
+/// Callers **must not** pass user-controlled or untrusted input as the command
+/// name, as this could lead to arbitrary command execution. This function is
+/// intended only for checking hardcoded tool names (e.g., `"lilypond"`,
+/// `"abc2svg"`).
+///
 /// # Examples
 ///
 /// ```no_run
