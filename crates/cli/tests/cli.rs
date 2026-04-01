@@ -2,6 +2,7 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use std::io::Write;
 use std::path::Path;
 use tempfile::NamedTempFile;
 
@@ -232,4 +233,79 @@ fn test_format_pdf_with_transpose() {
 
     let content = std::fs::read(&output_path).unwrap();
     assert!(content.starts_with(b"%PDF"));
+}
+
+// --- --config, --define, --no-default-configs ---
+
+#[test]
+fn test_config_preset() {
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args(["--config", "guitar", &fixture("simple.cho")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Hello world"));
+}
+
+#[test]
+fn test_config_file() {
+    let mut config_file = NamedTempFile::new().unwrap();
+    write!(config_file, r#"{{ "settings": {{ "transpose": 2 }} }}"#).unwrap();
+    config_file.flush().unwrap();
+
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([
+            "--config",
+            config_file.path().to_str().unwrap(),
+            &fixture("simple.cho"),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Hello world"));
+}
+
+#[test]
+fn test_config_nonexistent_file() {
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([
+            "--config",
+            "/nonexistent/chordpro-test-config.json",
+            &fixture("simple.cho"),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("error:"));
+}
+
+#[test]
+fn test_define_valid() {
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args(["--define", "settings.columns=2", &fixture("simple.cho")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Hello world"));
+}
+
+#[test]
+fn test_define_invalid_syntax() {
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args(["--define", "noequalssign", &fixture("simple.cho")])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("error:"))
+        .stderr(predicate::str::contains("key=value"));
+}
+
+#[test]
+fn test_no_default_configs() {
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args(["--no-default-configs", &fixture("simple.cho")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Hello world"));
 }
