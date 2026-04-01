@@ -105,6 +105,21 @@ fn main() -> ExitCode {
         config = config.with_define(define);
     }
 
+    // Combine CLI --transpose with settings.transpose from config.
+    // CLI flag takes additive precedence: final = config + CLI.
+    let config_transpose = config
+        .get_path("settings.transpose")
+        .as_f64()
+        .unwrap_or(0.0) as i8;
+    let (effective_transpose, saturated) =
+        chordpro_core::transpose::combine_transpose(config_transpose, cli.transpose);
+    if saturated {
+        eprintln!(
+            "warning: transpose offset {} + {} exceeds i8 range, clamped to {}",
+            config_transpose, cli.transpose, effective_transpose
+        );
+    }
+
     let mut all_songs: Vec<chordpro_core::ast::Song> = Vec::new();
     let is_binary = matches!(cli.format, Format::Pdf);
     let mut had_error = false;
@@ -138,20 +153,23 @@ fn main() -> ExitCode {
     let combined_bytes;
 
     if is_binary {
-        combined_bytes =
-            chordpro_render_pdf::render_songs_with_transpose(&all_songs, cli.transpose, &config);
+        combined_bytes = chordpro_render_pdf::render_songs_with_transpose(
+            &all_songs,
+            effective_transpose,
+            &config,
+        );
         combined_text = String::new();
     } else {
         combined_bytes = Vec::new();
         combined_text = match cli.format {
             Format::Text => chordpro_render_text::render_songs_with_transpose(
                 &all_songs,
-                cli.transpose,
+                effective_transpose,
                 &config,
             ),
             Format::Html => chordpro_render_html::render_songs_with_transpose(
                 &all_songs,
-                cli.transpose,
+                effective_transpose,
                 &config,
             ),
             Format::Pdf => unreachable!(),

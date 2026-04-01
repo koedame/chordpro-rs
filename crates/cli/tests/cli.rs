@@ -253,6 +253,7 @@ fn test_config_file() {
     write!(config_file, r#"{{ "settings": {{ "transpose": 2 }} }}"#).unwrap();
     config_file.flush().unwrap();
 
+    // Config sets transpose=2, so G→A and C→D
     Command::cargo_bin("chordpro")
         .unwrap()
         .args([
@@ -262,6 +263,7 @@ fn test_config_file() {
         ])
         .assert()
         .success()
+        .stdout(predicate::str::contains("A     D"))
         .stdout(predicate::str::contains("Hello world"));
 }
 
@@ -281,11 +283,13 @@ fn test_config_nonexistent_file() {
 
 #[test]
 fn test_define_valid() {
+    // --define settings.transpose=3 should transpose G→A# and C→D#
     Command::cargo_bin("chordpro")
         .unwrap()
-        .args(["--define", "settings.columns=2", &fixture("simple.cho")])
+        .args(["--define", "settings.transpose=3", &fixture("simple.cho")])
         .assert()
         .success()
+        .stdout(predicate::str::contains("A#"))
         .stdout(predicate::str::contains("Hello world"));
 }
 
@@ -298,6 +302,29 @@ fn test_define_invalid_syntax() {
         .failure()
         .stderr(predicate::str::contains("error:"))
         .stderr(predicate::str::contains("key=value"));
+}
+
+#[test]
+fn test_config_transpose_combined_with_cli() {
+    let mut config_file = NamedTempFile::new().unwrap();
+    // Config sets transpose=2
+    write!(config_file, r#"{{ "settings": {{ "transpose": 2 }} }}"#).unwrap();
+    config_file.flush().unwrap();
+
+    // CLI adds --transpose 1, total = 3 semitones: G→A# and C→D#
+    Command::cargo_bin("chordpro")
+        .unwrap()
+        .args([
+            "--config",
+            config_file.path().to_str().unwrap(),
+            "--transpose",
+            "1",
+            &fixture("simple.cho"),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("A#"))
+        .stdout(predicate::str::contains("Hello world"));
 }
 
 #[test]
