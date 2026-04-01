@@ -317,23 +317,36 @@ impl Config {
     /// Apply song-level config overrides from `{+config.KEY: VALUE}` directives.
     ///
     /// Returns a new `Config` with the overrides applied, plus any warnings
-    /// (e.g., blocked delegate keys). Security-sensitive keys under
-    /// `delegates.*` are blocked and produce a warning.
+    /// for disallowed keys. Only keys under explicitly allowed top-level
+    /// prefixes may be overridden from song-level directives (allowlist
+    /// approach). This is secure by default: newly added config sections
+    /// are blocked until explicitly whitelisted.
     #[must_use]
     pub fn with_song_overrides(
         self,
         overrides: &[(&str, &str)],
         warnings: &mut Vec<String>,
     ) -> Self {
-        /// Keys that cannot be set from song-level config directives.
-        const BLOCKED_PREFIXES: &[&str] = &["delegates."];
+        /// Top-level config key prefixes that are safe for song-level
+        /// overrides. These control rendering and display only — no
+        /// external tool execution or filesystem access.
+        const ALLOWED_PREFIXES: &[&str] = &[
+            "settings.",
+            "pdf.",
+            "html.",
+            "chords.",
+            "metadata.",
+            "instrument.",
+            "tuning",
+            "diagrams.",
+        ];
 
         let mut config = self;
         for &(key, value) in overrides {
-            if BLOCKED_PREFIXES
+            let allowed = ALLOWED_PREFIXES
                 .iter()
-                .any(|prefix| key.starts_with(prefix))
-            {
+                .any(|prefix| key.starts_with(prefix));
+            if !allowed {
                 warnings.push(format!(
                     "{key} cannot be overridden from a song-level config directive"
                 ));
@@ -1360,6 +1373,43 @@ mod tests {
         assert_eq!(warnings.len(), 2);
         assert!(warnings[0].contains("delegates.abc2svg"));
         assert!(warnings[1].contains("delegates.lilypond"));
+    }
+
+    #[test]
+    fn test_song_overrides_block_unknown_keys() {
+        let config = Config::defaults();
+        let mut warnings = Vec::new();
+        let overrides = vec![("some_new_key.dangerous", "true")];
+        let config = config.with_song_overrides(&overrides, &mut warnings);
+        assert_eq!(config.get_path("some_new_key.dangerous"), &Value::Null);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("some_new_key.dangerous"));
+    }
+
+    #[test]
+    fn test_song_overrides_allow_all_safe_prefixes() {
+        let config = Config::defaults();
+        let mut warnings = Vec::new();
+        let overrides = vec![
+            ("settings.transpose", "2"),
+            ("pdf.papersize", "\"letter\""),
+            ("html.styles.body", "\"color: red;\""),
+            ("chords.show", "\"none\""),
+            ("metadata.separator", "\", \""),
+            ("instrument.type", "\"ukulele\""),
+            ("diagrams.frets", "4"),
+        ];
+        let config = config.with_song_overrides(&overrides, &mut warnings);
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+        assert_eq!(config.get_path("settings.transpose"), &Value::Number(2.0));
+        assert_eq!(
+            config.get_path("pdf.papersize"),
+            &Value::String("letter".to_string())
+        );
+        assert_eq!(
+            config.get_path("chords.show"),
+            &Value::String("none".to_string())
+        );
     }
 
     #[test]
