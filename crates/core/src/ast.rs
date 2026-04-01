@@ -3237,4 +3237,45 @@ mod expand_format_tests {
         };
         assert_eq!(chord.expand_format("%{root}"), None);
     }
+
+    #[test]
+    fn unknown_placeholder_passes_through() {
+        let chord = Chord::new("Am");
+        let result = chord.expand_format("%{root}%{unknown}");
+        assert_eq!(result, Some("A%{unknown}".to_string()));
+    }
+
+    #[test]
+    fn empty_format_string() {
+        let chord = Chord::new("Am");
+        assert_eq!(chord.expand_format(""), Some(String::new()));
+    }
+
+    #[test]
+    fn slash_chord_bass_with_accidental() {
+        let chord = Chord::new("G/Bb");
+        let result = chord.expand_format("%{root}/%{bass}");
+        assert_eq!(result, Some("G/Bb".to_string()));
+    }
+
+    #[test]
+    fn no_bass_produces_empty_string() {
+        let chord = Chord::new("Am");
+        let result = chord.expand_format("%{root}%{quality} (bass: %{bass})");
+        assert_eq!(result, Some("Am (bass: )".to_string()));
+    }
+
+    #[test]
+    fn all_placeholders_combined() {
+        let chord = Chord::new("Bbm7/Eb");
+        let result = chord.expand_format("%{root}%{quality}%{ext}/%{bass}");
+        assert_eq!(result, Some("Bbm7/Eb".to_string()));
+    }
+
+    #[test]
+    fn literal_text_with_no_placeholders() {
+        let chord = Chord::new("Am");
+        let result = chord.expand_format("just text");
+        assert_eq!(result, Some("just text".to_string()));
+    }
 }
