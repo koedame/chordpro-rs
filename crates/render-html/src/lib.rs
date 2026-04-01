@@ -282,10 +282,14 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
                     DirectiveKind::ColumnBreak => {
                         html.push_str("<div style=\"break-before: column;\"></div>\n");
                     }
-                    DirectiveKind::NewPage | DirectiveKind::NewPhysicalPage => {
-                        // TODO: NewPhysicalPage should eventually emit a
-                        // different CSS hint for duplex printing scenarios.
+                    DirectiveKind::NewPage => {
                         html.push_str("<div style=\"break-before: page;\"></div>\n");
+                    }
+                    DirectiveKind::NewPhysicalPage => {
+                        // Use CSS `break-before: recto` so the browser inserts
+                        // a blank page when needed to start on a right-hand page
+                        // in duplex printing.
+                        html.push_str("<div style=\"break-before: recto;\"></div>\n");
                     }
                     DirectiveKind::StartOfAbc if abc2svg_enabled => {
                         abc_buf = Some(String::new());
@@ -1731,9 +1735,16 @@ mod transpose_tests {
     }
 
     #[test]
-    fn test_new_physical_page_generates_page_break() {
+    fn test_new_physical_page_generates_recto_break() {
         let html = render("Page 1\n{new_physical_page}\nPage 2");
-        assert!(html.contains("break-before: page;"));
+        assert!(
+            html.contains("break-before: recto;"),
+            "new_physical_page should use break-before: recto for duplex printing"
+        );
+        assert!(
+            !html.contains("break-before: page;"),
+            "new_physical_page should not emit generic page break"
+        );
     }
 
     #[test]

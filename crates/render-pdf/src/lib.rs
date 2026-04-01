@@ -316,11 +316,18 @@ fn render_song_into_doc(song: &Song, cli_transpose: i8, doc: &mut PdfDocument) {
                     // chorus buffer. These affect global page/column layout, and
                     // replaying them during {chorus} recall would produce unexpected
                     // layout changes (e.g., duplicate page breaks, column resets).
-                    DirectiveKind::NewPage | DirectiveKind::NewPhysicalPage => {
-                        // TODO: NewPhysicalPage should eventually handle duplex
-                        // printing differently (e.g., insert a blank page to
-                        // ensure the next content starts on a recto page).
+                    DirectiveKind::NewPage => {
                         doc.new_page();
+                    }
+                    DirectiveKind::NewPhysicalPage => {
+                        doc.new_page();
+                        // In duplex printing, recto pages are odd-numbered
+                        // (1, 3, 5, …).  If the new page is even (verso),
+                        // insert a blank page so the next content starts on
+                        // a recto page.
+                        if doc.page_count() % 2 == 0 {
+                            doc.new_page();
+                        }
                     }
                     DirectiveKind::Columns => {
                         let n: u32 = d
@@ -2547,12 +2554,29 @@ mod multipage_tests {
     }
 
     #[test]
-    fn test_new_physical_page_directive_creates_two_pages() {
+    fn test_new_physical_page_from_recto_inserts_blank() {
+        // Page 1 (recto) -> {npp} -> blank page 2 (verso) -> page 3 (recto)
         let input = "Page one\n{new_physical_page}\nPage two";
         let song = chordpro_core::parse(input).unwrap();
         let bytes = render_song(&song);
         let content = String::from_utf8_lossy(&bytes);
-        assert!(content.contains("/Count 2"));
+        assert!(
+            content.contains("/Count 3"),
+            "new_physical_page from recto should insert blank page to reach next recto"
+        );
+    }
+
+    #[test]
+    fn test_new_physical_page_from_verso_no_extra_blank() {
+        // Page 1 (recto) -> {np} -> page 2 (verso) -> {npp} -> page 3 (recto)
+        let input = "Page one\n{new_page}\nPage two\n{new_physical_page}\nPage three";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            content.contains("/Count 3"),
+            "new_physical_page from verso should go directly to next recto (no extra blank)"
+        );
     }
 
     #[test]
