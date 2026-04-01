@@ -510,19 +510,33 @@ fn open_no_follow(path: &Path) -> Result<File, std::io::Error> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        // O_NOFOLLOW value from POSIX / Linux headers. The constant is
-        // stable across Linux (0o400000) and macOS (0x0100).
+        // O_NOFOLLOW values from platform fcntl(2) headers.
         // Note: chordpro-core has a zero-dependency policy, so we cannot
         // use the `libc` crate for portable O_NOFOLLOW constants.
+        //
+        // References:
+        //   Linux:   include/uapi/asm-generic/fcntl.h  — 0o400000 (0x20000)
+        //   macOS:   sys/fcntl.h                        — 0x0100
+        //   FreeBSD: sys/fcntl.h                        — 0x0100
+        //   OpenBSD: sys/fcntl.h                        — 0x0100
         #[cfg(target_os = "linux")]
         const O_NOFOLLOW: i32 = 0o400000;
         #[cfg(target_os = "macos")]
         const O_NOFOLLOW: i32 = 0x0100;
-        // On other Unix platforms (FreeBSD, OpenBSD, etc.) the O_NOFOLLOW
-        // value differs and we fall back to 0, which disables kernel-level
-        // symlink protection. The pre-open symlink_metadata() check in
-        // read_config_file() still provides TOCTOU-window-limited defense.
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(target_os = "freebsd")]
+        const O_NOFOLLOW: i32 = 0x0100;
+        #[cfg(target_os = "openbsd")]
+        const O_NOFOLLOW: i32 = 0x0100;
+        // On other Unix platforms the O_NOFOLLOW value is unknown and we
+        // fall back to 0, which disables kernel-level symlink protection.
+        // The pre-open symlink_metadata() check in read_config_file()
+        // still provides TOCTOU-window-limited defense.
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "freebsd",
+            target_os = "openbsd"
+        )))]
         const O_NOFOLLOW: i32 = 0;
 
         std::fs::OpenOptions::new()
