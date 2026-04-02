@@ -3281,6 +3281,29 @@ mod chord_diagram_pdf_tests {
         let bytes = render_song(&song);
         assert!(bytes.starts_with(b"%PDF"));
     }
+
+    #[test]
+    fn test_diagrams_frets_config_affects_pdf_output() {
+        let input = "{define: Am base-fret 1 frets x 0 2 2 1 0}\n[Am]Hello";
+        let song = chordpro_core::parse(input).unwrap();
+        let config_4 = chordpro_core::config::Config::defaults()
+            .with_define("diagrams.frets=4")
+            .unwrap();
+        let config_7 = chordpro_core::config::Config::defaults()
+            .with_define("diagrams.frets=7")
+            .unwrap();
+        let bytes_4 = render_song_with_transpose(&song, 0, &config_4);
+        let bytes_7 = render_song_with_transpose(&song, 0, &config_7);
+        assert!(bytes_4.starts_with(b"%PDF"));
+        assert!(bytes_7.starts_with(b"%PDF"));
+        // Different fret counts produce different PDF content: more frets means
+        // more horizontal lines and a taller grid, yielding a larger output.
+        assert_ne!(
+            bytes_4.len(),
+            bytes_7.len(),
+            "diagrams.frets config should affect rendered PDF size"
+        );
+    }
 }
 
 #[cfg(test)]

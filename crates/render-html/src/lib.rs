@@ -2242,6 +2242,21 @@ Verse text\n\
         }
     }
 
+    #[test]
+    fn test_diagrams_frets_config_controls_svg_height() {
+        let input = "{define: Am base-fret 1 frets x 0 2 2 1 0}";
+        let song = chordpro_core::parse(input).unwrap();
+        let config = chordpro_core::config::Config::defaults()
+            .with_define("diagrams.frets=4")
+            .unwrap();
+        let html = render_song_with_transpose(&song, 0, &config);
+        // 4 frets: grid_h = 4*20 = 80, total_h = 80 + 30 + 30 = 140
+        assert!(
+            html.contains("height=\"140\""),
+            "SVG height should reflect diagrams.frets=4 (expected 140)"
+        );
+    }
+
     // -- abc2svg delegate rendering tests -----------------------------------------
 
     #[test]
