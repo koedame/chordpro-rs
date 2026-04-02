@@ -3294,14 +3294,18 @@ mod chord_diagram_pdf_tests {
             .unwrap();
         let bytes_4 = render_song_with_transpose(&song, 0, &config_4);
         let bytes_7 = render_song_with_transpose(&song, 0, &config_7);
-        assert!(bytes_4.starts_with(b"%PDF"));
-        assert!(bytes_7.starts_with(b"%PDF"));
-        // Different fret counts produce different PDF content: more frets means
-        // more horizontal lines and a taller grid, yielding a larger output.
-        assert_ne!(
-            bytes_4.len(),
-            bytes_7.len(),
-            "diagrams.frets config should affect rendered PDF size"
+        let content_4 = String::from_utf8_lossy(&bytes_4);
+        let content_7 = String::from_utf8_lossy(&bytes_7);
+        // Each line_at() emits "m ... l S". Count line-drawing operations:
+        // frets=4 → 5 horizontal + 6 vertical + 1 nut = 12 lines
+        // frets=7 → 8 horizontal + 6 vertical + 1 nut = 15 lines
+        // The difference of 3 corresponds to the 3 extra fret lines.
+        let lines_4 = content_4.matches("l S").count();
+        let lines_7 = content_7.matches("l S").count();
+        assert_eq!(
+            lines_7 - lines_4,
+            3,
+            "frets=7 should produce exactly 3 more line-drawing ops than frets=4"
         );
     }
 }
