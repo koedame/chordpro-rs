@@ -32,6 +32,12 @@ const MAX_STRINGS: usize = 12;
 /// Default number of frets shown in a chord diagram.
 pub const DEFAULT_FRETS_SHOWN: usize = 5;
 
+/// Maximum allowed `base_fret` value (typical 24-fret guitar).
+const MAX_BASE_FRET: u32 = 24;
+
+/// Minimum number of frets shown in a rendered chord diagram.
+const MIN_FRETS_SHOWN: usize = 1;
+
 /// Data needed to render a chord diagram.
 #[derive(Debug, Clone)]
 pub struct DiagramData {
@@ -126,7 +132,7 @@ impl DiagramData {
             match tokens[i] {
                 "base-fret" => {
                     if i + 1 < tokens.len() {
-                        base_fret = tokens[i + 1].parse().unwrap_or(1).clamp(1, 24);
+                        base_fret = tokens[i + 1].parse().unwrap_or(1).clamp(1, MAX_BASE_FRET);
                         i += 2;
                     } else {
                         i += 1;
@@ -148,7 +154,7 @@ impl DiagramData {
                 "fingers" => {
                     i += 1;
                     while i < tokens.len()
-                        && !matches!(tokens[i], "base-fret" | "display" | "format")
+                        && !matches!(tokens[i], "frets" | "base-fret" | "display" | "format")
                     {
                         fingers.push(tokens[i].parse().unwrap_or(0));
                         i += 1;
@@ -220,7 +226,7 @@ const OPEN_RADIUS: f32 = 4.0;
 /// Render a chord diagram as an inline SVG string.
 #[must_use]
 pub fn render_svg(data: &DiagramData) -> String {
-    if data.strings < MIN_STRINGS {
+    if data.strings < MIN_STRINGS || data.frets_shown < MIN_FRETS_SHOWN {
         return String::new();
     }
     let num_strings = data.strings;
@@ -780,6 +786,65 @@ mod tests {
             frets_shown: 5,
             base_fret: 1,
             frets: vec![0],
+            fingers: vec![],
+        };
+        assert!(render_svg(&data).is_empty());
+    }
+
+    // --- "frets" stop-word in fingers parser (#616) ---
+
+    #[test]
+    fn test_frets_stops_finger_parsing() {
+        // "frets" after "fingers" should stop finger parsing.
+        let data =
+            DiagramData::from_raw("Am", "frets x 0 2 2 1 0 fingers 0 0 2 frets x 0 2 2 1 0", 6)
+                .unwrap();
+        // Only 3 finger values before the second "frets" token.
+        assert_eq!(data.fingers, vec![0, 0, 2]);
+    }
+
+    // --- from_raw_frets / from_raw_infer_frets tests (#623) ---
+
+    #[test]
+    fn test_from_raw_frets_custom_frets_shown() {
+        let data =
+            DiagramData::from_raw_frets("Am", "base-fret 1 frets x 0 2 2 1 0", 6, 4).unwrap();
+        assert_eq!(data.frets_shown, 4);
+    }
+
+    #[test]
+    fn test_from_raw_infer_frets_custom_frets_shown() {
+        let data =
+            DiagramData::from_raw_infer_frets("Am", "base-fret 1 frets x 0 2 2 1 0", 3).unwrap();
+        assert_eq!(data.frets_shown, 3);
+    }
+
+    #[test]
+    fn test_from_raw_frets_zero_clamped_to_one() {
+        let data =
+            DiagramData::from_raw_frets("Am", "base-fret 1 frets x 0 2 2 1 0", 6, 0).unwrap();
+        assert_eq!(data.frets_shown, 1);
+    }
+
+    #[test]
+    fn test_from_raw_frets_clamps_fret_values() {
+        // With frets_shown=3, fret value 5 should be clamped to 3.
+        let data =
+            DiagramData::from_raw_frets("Am", "base-fret 1 frets 0 5 0 0 0 0", 6, 3).unwrap();
+        assert_eq!(data.frets[1], 3);
+    }
+
+    // --- render_svg frets_shown guard (#625) ---
+
+    #[test]
+    fn test_render_svg_zero_frets_shown_returns_empty() {
+        let data = DiagramData {
+            name: "X".to_string(),
+            display_name: None,
+            strings: 6,
+            frets_shown: 0,
+            base_fret: 1,
+            frets: vec![0, 0, 0, 0, 0, 0],
             fingers: vec![],
         };
         assert!(render_svg(&data).is_empty());
