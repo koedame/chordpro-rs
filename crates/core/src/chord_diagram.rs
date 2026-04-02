@@ -220,6 +220,9 @@ const OPEN_RADIUS: f32 = 4.0;
 /// Render a chord diagram as an inline SVG string.
 #[must_use]
 pub fn render_svg(data: &DiagramData) -> String {
+    if data.strings < MIN_STRINGS {
+        return String::new();
+    }
     let num_strings = data.strings;
     let num_frets = data.frets_shown;
     let grid_w = (num_strings - 1) as f32 * CELL_W;
@@ -750,5 +753,35 @@ mod tests {
     fn test_base_fret_large_value_clamped() {
         let data = DiagramData::from_raw("Am", "base-fret 100 frets x 0 2 2 1 0", 6).unwrap();
         assert_eq!(data.base_fret, 24);
+    }
+
+    // --- render_svg input guard (#606) ---
+
+    #[test]
+    fn test_render_svg_zero_strings_returns_empty() {
+        let data = DiagramData {
+            name: "X".to_string(),
+            display_name: None,
+            strings: 0,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![],
+            fingers: vec![],
+        };
+        assert!(render_svg(&data).is_empty());
+    }
+
+    #[test]
+    fn test_render_svg_one_string_returns_empty() {
+        let data = DiagramData {
+            name: "X".to_string(),
+            display_name: None,
+            strings: 1,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![0],
+            fingers: vec![],
+        };
+        assert!(render_svg(&data).is_empty());
     }
 }
