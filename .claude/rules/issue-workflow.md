@@ -25,7 +25,7 @@
 2. Create worktree + branch from latest `main`.
 3. Implement (commits reference issue: `Part of #N` or `Closes #N`).
 4. Open PR (title references issue, body has `Closes #N`).
-5. CI -> `/review` -> `/security-review` -> merge.
+5. CI -> `/review` + `/security-review` -> fix blocking -> merge.
 6. Cleanup worktree.
 
 ## Tracking Issues & Sub-Issues
@@ -41,23 +41,24 @@
 
 ### Phase Completion Gate
 
-Before closing a phase tracking issue, perform the following review against
-`main`:
+Before closing a phase tracking issue:
 
-1. **Initial review** — run `/review` and `/security-review` on the full phase
-   diff (may run in parallel).
-2. **Classify findings** by severity (see
-   [Severity Definitions](pr-workflow.md#severity-definitions)).
-3. **Blocking findings** (High, Medium) — create sub-issues, implement fixes
+0. **Prerequisite** — all sub-issues of the tracking issue must be closed.
+   If any are open, complete them first.
+1. **Initial review** — run `/phase-review <tracking-issue-number>`. This
+   verifies the prerequisite, performs both code review and security review
+   on the full phase diff, classifies findings by severity (see
+   [Severity Definitions](pr-workflow.md#severity-definitions)), and creates
+   issues for all findings.
+2. **Blocking findings** (High, Medium) — create sub-issues, implement fixes
    via normal PR workflow, and merge to `main`.
-4. **Non-blocking findings** (Low, Nit) — create issues for future work. These
-   do **not** block phase closure.
-5. **Delta review** — run `/review` and `/security-review` on only the fix
-   commits merged since the initial review. Do **not** re-review the entire
-   phase. Only new blocking findings in the fix code require further fixes.
-6. **Repeat steps 3–5** until a delta review produces no new blocking findings.
-7. **Close** the phase tracking issue when all blocking findings are resolved
-   and all non-blocking findings are tracked as issues.
+3. **Non-blocking findings** (Low, Nit) — issues are created but do **not**
+   block phase closure.
+4. **Delta review** — run `/delta-review <base-commit>` where `<base-commit>`
+   is the last commit reviewed. This reviews only the fix commits, not the
+   entire phase. Only new blocking findings require further fixes.
+5. **Repeat steps 2–4** until a delta review produces no new blocking findings.
+6. **Close** the phase tracking issue.
 
 ### Review Finding Accountability
 
