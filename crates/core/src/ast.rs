@@ -612,11 +612,11 @@ fn extract_attribute(s: &mut String, key: &str) -> Option<String> {
         )
     } else {
         match after.split_whitespace().next() {
-            Some(t) => (Some(t.to_string()), pos + needle.len() + t.len()),
-            // Key found but no value follows — consume the "key=" token so
-            // it is removed from the string, and return Some("") to signal
-            // the key was present.
-            None => (Some(String::new()), pos + needle.len()),
+            Some(t) if !t.contains('=') => (Some(t.to_string()), pos + needle.len() + t.len()),
+            // Token contains '=' — likely the next attribute (e.g., "format=...").
+            // Treat current attribute as empty-valued rather than consuming the
+            // next attribute's token.
+            Some(_) | None => (Some(String::new()), pos + needle.len()),
         }
     };
 
@@ -3160,6 +3160,26 @@ mod chord_definition_tests {
         assert_eq!(def.display, Some(String::new()));
         // display= must not appear in raw — only the fret portion remains.
         assert_eq!(def.raw, Some("base-fret 1 frets x 0 2 2 1 0".to_string()));
+    }
+
+    // --- extract_attribute does not consume next attribute (#682) ---
+
+    #[test]
+    fn test_unquoted_empty_display_with_format() {
+        // "display=" (unquoted, empty) followed by format= should NOT
+        // consume "format=..." as the display value.
+        let def = ChordDefinition::parse_value("Am display= format=\"test\"");
+        assert_eq!(def.display, Some(String::new()));
+        assert_eq!(def.format, Some("test".to_string()));
+    }
+
+    #[test]
+    fn test_unquoted_empty_format_with_display() {
+        // "format=" (unquoted, empty) followed by display= should NOT
+        // consume "display=..." as the format value.
+        let def = ChordDefinition::parse_value("Am format= display=\"A minor\"");
+        assert_eq!(def.format, Some(String::new()));
+        assert_eq!(def.display, Some("A minor".to_string()));
     }
 
     // --- Forward-reference {define} (#657) ---
