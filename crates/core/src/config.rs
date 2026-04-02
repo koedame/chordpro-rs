@@ -1665,4 +1665,80 @@ mod tests {
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("too many song-level config overrides"));
     }
+
+    // --- Additional edge case coverage (#580) ---
+
+    #[test]
+    fn test_deep_merge_type_change_object_to_scalar() {
+        // When overlay replaces an object with a scalar, the scalar wins.
+        let base = crate::rrjson::parse_rrjson(r#"{"a": {"b": 1}}"#).unwrap();
+        let overlay = crate::rrjson::parse_rrjson(r#"{"a": 42}"#).unwrap();
+        let merged = deep_merge(base, overlay);
+        if let Value::Object(entries) = merged {
+            let val = entries.iter().find(|(k, _)| k == "a").map(|(_, v)| v);
+            assert_eq!(val, Some(&Value::Number(42.0)));
+        } else {
+            panic!("expected object");
+        }
+    }
+
+    #[test]
+    fn test_resolve_propagates_rrjson_warnings() {
+        // RRJSON include directives produce warnings. Verify they propagate
+        // through Config::resolve.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("test.prp");
+        std::fs::write(&file_path, "include \"nonexistent.prp\"\na = 1\n").unwrap();
+        let result = Config::resolve(file_path.to_str().unwrap()).unwrap();
+        assert!(
+            !result.warnings.is_empty(),
+            "RRJSON warnings should propagate through Config::resolve"
+        );
+    }
+
+    #[test]
+    fn test_define_value_with_braces() {
+        let config = Config::defaults().with_define("settings.note={C}").unwrap();
+        assert_eq!(
+            config.get_path("settings.note"),
+            &Value::String("{C}".to_string())
+        );
+    }
+
+    #[test]
+    fn test_define_value_with_equals() {
+        let config = Config::defaults().with_define("settings.expr=a=b").unwrap();
+        assert_eq!(
+            config.get_path("settings.expr"),
+            &Value::String("a=b".to_string())
+        );
+    }
+
+    #[test]
+    fn test_multi_song_per_song_config_overrides() {
+        // Verify that config overrides in one song do not leak to the next.
+        let input = "{title: Song A}\n{+config.settings.transpose: 2}\n[C]Hello\n{new_song}\n{title: Song B}\n[C]World";
+        let songs = crate::parse_multi(input).unwrap();
+        assert_eq!(songs.len(), 2);
+        // Song A has the transpose override.
+        assert!(!songs[0].config_overrides().is_empty());
+        // Song B should have no overrides.
+        assert!(songs[1].config_overrides().is_empty());
+    }
+
+    #[test]
+    fn test_song_config_plus_delegate_blocking() {
+        // Song-level config cannot enable delegates.
+        let config = Config::defaults();
+        let mut warnings = Vec::new();
+        let overrides = vec![("delegates.abc2svg", "true")];
+        let _result = config.with_song_overrides(&overrides, &mut warnings);
+        // Delegate keys should be blocked — a warning should be emitted.
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("cannot be overridden")),
+            "delegate override should be blocked: {warnings:?}"
+        );
+    }
 }

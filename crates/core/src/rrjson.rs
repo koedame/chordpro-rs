@@ -1853,4 +1853,101 @@ mod tests {
         let val = Value::Number(1.5);
         assert_eq!(val.to_string(), "1.5");
     }
+
+    // --- Additional edge case coverage (#580) ---
+
+    #[test]
+    fn test_display_nan() {
+        let val = Value::Number(f64::NAN);
+        let s = val.to_string();
+        assert_eq!(s, "NaN");
+    }
+
+    #[test]
+    fn test_empty_input() {
+        let result = parse_rrjson("");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Object(vec![]));
+    }
+
+    #[test]
+    fn test_whitespace_only_input() {
+        let result = parse_rrjson("   \n\t  ");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Object(vec![]));
+    }
+
+    #[test]
+    fn test_comment_only_input() {
+        let result = parse_rrjson("// just a comment\n# another comment");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Object(vec![]));
+    }
+
+    #[test]
+    fn test_duplicate_keys_last_wins() {
+        let result = parse_rrjson(r#"{"a": 1, "a": 2}"#).unwrap();
+        if let Value::Object(entries) = result {
+            // Last value should win for the key.
+            let vals: Vec<_> = entries
+                .iter()
+                .filter(|(k, _)| k == "a")
+                .map(|(_, v)| v)
+                .collect();
+            assert_eq!(vals.last(), Some(&&Value::Number(2.0)));
+        } else {
+            panic!("expected object");
+        }
+    }
+
+    #[test]
+    fn test_semicolon_separator_in_bare_object() {
+        // RRJSON allows semicolons as separators in bare key-value pairs.
+        let result = parse_rrjson("a = 1; b = 2");
+        assert!(result.is_ok());
+        let obj = result.unwrap();
+        if let Value::Object(entries) = obj {
+            assert!(
+                entries
+                    .iter()
+                    .any(|(k, v)| k == "a" && *v == Value::Number(1.0))
+            );
+            assert!(
+                entries
+                    .iter()
+                    .any(|(k, v)| k == "b" && *v == Value::Number(2.0))
+            );
+        } else {
+            panic!("expected object");
+        }
+    }
+
+    #[test]
+    fn test_uppercase_exponent() {
+        let result = parse_rrjson(r#"{"x": 1E10}"#).unwrap();
+        if let Value::Object(entries) = result {
+            let val = entries.iter().find(|(k, _)| k == "x").map(|(_, v)| v);
+            assert_eq!(val, Some(&Value::Number(1e10)));
+        } else {
+            panic!("expected object");
+        }
+    }
+
+    #[test]
+    fn test_display_roundtrip_unicode() {
+        let original = r#"{"emoji":"🎵","cjk":"日本語"}"#;
+        let parsed = parse_rrjson(original).unwrap();
+        let output = parsed.to_string();
+        let reparsed = parse_rrjson(&output).unwrap();
+        assert_eq!(parsed, reparsed);
+    }
+
+    #[test]
+    fn test_display_roundtrip_escape_sequences() {
+        let original = r#"{"tab":"\t","newline":"\n","backslash":"\\"}"#;
+        let parsed = parse_rrjson(original).unwrap();
+        let output = parsed.to_string();
+        let reparsed = parse_rrjson(&output).unwrap();
+        assert_eq!(parsed, reparsed);
+    }
 }
