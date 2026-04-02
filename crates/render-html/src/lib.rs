@@ -1010,11 +1010,13 @@ fn has_dangerous_uri_scheme(value: &str) -> bool {
     // Strip leading whitespace, then remove embedded ASCII control characters
     // and whitespace within the scheme portion to defend against obfuscation
     // like `java\tscript:` which some older browsers tolerated.
+    // Filter runs before take(30) so the cap applies to meaningful characters,
+    // preventing bypass via 20+ embedded whitespace/control characters.
     let lower: String = value
         .trim_start()
         .chars()
-        .take(30)
         .filter(|c| !c.is_ascii_whitespace() && !c.is_ascii_control())
+        .take(30)
         .flat_map(|c| c.to_lowercase())
         .collect();
     lower.starts_with("javascript:") || lower.starts_with("vbscript:") || lower.starts_with("data:")
@@ -2957,5 +2959,29 @@ mod delegate_tests {
     #[test]
     fn test_safe_uri_not_flagged() {
         assert!(!has_dangerous_uri_scheme("https://example.com"));
+    }
+
+    #[test]
+    fn test_dangerous_uri_scheme_with_many_embedded_whitespace() {
+        // 1 tab between each letter: colon at raw position 20, within the 30-char window.
+        // Both old and new code detect this; kept as a basic obfuscation smoke-test.
+        let payload = "j\ta\tv\ta\ts\tc\tr\ti\tp\tt\t:\ta\tl\te\tr\tt\t(\t1\t)\t";
+        assert!(
+            has_dangerous_uri_scheme(payload),
+            "1 tab between letters should not bypass javascript: detection"
+        );
+    }
+
+    #[test]
+    fn test_dangerous_uri_scheme_whitespace_bypass_regression() {
+        // 3 tabs between each letter pushes the colon to raw position 40, past the
+        // 30-char cap. The old `.take(30).filter(...)` ordering cut off the colon and
+        // missed the match. Filter-first (`.filter(...).take(30)`) fixes this.
+        // This test FAILS with the old ordering and PASSES with the fix.
+        let payload = "j\t\t\ta\t\t\tv\t\t\ta\t\t\ts\t\t\tc\t\t\tr\t\t\ti\t\t\tp\t\t\tt\t\t\t:";
+        assert!(
+            has_dangerous_uri_scheme(payload),
+            "3 tabs between letters (colon at raw position 40) must still be detected"
+        );
     }
 }
