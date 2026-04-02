@@ -3302,10 +3302,15 @@ mod chord_diagram_pdf_tests {
         // The difference of 3 corresponds to the 3 extra fret lines.
         let lines_4 = content_4.matches("l S").count();
         let lines_7 = content_7.matches("l S").count();
+        assert!(
+            lines_7 >= lines_4,
+            "frets=7 ({lines_7}) should have at least as many line ops as frets=4 ({lines_4})"
+        );
         assert_eq!(
             lines_7 - lines_4,
             3,
-            "frets=7 should produce exactly 3 more line-drawing ops than frets=4"
+            "frets=7 should produce exactly 3 more line-drawing ops than frets=4 \
+             (got {lines_7} vs {lines_4})"
         );
     }
 }
