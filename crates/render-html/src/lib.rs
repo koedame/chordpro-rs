@@ -228,6 +228,14 @@ fn render_song_body(
     // Controls whether chord diagrams are rendered. Set by {diagrams: off/on}.
     let mut show_diagrams = true;
 
+    // Read configurable frets_shown for chord diagrams.
+    let diagram_frets = config
+        .get_path("diagrams.frets")
+        .as_f64()
+        .map_or(chordpro_core::chord_diagram::DEFAULT_FRETS_SHOWN, |n| {
+            (n as usize).max(1)
+        });
+
     // Stores the rendered HTML of the most recently defined chorus body
     // (everything between StartOfChorus and EndOfChorus, excluding the
     // section open/close tags). Used by `{chorus}` recall.
@@ -392,7 +400,12 @@ fn render_song_body(
                     }
                     _ => {
                         let mut target = String::new();
-                        render_directive_inner(directive, show_diagrams, &mut target);
+                        render_directive_inner(
+                            directive,
+                            show_diagrams,
+                            diagram_frets,
+                            &mut target,
+                        );
                         if let Some(buf) = chorus_buf.as_mut() {
                             buf.push_str(&target);
                         }
@@ -1077,6 +1090,7 @@ fn sanitize_tag_attrs(tag: &str) -> String {
 fn render_directive_inner(
     directive: &chordpro_core::ast::Directive,
     show_diagrams: bool,
+    diagram_frets: usize,
     html: &mut String,
 ) {
     match &directive.kind {
@@ -1132,8 +1146,10 @@ fn render_directive_inner(
                     let def = chordpro_core::ast::ChordDefinition::parse_value(value);
                     if let Some(ref raw) = def.raw {
                         if let Some(mut diagram) =
-                            chordpro_core::chord_diagram::DiagramData::from_raw_infer(
-                                &def.name, raw,
+                            chordpro_core::chord_diagram::DiagramData::from_raw_infer_frets(
+                                &def.name,
+                                raw,
+                                diagram_frets,
                             )
                         {
                             diagram.display_name = def.display.clone();

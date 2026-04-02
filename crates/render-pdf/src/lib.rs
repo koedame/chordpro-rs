@@ -177,7 +177,13 @@ pub fn render_song_with_warnings(
         &song_config
     };
     let mut doc = PdfDocument::from_config_with_warnings(effective_config, &mut warnings);
-    render_song_into_doc(song, cli_transpose, &mut doc, &mut warnings);
+    render_song_into_doc(
+        song,
+        cli_transpose,
+        effective_config,
+        &mut doc,
+        &mut warnings,
+    );
     RenderResult::with_warnings(doc.build_pdf(), warnings)
 }
 
@@ -231,7 +237,13 @@ pub fn render_songs_with_warnings(
             &song_config
         };
         let mut doc = PdfDocument::from_config_with_warnings(effective_config, &mut warnings);
-        render_song_into_doc(&songs[0], cli_transpose, &mut doc, &mut warnings);
+        render_song_into_doc(
+            &songs[0],
+            cli_transpose,
+            effective_config,
+            &mut doc,
+            &mut warnings,
+        );
         return RenderResult::with_warnings(doc.build_pdf(), warnings);
     }
 
@@ -265,7 +277,13 @@ pub fn render_songs_with_warnings(
             .unwrap_or("Untitled")
             .to_string();
         toc_entries.push((title, start_page));
-        render_song_into_doc(song, cli_transpose, &mut body_doc, &mut warnings);
+        render_song_into_doc(
+            song,
+            cli_transpose,
+            effective_config,
+            &mut body_doc,
+            &mut warnings,
+        );
     }
 
     // Phase 2: generate ToC pages.
@@ -326,6 +344,7 @@ pub fn render_songs_with_warnings(
 fn render_song_into_doc(
     song: &Song,
     cli_transpose: i8,
+    config: &Config,
     doc: &mut PdfDocument,
     warnings: &mut Vec<String>,
 ) {
@@ -337,6 +356,14 @@ fn render_song_into_doc(
         chordpro_core::transpose::combine_transpose(cli_transpose, song_transpose_delta);
     let mut transpose_offset: i8 = combined_transpose;
     let mut fmt_state = PdfFormattingState::default();
+
+    // Read configurable frets_shown for chord diagrams.
+    let diagram_frets = config
+        .get_path("diagrams.frets")
+        .as_f64()
+        .map_or(chordpro_core::chord_diagram::DEFAULT_FRETS_SHOWN, |n| {
+            (n as usize).max(1)
+        });
 
     // Title
     if let Some(title) = &song.metadata.title {
@@ -407,6 +434,7 @@ fn render_song_into_doc(
                                 transpose_offset,
                                 &fmt_state,
                                 show_diagrams,
+                                diagram_frets,
                                 doc,
                             );
                             chorus_recall_count += 1;
@@ -451,7 +479,7 @@ fn render_song_into_doc(
                         if let Some(buf) = chorus_buf.as_mut() {
                             buf.push(line.clone());
                         }
-                        render_directive(d, show_diagrams, doc);
+                        render_directive(d, show_diagrams, diagram_frets, doc);
                     }
                 }
             }
@@ -648,6 +676,7 @@ fn render_section_label(directive: &chordpro_core::ast::Directive, doc: &mut Pdf
 fn render_directive(
     directive: &chordpro_core::ast::Directive,
     show_diagrams: bool,
+    diagram_frets: usize,
     doc: &mut PdfDocument,
 ) {
     if directive.kind == DirectiveKind::Define && show_diagrams {
@@ -655,7 +684,11 @@ fn render_directive(
             let def = chordpro_core::ast::ChordDefinition::parse_value(value);
             if let Some(ref raw) = def.raw {
                 if let Some(mut diagram) =
-                    chordpro_core::chord_diagram::DiagramData::from_raw_infer(&def.name, raw)
+                    chordpro_core::chord_diagram::DiagramData::from_raw_infer_frets(
+                        &def.name,
+                        raw,
+                        diagram_frets,
+                    )
                 {
                     diagram.display_name = def.display.clone();
                     render_chord_diagram_pdf(&diagram, doc);
@@ -1057,6 +1090,7 @@ fn render_chorus_recall(
     transpose_offset: i8,
     fmt_state: &PdfFormattingState,
     show_diagrams: bool,
+    diagram_frets: usize,
     doc: &mut PdfDocument,
 ) {
     let text = match value {
@@ -1074,7 +1108,7 @@ fn render_chorus_recall(
             Line::Comment(style, text) => render_comment(*style, text, doc),
             Line::Empty => doc.newline(LINE_GAP * 2.0),
             Line::Directive(d) if !d.kind.is_metadata() => {
-                render_directive(d, show_diagrams, doc);
+                render_directive(d, show_diagrams, diagram_frets, doc);
             }
             _ => {}
         }
@@ -3113,7 +3147,7 @@ mod column_tests {
         let song = chordpro_core::parse("{title: Test}\n[Am]Hello").unwrap();
         let mut doc = PdfDocument::new();
         let mut warnings = Vec::new();
-        render_song_into_doc(&song, 0, &mut doc, &mut warnings);
+        render_song_into_doc(&song, 0, &Config::defaults(), &mut doc, &mut warnings);
         // Document should have 1 page with content
         assert_eq!(doc.page_count(), 1);
         let pdf = doc.build_pdf();

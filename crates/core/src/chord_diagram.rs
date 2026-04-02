@@ -29,6 +29,9 @@ const MIN_STRINGS: usize = 2;
 /// Maximum number of strings for a valid chord diagram (covers 12-string guitar).
 const MAX_STRINGS: usize = 12;
 
+/// Default number of frets shown in a chord diagram.
+pub const DEFAULT_FRETS_SHOWN: usize = 5;
+
 /// Data needed to render a chord diagram.
 #[derive(Debug, Clone)]
 pub struct DiagramData {
@@ -77,6 +80,13 @@ impl DiagramData {
         Self::from_raw(name, raw, 0)
     }
 
+    /// Like [`from_raw_infer`](Self::from_raw_infer) but uses a custom
+    /// `frets_shown` value instead of the default (5).
+    #[must_use]
+    pub fn from_raw_infer_frets(name: &str, raw: &str, frets_shown: usize) -> Option<Self> {
+        Self::from_raw_frets(name, raw, 0, frets_shown)
+    }
+
     /// Parse fretted chord data from a `ChordDefinition` raw string.
     ///
     /// Expected format: `base-fret N frets f1 f2 ... [fingers g1 g2 ...]`
@@ -89,10 +99,23 @@ impl DiagramData {
     /// - No fret values are provided
     /// - The resulting string count is outside the valid range (2–12)
     ///
-    /// Positive fret values exceeding `frets_shown` (5) are clamped to
-    /// prevent rendering outside the visible grid.
+    /// Positive fret values exceeding `frets_shown` are clamped to
+    /// prevent rendering outside the visible grid. Uses the default
+    /// frets shown value ([`DEFAULT_FRETS_SHOWN`]).
     #[must_use]
     pub fn from_raw(name: &str, raw: &str, num_strings: usize) -> Option<Self> {
+        Self::from_raw_frets(name, raw, num_strings, DEFAULT_FRETS_SHOWN)
+    }
+
+    /// Like [`from_raw`](Self::from_raw) but uses a custom `frets_shown`
+    /// value instead of the default.
+    #[must_use]
+    pub fn from_raw_frets(
+        name: &str,
+        raw: &str,
+        num_strings: usize,
+        frets_shown: usize,
+    ) -> Option<Self> {
         let mut base_fret: u32 = 1;
         let mut frets: Vec<i32> = Vec::new();
         let mut fingers: Vec<u8> = Vec::new();
@@ -148,7 +171,8 @@ impl DiagramData {
             return None;
         }
 
-        let frets_shown: usize = 5;
+        // Ensure frets_shown is at least 1 to avoid nonsensical diagrams.
+        let frets_shown = frets_shown.max(1);
 
         // Clamp positive fret values to the visible range to prevent
         // rendering dots outside the fret grid.
