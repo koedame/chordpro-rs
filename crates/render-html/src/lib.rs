@@ -559,6 +559,8 @@ section > .section-label { font-weight: bold; font-style: italic; margin-bottom:
 .chorus-recall { margin: 1em 0; }
 .chorus-recall > .section-label { font-weight: bold; font-style: italic; margin-bottom: 0.3em; }
 img { max-width: 100%; height: auto; }
+.chord-diagram-container { display: inline-block; margin: 0.5em 0.5em 0.5em 0; vertical-align: top; }
+.chord-diagram { display: block; }
 ";
 
 // ---------------------------------------------------------------------------
@@ -770,6 +772,7 @@ fn sanitize_svg_content(input: &str) -> String {
         "iframe",
         "object",
         "embed",
+        "math",
         "set",
         "animate",
         "animatetransform",
@@ -2101,6 +2104,19 @@ Verse text\n\
         );
     }
 
+    #[test]
+    fn test_chord_diagram_css_rules_present() {
+        let html = render("{define: Am base-fret 1 frets x 0 2 2 1 0}");
+        assert!(
+            html.contains(".chord-diagram-container"),
+            "CSS should include .chord-diagram-container rule"
+        );
+        assert!(
+            html.contains(".chord-diagram"),
+            "CSS should include .chord-diagram rule"
+        );
+    }
+
     // -- chord diagram tests --------------------------------------------------
 
     #[test]
@@ -2362,6 +2378,16 @@ mod delegate_tests {
         assert!(
             !sanitized.contains("<foreignObject"),
             "foreignObject must be stripped from delegate SVG output"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_svg_strips_math_element() {
+        let svg = "<svg><math><mi>x</mi></math></svg>";
+        let sanitized = sanitize_svg_content(svg);
+        assert!(
+            !sanitized.contains("<math"),
+            "math element must be stripped from delegate SVG output"
         );
     }
 
