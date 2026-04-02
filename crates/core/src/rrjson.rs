@@ -1850,7 +1850,7 @@ mod tests {
 
     #[test]
     fn test_display_fractional() {
-        let val = Value::Number(3.14);
-        assert_eq!(val.to_string(), "3.14");
+        let val = Value::Number(1.5);
+        assert_eq!(val.to_string(), "1.5");
     }
 }
