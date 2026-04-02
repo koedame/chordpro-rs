@@ -103,7 +103,7 @@ impl DiagramData {
             match tokens[i] {
                 "base-fret" => {
                     if i + 1 < tokens.len() {
-                        base_fret = tokens[i + 1].parse().unwrap_or(1);
+                        base_fret = tokens[i + 1].parse().unwrap_or(1).clamp(1, 24);
                         i += 2;
                     } else {
                         i += 1;
@@ -112,9 +112,7 @@ impl DiagramData {
                 "frets" => {
                     i += 1;
                     while i < tokens.len()
-                        && tokens[i] != "fingers"
-                        && tokens[i] != "display"
-                        && tokens[i] != "format"
+                        && !matches!(tokens[i], "fingers" | "base-fret" | "display" | "format")
                     {
                         let val = match tokens[i].to_ascii_lowercase().as_str() {
                             "x" | "n" => -1,
@@ -126,7 +124,9 @@ impl DiagramData {
                 }
                 "fingers" => {
                     i += 1;
-                    while i < tokens.len() && tokens[i] != "display" {
+                    while i < tokens.len()
+                        && !matches!(tokens[i], "base-fret" | "display" | "format")
+                    {
                         fingers.push(tokens[i].parse().unwrap_or(0));
                         i += 1;
                     }
@@ -649,10 +649,11 @@ mod tests {
 
     #[test]
     fn test_extreme_base_fret() {
+        // base_fret is clamped to 1..=24
         let data = DiagramData::from_raw("X", "base-fret 1000 frets 1 2 3 4 5 6", 6).unwrap();
-        assert_eq!(data.base_fret, 1000);
+        assert_eq!(data.base_fret, 24);
         let svg = render_svg(&data);
-        assert!(svg.contains("1000fr"));
+        assert!(svg.contains("24fr"));
     }
 
     #[test]
@@ -677,5 +678,53 @@ mod tests {
         // preventing it from being misinterpreted as a fret value.
         let data = DiagramData::from_raw("Am", "base-fret 1 frets x 0 2 2 1 0 format", 6).unwrap();
         assert_eq!(data.frets, vec![-1, 0, 2, 2, 1, 0]);
+    }
+
+    // --- base-fret stop-word and clamping (#603, #604) ---
+
+    #[test]
+    fn test_base_fret_after_frets_is_stop_word() {
+        // "base-fret" appearing after "frets" should stop fret parsing,
+        // not be treated as a fret value.
+        let data = DiagramData::from_raw("Am", "frets x 0 2 2 1 0 base-fret 3", 6).unwrap();
+        assert_eq!(data.frets, vec![-1, 0, 2, 2, 1, 0]);
+        assert_eq!(data.base_fret, 3);
+    }
+
+    #[test]
+    fn test_base_fret_after_fingers_is_stop_word() {
+        // "base-fret" should also stop finger parsing.
+        let data =
+            DiagramData::from_raw("C", "frets x 3 2 0 1 0 fingers 0 3 2 0 1 0 base-fret 2", 6)
+                .unwrap();
+        assert_eq!(data.fingers, vec![0, 3, 2, 0, 1, 0]);
+        assert_eq!(data.base_fret, 2);
+    }
+
+    #[test]
+    fn test_format_stops_finger_parsing() {
+        // "format" should stop finger parsing.
+        let data =
+            DiagramData::from_raw("C", "frets x 3 2 0 1 0 fingers 0 3 2 0 1 0 format", 6).unwrap();
+        assert_eq!(data.fingers, vec![0, 3, 2, 0, 1, 0]);
+    }
+
+    #[test]
+    fn test_base_fret_zero_clamped_to_one() {
+        let data = DiagramData::from_raw("Am", "base-fret 0 frets x 0 2 2 1 0", 6).unwrap();
+        assert_eq!(data.base_fret, 1);
+    }
+
+    #[test]
+    fn test_base_fret_negative_defaults_to_one() {
+        // Negative value fails u32 parse, falls back to unwrap_or(1).
+        let data = DiagramData::from_raw("Am", "base-fret -1 frets x 0 2 2 1 0", 6).unwrap();
+        assert_eq!(data.base_fret, 1);
+    }
+
+    #[test]
+    fn test_base_fret_large_value_clamped() {
+        let data = DiagramData::from_raw("Am", "base-fret 100 frets x 0 2 2 1 0", 6).unwrap();
+        assert_eq!(data.base_fret, 24);
     }
 }
