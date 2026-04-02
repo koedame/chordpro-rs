@@ -406,6 +406,7 @@ fn render_song_into_doc(
                                 &chorus_body,
                                 transpose_offset,
                                 &fmt_state,
+                                show_diagrams,
                                 doc,
                             );
                             chorus_recall_count += 1;
@@ -1055,6 +1056,7 @@ fn render_chorus_recall(
     chorus_body: &[Line],
     transpose_offset: i8,
     fmt_state: &PdfFormattingState,
+    show_diagrams: bool,
     doc: &mut PdfDocument,
 ) {
     let text = match value {
@@ -1071,7 +1073,9 @@ fn render_chorus_recall(
             Line::Lyrics(lyrics) => render_lyrics(lyrics, transpose_offset, fmt_state, doc),
             Line::Comment(style, text) => render_comment(*style, text, doc),
             Line::Empty => doc.newline(LINE_GAP * 2.0),
-            Line::Directive(d) if !d.kind.is_metadata() => render_directive(d, true, doc),
+            Line::Directive(d) if !d.kind.is_metadata() => {
+                render_directive(d, show_diagrams, doc);
+            }
             _ => {}
         }
     }
@@ -2503,6 +2507,27 @@ Sing along
                 .iter()
                 .any(|w| w.contains("chorus recall limit")),
             "should warn when chorus recall limit is exceeded"
+        );
+    }
+
+    #[test]
+    fn test_chorus_recall_respects_diagrams_off() {
+        // When {diagrams: off} is active, chorus recall should not render
+        // chord diagrams from {define} directives inside the chorus body.
+        let input = "\
+{diagrams: off}
+{start_of_chorus}
+{define: Am base-fret 1 frets x 0 2 2 1 0}
+[Am]Chorus line
+{end_of_chorus}
+{chorus}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        // The SVG chord diagram markers should not appear when diagrams are off.
+        assert!(
+            !content.contains("fret_marker"),
+            "chord diagrams should not be rendered in chorus recall when diagrams are off"
         );
     }
 
