@@ -1,0 +1,102 @@
+Song {
+    metadata: Metadata {
+        title: Some(
+            "Define Copyall Fingers Test",
+        ),
+        subtitles: [],
+        artists: [],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: None,
+        tempo: None,
+        time: None,
+        capo: None,
+        sort_title: None,
+        sort_artist: None,
+        arrangers: [],
+        copyright: None,
+        duration: None,
+        tags: [],
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "title",
+                value: Some(
+                    "Define Copyall Fingers Test",
+                ),
+                kind: Title,
+                selector: None,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "define",
+                value: Some(
+                    "Am base-fret 1 frets x 0 2 2 1 0 fingers 0 0 2 3 1 0",
+                ),
+                kind: Define,
+                selector: None,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "define",
+                value: Some(
+                    "Am7 copyall Am",
+                ),
+                kind: Define,
+                selector: None,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "Am",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: A,
+                                        root_accidental: None,
+                                        quality: Minor,
+                                        extension: None,
+                                        bass_note: None,
+                                    },
+                                ),
+                                display: None,
+                            },
+                        ),
+                        text: "Hello ",
+                        spans: [],
+                    },
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "Am7",
+                                detail: Some(
+                                    ChordDetail {
+                                        root: A,
+                                        root_accidental: None,
+                                        quality: Minor,
+                                        extension: Some(
+                                            "7",
+                                        ),
+                                        bass_note: None,
+                                    },
+                                ),
+                                display: None,
+                            },
+                        ),
+                        text: "world",
+                        spans: [],
+                    },
+                ],
+            },
+        ),
+    ],
+}

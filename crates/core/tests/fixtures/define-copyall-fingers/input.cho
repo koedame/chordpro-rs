@@ -1,0 +1,4 @@
+{title: Define Copyall Fingers Test}
+{define: Am base-fret 1 frets x 0 2 2 1 0 fingers 0 0 2 3 1 0}
+{define: Am7 copyall Am}
+[Am]Hello [Am7]world

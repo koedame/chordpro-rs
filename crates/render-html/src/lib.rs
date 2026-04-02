@@ -1639,6 +1639,15 @@ mod tests {
         // Label still uses HTML escaping for display
         assert!(html.contains("&amp;"));
     }
+
+    #[test]
+    fn test_define_display_name_in_html_output() {
+        let html = render("{define: Am base-fret 1 frets x 0 2 2 1 0 display=\"A minor\"}");
+        assert!(
+            html.contains("A minor"),
+            "display name should appear in rendered HTML output"
+        );
+    }
 }
 
 #[cfg(test)]

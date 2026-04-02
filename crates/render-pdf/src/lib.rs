@@ -2563,6 +2563,31 @@ Sing along
         let content = String::from_utf8_lossy(&bytes);
         assert!(content.contains("Grid: Intro"));
     }
+
+    #[test]
+    fn test_define_display_name_in_pdf_output() {
+        let input = "{define: Am base-fret 1 frets x 0 2 2 1 0 display=\"A minor\"}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            content.contains("A minor"),
+            "display name should appear in rendered PDF output"
+        );
+    }
+
+    #[test]
+    fn test_define_with_fingers_in_pdf_output() {
+        let input = "{define: C base-fret 1 frets x 3 2 0 1 0 fingers 0 3 2 0 1 0}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        // PDF text streams should contain finger numbers
+        assert!(
+            content.contains("(3)") || content.contains("fret_marker"),
+            "finger numbers should appear in rendered PDF output"
+        );
+    }
 }
 
 #[cfg(test)]
