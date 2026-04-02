@@ -735,22 +735,28 @@ impl ChordDefinition {
 
         // Check for "copy <source>" or "copyall <source>"
         // Only the first token after the prefix is used as the source name.
-        // Handles both space and tab delimiters.
-        if let Some(source) = remaining
-            .strip_prefix("copyall ")
-            .or_else(|| remaining.strip_prefix("copyall\t"))
-        {
-            let name = source.split_whitespace().next().unwrap_or("").trim();
+        // Handles arbitrary whitespace (spaces, tabs, multiple) after keyword.
+        if let Some(rest) = remaining.strip_prefix("copyall").and_then(|r| {
+            if r.is_empty() || r.starts_with(|c: char| c.is_ascii_whitespace()) {
+                Some(r)
+            } else {
+                None
+            }
+        }) {
+            let name = rest.split_whitespace().next().unwrap_or("").trim();
             if !name.is_empty() {
                 def.copyall = Some(name.to_string());
             }
             return def;
         }
-        if let Some(source) = remaining
-            .strip_prefix("copy ")
-            .or_else(|| remaining.strip_prefix("copy\t"))
-        {
-            let name = source.split_whitespace().next().unwrap_or("").trim();
+        if let Some(rest) = remaining.strip_prefix("copy").and_then(|r| {
+            if r.is_empty() || r.starts_with(|c: char| c.is_ascii_whitespace()) {
+                Some(r)
+            } else {
+                None
+            }
+        }) {
+            let name = rest.split_whitespace().next().unwrap_or("").trim();
             if !name.is_empty() {
                 def.copy = Some(name.to_string());
             }
@@ -3148,6 +3154,24 @@ mod chord_definition_tests {
     fn test_parse_copyall_tab_delimiter() {
         let def = ChordDefinition::parse_value("Am copyall\tAmin");
         assert_eq!(def.copyall, Some("Amin".to_string()));
+    }
+
+    #[test]
+    fn test_parse_copy_multiple_spaces() {
+        let def = ChordDefinition::parse_value("Am copy   Amin");
+        assert_eq!(def.copy, Some("Amin".to_string()));
+    }
+
+    #[test]
+    fn test_parse_copyall_multiple_spaces() {
+        let def = ChordDefinition::parse_value("Am copyall   Amin");
+        assert_eq!(def.copyall, Some("Amin".to_string()));
+    }
+
+    #[test]
+    fn test_parse_copy_mixed_whitespace() {
+        let def = ChordDefinition::parse_value("Am copy \t Amin");
+        assert_eq!(def.copy, Some("Amin".to_string()));
     }
 
     // --- extract_attribute empty value (#650) ---
