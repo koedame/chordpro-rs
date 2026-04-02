@@ -982,6 +982,11 @@ fn render_chord_diagram_pdf(
     data: &chordpro_core::chord_diagram::DiagramData,
     doc: &mut PdfDocument,
 ) {
+    // Guard: need at least 2 strings to compute grid width without underflow.
+    if data.strings < 2 {
+        return;
+    }
+
     // PDF cell dimensions in points (1 pt = 1/72 inch). Intentionally
     // smaller than the SVG renderer's 16x20 px because PDF targets printed
     // pages where diagrams sit alongside text and must be compact.
@@ -1008,13 +1013,14 @@ fn render_chord_diagram_pdf(
     if data.base_fret == 1 {
         doc.line_at(base_x, grid_top, base_x + grid_w, grid_top, 2.0);
     } else {
-        // Show fret number
+        // Show fret number, clamping x to >= 0 to prevent off-page rendering.
         let fret_label = format!("{}fr", data.base_fret);
+        let fret_label_x = (base_x - 16.0).max(0.0);
         doc.text_at(
             &fret_label,
             Font::Helvetica,
             6.0,
-            base_x - 16.0,
+            fret_label_x,
             grid_top - cell_h / 2.0,
         );
     }
