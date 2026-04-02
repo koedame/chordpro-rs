@@ -214,13 +214,18 @@ fn sanitize_lilypond_content(input: &str) -> String {
 /// 2.18+, `$` is an alternative to `#` for Scheme evaluation.
 fn line_contains_dangerous_scheme(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
-    for &func in DANGEROUS_SCHEME_FUNCTIONS {
-        // Match #(func, #( func, $(func, $( func
-        for prefix in &["#(", "#( ", "$(", "$( "] {
-            let pattern = format!("{prefix}{func}");
-            if lower.contains(&pattern) {
-                return true;
+    for sigil in &["#(", "$("] {
+        let mut search_from = 0;
+        while let Some(pos) = lower[search_from..].find(sigil) {
+            let abs_pos = search_from + pos;
+            let after = &lower[abs_pos + sigil.len()..];
+            let trimmed = after.trim_start();
+            for &func in DANGEROUS_SCHEME_FUNCTIONS {
+                if trimmed.starts_with(func) {
+                    return true;
+                }
             }
+            search_from = abs_pos + sigil.len();
         }
     }
     false
@@ -594,6 +599,18 @@ mod tests {
         let input = "$(SYSTEM \"echo pwned\")\n\\relative c' { c4 }\n";
         let result = super::sanitize_lilypond_content(input);
         assert!(!result.contains("SYSTEM"));
+    }
+
+    #[test]
+    fn sanitize_lilypond_strips_multi_space_scheme() {
+        // Multiple spaces between #( or $( and the function name.
+        let input = "#(  system \"rm -rf /\")\n\\relative c' { c4 }\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert!(!result.contains("system"));
+
+        let input2 = "$(   getenv \"SECRET\")\n\\relative c' { c4 }\n";
+        let result2 = super::sanitize_lilypond_content(input2);
+        assert!(!result2.contains("getenv"));
     }
 
     #[test]

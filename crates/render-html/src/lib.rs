@@ -806,18 +806,42 @@ fn sanitize_svg_content(input: &str) -> String {
                         .is_none_or(|b| b.is_ascii_whitespace() || *b == b'>' || *b == b'/')
                 {
                     // Check if this opening tag is self-closing (ends with />).
-                    let is_self_closing = rest
-                        .as_bytes()
-                        .iter()
-                        .position(|&b| b == b'>')
-                        .is_some_and(|gt| gt > 0 && rest.as_bytes()[gt - 1] == b'/');
+                    // Skips `>` inside quoted attribute values to handle
+                    // cases like `<set to="a>b"/>`.
+                    let is_self_closing = {
+                        let tag_bytes = rest.as_bytes();
+                        let mut in_quote: Option<u8> = None;
+                        let mut gt_pos = None;
+                        for (idx, &b) in tag_bytes.iter().enumerate() {
+                            match in_quote {
+                                Some(q) if b == q => in_quote = None,
+                                Some(_) => {}
+                                None if b == b'"' || b == b'\'' => in_quote = Some(b),
+                                None if b == b'>' => {
+                                    gt_pos = Some(idx);
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                        gt_pos.is_some_and(|gt| gt > 0 && tag_bytes[gt - 1] == b'/')
+                    };
 
                     if is_self_closing {
-                        // Self-closing tag — skip past the >.
+                        // Self-closing tag — skip past the closing >.
+                        // Use quote-aware scanning to avoid stopping at >
+                        // inside attribute values.
+                        let mut skip_quote: Option<char> = None;
                         while let Some(&(_, ch)) = chars.peek() {
                             chars.next();
-                            if ch == '>' {
-                                break;
+                            match skip_quote {
+                                Some(q) if ch == q => skip_quote = None,
+                                Some(_) => {}
+                                None if ch == '"' || ch == '\'' => {
+                                    skip_quote = Some(ch);
+                                }
+                                None if ch == '>' => break,
+                                _ => {}
                             }
                         }
                     } else if let Some(end) = find_end_tag_ignore_case(input, i, tag) {
@@ -979,8 +1003,6 @@ fn is_uri_attr(name: &str) -> bool {
 ///
 /// Removes event handler attributes (`on*`) entirely and strips URI attributes
 /// (`href`, `src`, `xlink:href`) that use dangerous schemes.
-/// Sanitize attributes within an HTML/SVG tag, stripping event handlers
-/// and dangerous URI schemes.
 ///
 /// This function operates at the byte level for performance. This is safe
 /// because HTML/SVG tag names, attribute names, and structural characters
@@ -2726,5 +2748,20 @@ mod delegate_tests {
         let sanitized = sanitize_svg_content(input);
         assert!(sanitized.contains("コード譜 🎵"));
         assert!(sanitized.contains("<rect width=\"100\"/>"));
+    }
+
+    #[test]
+    fn test_sanitize_svg_self_closing_with_gt_in_attr_value() {
+        // The `>` inside the attribute value should not confuse self-closing detection.
+        let svg = r#"<svg><set to="a>b"/><text>safe</text></svg>"#;
+        let sanitized = sanitize_svg_content(svg);
+        assert!(
+            !sanitized.contains("<set"),
+            "dangerous <set> element must be stripped"
+        );
+        assert!(
+            sanitized.contains("<text>safe</text>"),
+            "content after stripped self-closing element must be preserved"
+        );
     }
 }
