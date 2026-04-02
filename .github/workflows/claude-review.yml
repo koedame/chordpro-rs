@@ -45,6 +45,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: prNumber,
+              per_page: 100,
             });
 
             // Skip if this commit was already reviewed
@@ -82,7 +83,7 @@ jobs:
             const reviewType = isFirstReview ? 'Full review' : 'Delta review';
             const deltaInstruction = isFirstReview
               ? 'Review the entire PR diff (`gh pr diff`).'
-              : `This is a **delta review**. Only review changes since commit \`${previousSha.substring(0, 7)}\`. Use \`git diff ${previousSha.substring(0, 7)}..${headSha.substring(0, 7)}\` to see only the new changes. Do NOT re-review previously-accepted code.`;
+              : `This is a **delta review**. Only review changes since commit \`${previousSha.substring(0, 7)}\`. Use \`git diff ${previousSha}..${headSha}\` to see only the new changes. Do NOT re-review previously-accepted code.`;
 
             // Post review request comment (triggers claude.yml via @claude mention)
             await github.rest.issues.createComment({
