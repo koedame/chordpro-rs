@@ -376,7 +376,10 @@ fn render_song_into_doc(
             }
             Line::Directive(d) if !d.kind.is_metadata() => {
                 if d.kind == DirectiveKind::Diagrams {
-                    show_diagrams = !matches!(d.value.as_deref(), Some("off"));
+                    show_diagrams = !d
+                        .value
+                        .as_deref()
+                        .is_some_and(|v| v.eq_ignore_ascii_case("off"));
                     continue;
                 }
                 if d.kind == DirectiveKind::Transpose {
@@ -2549,6 +2552,38 @@ Sing along
         assert!(
             !content.contains("fret_marker"),
             "chord diagrams should not be rendered in chorus recall when diagrams are off"
+        );
+    }
+
+    // --- Case-insensitive {diagrams} directive (#652) ---
+
+    #[test]
+    fn test_diagrams_off_case_insensitive_pdf() {
+        let input = "{diagrams: Off}\n{define: Am base-fret 1 frets x 0 2 2 1 0}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        // When diagrams are suppressed the chord-name title ("Am") written by
+        // render_chord_diagram_pdf must not appear in the PDF content stream.
+        // This input has no lyrics, so "Am" would only appear as the diagram title.
+        assert!(
+            !content.contains("Am"),
+            "diagrams=Off should suppress diagrams in PDF (case-insensitive)"
+        );
+    }
+
+    #[test]
+    fn test_diagrams_off_uppercase_pdf() {
+        let input = "{diagrams: OFF}\n{define: Am base-fret 1 frets x 0 2 2 1 0}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        // When diagrams are suppressed the chord-name title ("Am") written by
+        // render_chord_diagram_pdf must not appear in the PDF content stream.
+        // This input has no lyrics, so "Am" would only appear as the diagram title.
+        assert!(
+            !content.contains("Am"),
+            "diagrams=OFF should suppress diagrams in PDF (case-insensitive)"
         );
     }
 

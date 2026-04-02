@@ -278,10 +278,10 @@ fn render_song_body(
                     continue;
                 }
                 if directive.kind == DirectiveKind::Diagrams {
-                    show_diagrams = match directive.value.as_deref() {
-                        Some("off") => false,
-                        _ => true, // "on", empty, or any other value
-                    };
+                    show_diagrams = !directive
+                        .value
+                        .as_deref()
+                        .is_some_and(|v| v.eq_ignore_ascii_case("off"));
                     continue;
                 }
                 if directive.kind == DirectiveKind::Transpose {
@@ -315,6 +315,13 @@ fn render_song_body(
                         html.push_str("</section>\n");
                         // Finish collecting: store the buffered HTML as the
                         // most recent chorus for future recall.
+                        //
+                        // NOTE: This captures the diagram state at definition time.
+                        // If {diagrams: off} appears between {end_of_chorus} and
+                        // {chorus}, the recall still uses the captured HTML (with
+                        // diagrams). The PDF renderer re-renders at recall time
+                        // with current state, which is arguably more correct but
+                        // would require an architecture change here.
                         if let Some(buf) = chorus_buf.take() {
                             chorus_html = buf;
                         }
@@ -2352,6 +2359,26 @@ Verse text\n\
         } else {
             panic!("expected a directive line, got: {:?}", &song.lines[0]);
         }
+    }
+
+    // --- Case-insensitive {diagrams} directive (#652) ---
+
+    #[test]
+    fn test_diagrams_off_case_insensitive() {
+        let html = render("{diagrams: Off}\n{define: Am base-fret 1 frets x 0 2 2 1 0}");
+        assert!(
+            !html.contains("<svg"),
+            "diagrams=Off should suppress diagrams (case-insensitive)"
+        );
+    }
+
+    #[test]
+    fn test_diagrams_off_uppercase() {
+        let html = render("{diagrams: OFF}\n{define: Am base-fret 1 frets x 0 2 2 1 0}");
+        assert!(
+            !html.contains("<svg"),
+            "diagrams=OFF should suppress diagrams (case-insensitive)"
+        );
     }
 
     // -- abc2svg delegate rendering tests -----------------------------------------
