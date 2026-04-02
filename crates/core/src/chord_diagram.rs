@@ -240,7 +240,10 @@ const OPEN_RADIUS: f32 = 4.0;
 /// Render a chord diagram as an inline SVG string.
 #[must_use]
 pub fn render_svg(data: &DiagramData) -> String {
-    if data.strings < MIN_STRINGS || data.frets_shown < MIN_FRETS_SHOWN {
+    if data.strings < MIN_STRINGS
+        || data.strings > MAX_STRINGS
+        || data.frets_shown < MIN_FRETS_SHOWN
+    {
         return String::new();
     }
     let num_strings = data.strings;
@@ -879,6 +882,36 @@ mod tests {
             fingers: vec![],
         };
         assert!(render_svg(&data).is_empty());
+    }
+
+    // --- render_svg MAX_STRINGS guard (#658) ---
+
+    #[test]
+    fn test_render_svg_exceeding_max_strings_returns_empty() {
+        let data = DiagramData {
+            name: "X".to_string(),
+            display_name: None,
+            strings: 13,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![0; 13],
+            fingers: vec![],
+        };
+        assert!(render_svg(&data).is_empty());
+    }
+
+    #[test]
+    fn test_render_svg_at_max_strings_ok() {
+        let data = DiagramData {
+            name: "X".to_string(),
+            display_name: None,
+            strings: MAX_STRINGS,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![0; MAX_STRINGS],
+            fingers: vec![],
+        };
+        assert!(!render_svg(&data).is_empty());
     }
 
     // --- "fingers" self-referencing stop-word (#647) ---
