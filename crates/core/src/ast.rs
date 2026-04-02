@@ -611,9 +611,13 @@ fn extract_attribute(s: &mut String, key: &str) -> Option<String> {
             pos + needle.len() + 1 + close + usize::from(has_close),
         )
     } else {
-        let v = after.split_whitespace().next().map(|t| t.to_string());
-        let len = v.as_ref().map_or(0, |t| t.len());
-        (v, pos + needle.len() + len)
+        match after.split_whitespace().next() {
+            Some(t) => (Some(t.to_string()), pos + needle.len() + t.len()),
+            // Key found but no value follows — consume the "key=" token so
+            // it is removed from the string, and return Some("") to signal
+            // the key was present.
+            None => (Some(String::new()), pos + needle.len()),
+        }
     };
 
     // Remove the attribute token from the string.
@@ -711,10 +715,14 @@ impl ChordDefinition {
         // Check for "keys <n1> <n2> ..."
         // Key values are MIDI note numbers (0-127). Non-numeric and
         // out-of-range values are silently dropped.
-        if let Some(keys_str) = remaining
-            .strip_prefix("keys ")
-            .or_else(|| remaining.strip_prefix("keys\t"))
-        {
+        // Handles arbitrary whitespace after "keys" (space, tab, multiple).
+        if let Some(keys_str) = remaining.strip_prefix("keys").and_then(|rest| {
+            if rest.is_empty() || rest.starts_with(|c: char| c.is_ascii_whitespace()) {
+                Some(rest)
+            } else {
+                None
+            }
+        }) {
             let keys: Vec<i32> = keys_str
                 .split_whitespace()
                 .filter_map(|s| s.parse::<i32>().ok())
@@ -724,21 +732,24 @@ impl ChordDefinition {
             def.keys = if keys.is_empty() { None } else { Some(keys) };
             return def;
         }
-        if remaining == "keys" {
-            // {define: Am keys} with no values — no keys defined.
-            return def;
-        }
 
         // Check for "copy <source>" or "copyall <source>"
         // Only the first token after the prefix is used as the source name.
-        if let Some(source) = remaining.strip_prefix("copyall ") {
+        // Handles both space and tab delimiters.
+        if let Some(source) = remaining
+            .strip_prefix("copyall ")
+            .or_else(|| remaining.strip_prefix("copyall\t"))
+        {
             let name = source.split_whitespace().next().unwrap_or("").trim();
             if !name.is_empty() {
                 def.copyall = Some(name.to_string());
             }
             return def;
         }
-        if let Some(source) = remaining.strip_prefix("copy ") {
+        if let Some(source) = remaining
+            .strip_prefix("copy ")
+            .or_else(|| remaining.strip_prefix("copy\t"))
+        {
             let name = source.split_whitespace().next().unwrap_or("").trim();
             if !name.is_empty() {
                 def.copy = Some(name.to_string());
@@ -3123,6 +3134,82 @@ mod chord_definition_tests {
         // Negative values are outside MIDI range (0-127) and are dropped.
         let def = ChordDefinition::parse_value("Cm keys -1 0 3 7");
         assert_eq!(def.keys, Some(vec![0, 3, 7]));
+    }
+
+    // --- Tab delimiter for copy/copyall (#649) ---
+
+    #[test]
+    fn test_parse_copy_tab_delimiter() {
+        let def = ChordDefinition::parse_value("Am copy\tAmin");
+        assert_eq!(def.copy, Some("Amin".to_string()));
+    }
+
+    #[test]
+    fn test_parse_copyall_tab_delimiter() {
+        let def = ChordDefinition::parse_value("Am copyall\tAmin");
+        assert_eq!(def.copyall, Some("Amin".to_string()));
+    }
+
+    // --- extract_attribute empty value (#650) ---
+
+    #[test]
+    fn test_parse_trailing_display_equals_no_value() {
+        // "display=" with no value should return Some("") and remove the
+        // token from the string so it does not leak into raw fret data.
+        let def = ChordDefinition::parse_value("Am base-fret 1 frets x 0 2 2 1 0 display=");
+        assert_eq!(def.display, Some(String::new()));
+        // display= must not appear in raw — only the fret portion remains.
+        assert_eq!(def.raw, Some("base-fret 1 frets x 0 2 2 1 0".to_string()));
+    }
+
+    // --- Forward-reference {define} (#657) ---
+
+    #[test]
+    fn test_define_after_usage_still_applies() {
+        // {define} appears after lyrics that use the chord.
+        // apply_define_displays uses a two-pass approach and should
+        // still apply the display override.
+        let mut song = Song::new();
+        let mut lyrics = LyricsLine::new();
+        lyrics
+            .segments
+            .push(LyricsSegment::new(Some(Chord::new("Am")), "word "));
+        song.lines.push(Line::Lyrics(lyrics));
+        song.lines.push(Line::Directive(Directive::with_value(
+            "define",
+            "Am display=\"A minor\"",
+        )));
+        song.apply_define_displays();
+
+        if let Line::Lyrics(ref lyrics) = song.lines[0] {
+            assert_eq!(
+                lyrics.segments[0].chord.as_ref().unwrap().display_name(),
+                "A minor"
+            );
+        } else {
+            panic!("expected lyrics line");
+        }
+    }
+
+    // --- Multiple consecutive spaces in keys (#659) ---
+
+    #[test]
+    fn test_parse_keys_multiple_spaces() {
+        let def = ChordDefinition::parse_value("Am keys  0 3 7");
+        assert_eq!(def.keys, Some(vec![0, 3, 7]));
+    }
+
+    #[test]
+    fn test_parse_keys_tab_separator() {
+        let def = ChordDefinition::parse_value("Am keys\t0 3 7");
+        assert_eq!(def.keys, Some(vec![0, 3, 7]));
+    }
+
+    #[test]
+    fn test_parse_keys_only_keyword() {
+        // "keys" with no values should still work.
+        let def = ChordDefinition::parse_value("Am keys");
+        assert!(def.keys.is_none());
     }
 
     // -- ImageAttributes ----------------------------------------------------
