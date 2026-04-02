@@ -2552,10 +2552,23 @@ Sing along
         let song = chordpro_core::parse(input).unwrap();
         let bytes = render_song(&song);
         let content = String::from_utf8_lossy(&bytes);
-        // The SVG chord diagram markers should not appear when diagrams are off.
+        // Chord diagrams use Bezier curves for finger dots. When diagrams are
+        // off, no circle drawing operations should appear from the diagram renderer.
+        // Compare against a render with diagrams on to ensure the assertion is meaningful.
+        let input_on = "\
+{start_of_chorus}
+{define: Am base-fret 1 frets x 0 2 2 1 0}
+[Am]Chorus line
+{end_of_chorus}
+{chorus}";
+        let song_on = chordpro_core::parse(input_on).unwrap();
+        let bytes_on = render_song(&song_on);
+        let content_on = String::from_utf8_lossy(&bytes_on);
+        let diagram_lines_off = content.matches("l S").count();
+        let diagram_lines_on = content_on.matches("l S").count();
         assert!(
-            !content.contains("fret_marker"),
-            "chord diagrams should not be rendered in chorus recall when diagrams are off"
+            diagram_lines_on > diagram_lines_off,
+            "diagrams=on should produce more line ops than diagrams=off"
         );
     }
 
@@ -3357,6 +3370,39 @@ mod chord_diagram_pdf_tests {
             "frets=7 should produce exactly 3 more line-drawing ops than frets=4 \
              (got {lines_7} vs {lines_4})"
         );
+    }
+
+    #[test]
+    fn test_render_chord_diagram_pdf_single_string_no_panic() {
+        // Direct construction with strings=1 (below MIN_STRINGS) should
+        // return early without panicking.
+        let data = chordpro_core::chord_diagram::DiagramData {
+            name: "X".to_string(),
+            display_name: None,
+            strings: 1,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![0],
+            fingers: vec![],
+        };
+        let mut doc = PdfDocument::new();
+        render_chord_diagram_pdf(&data, &mut doc);
+        // No panic = pass. The guard returned early.
+    }
+
+    #[test]
+    fn test_render_chord_diagram_pdf_zero_strings_no_panic() {
+        let data = chordpro_core::chord_diagram::DiagramData {
+            name: "X".to_string(),
+            display_name: None,
+            strings: 0,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![],
+            fingers: vec![],
+        };
+        let mut doc = PdfDocument::new();
+        render_chord_diagram_pdf(&data, &mut doc);
     }
 }
 
