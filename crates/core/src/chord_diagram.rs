@@ -1,8 +1,8 @@
 //! SVG chord diagram generator.
 //!
 //! Generates inline SVG chord diagram strings from chord definition data.
-//! The diagrams show fret positions, open/muted strings, and barres for
-//! fretted string instruments.
+//! The diagrams show fret positions, open/muted strings, and finger numbers
+//! for fretted string instruments.
 //!
 //! # Examples
 //!
@@ -115,6 +115,9 @@ impl DiagramData {
 
     /// Like [`from_raw`](Self::from_raw) but uses a custom `frets_shown`
     /// value instead of the default.
+    ///
+    /// The keywords `display` and `format` act as stop-words that terminate
+    /// fret and finger value parsing when encountered as tokens.
     #[must_use]
     pub fn from_raw_frets(
         name: &str,
@@ -922,10 +925,20 @@ mod tests {
         // parsed as a finger value.
         let data = DiagramData::from_raw("Am", "frets x 0 2 2 1 0 fingers 0 0 2 fingers 0 0 2", 6)
             .unwrap();
-        // Only 3 finger values before the second "fingers" token.
+        // First "fingers" arm collects [0, 0, 2], stops at second "fingers";
+        // outer loop re-enters the arm and collects [0, 0, 2] → total 6.
         assert_eq!(data.fingers.len(), 6);
         // No spurious 0 from parsing the keyword.
         assert_eq!(data.fingers, vec![0, 0, 2, 0, 0, 2]);
+    }
+
+    #[test]
+    fn test_finger_overflow_beyond_u8_max_becomes_zero() {
+        // Values > 255 overflow u8::parse and fall back to 0 via unwrap_or.
+        let data =
+            DiagramData::from_raw("Am", "frets x 0 2 2 1 0 fingers 256 1 2 3 1 0", 6).unwrap();
+        assert_eq!(data.fingers[0], 0, "256 should overflow u8 and become 0");
+        assert_eq!(data.fingers[1], 1);
     }
 
     // --- Negative fret clamping (#648) ---
