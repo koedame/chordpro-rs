@@ -240,7 +240,9 @@ const OPEN_RADIUS: f32 = 4.0;
 /// Render a chord diagram as an inline SVG string.
 #[must_use]
 pub fn render_svg(data: &DiagramData) -> String {
-    if data.strings < MIN_STRINGS || data.strings > MAX_STRINGS || data.frets_shown < MIN_FRETS_SHOWN
+    if data.strings < MIN_STRINGS
+        || data.strings > MAX_STRINGS
+        || data.frets_shown < MIN_FRETS_SHOWN
     {
         return String::new();
     }
