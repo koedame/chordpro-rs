@@ -3159,10 +3159,7 @@ mod chord_definition_tests {
         let def = ChordDefinition::parse_value("Am base-fret 1 frets x 0 2 2 1 0 display=");
         assert_eq!(def.display, Some(String::new()));
         // display= must not appear in raw — only the fret portion remains.
-        assert_eq!(
-            def.raw,
-            Some("base-fret 1 frets x 0 2 2 1 0".to_string())
-        );
+        assert_eq!(def.raw, Some("base-fret 1 frets x 0 2 2 1 0".to_string()));
     }
 
     // --- Forward-reference {define} (#657) ---
