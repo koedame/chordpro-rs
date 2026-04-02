@@ -33,10 +33,10 @@ const MAX_STRINGS: usize = 12;
 pub const DEFAULT_FRETS_SHOWN: usize = 5;
 
 /// Maximum allowed `base_fret` value (typical 24-fret guitar).
-const MAX_BASE_FRET: u32 = 24;
+pub const MAX_BASE_FRET: u32 = 24;
 
 /// Minimum number of frets shown in a rendered chord diagram.
-const MIN_FRETS_SHOWN: usize = 1;
+pub const MIN_FRETS_SHOWN: usize = 1;
 
 /// Data needed to render a chord diagram.
 #[derive(Debug, Clone)]
@@ -141,7 +141,10 @@ impl DiagramData {
                 "frets" => {
                     i += 1;
                     while i < tokens.len()
-                        && !matches!(tokens[i], "fingers" | "base-fret" | "display" | "format")
+                        && !matches!(
+                            tokens[i],
+                            "frets" | "fingers" | "base-fret" | "display" | "format"
+                        )
                     {
                         let val = match tokens[i].to_ascii_lowercase().as_str() {
                             "x" | "n" => -1,
@@ -795,12 +798,27 @@ mod tests {
 
     #[test]
     fn test_frets_stops_finger_parsing() {
-        // "frets" after "fingers" should stop finger parsing.
+        // "frets" after "fingers" should stop finger parsing. The outer
+        // loop then re-enters the "frets" arm for the second batch, so
+        // both batches of fret values are accumulated.
         let data =
             DiagramData::from_raw("Am", "frets x 0 2 2 1 0 fingers 0 0 2 frets x 0 2 2 1 0", 6)
                 .unwrap();
         // Only 3 finger values before the second "frets" token.
         assert_eq!(data.fingers, vec![0, 0, 2]);
+        // Both frets batches (6 + 6) are accumulated by the outer loop.
+        assert_eq!(data.frets.len(), 12);
+    }
+
+    #[test]
+    fn test_repeated_frets_keyword_not_consumed_as_value() {
+        // The "frets" keyword should not be consumed as a fret value.
+        // Without the stop-word, "frets" would parse as -1 via unwrap_or.
+        let data = DiagramData::from_raw("Am", "frets 1 2 3 frets 4 5 6", 0).unwrap();
+        // The outer loop processes both "frets" arms; 3 + 3 = 6 values.
+        assert_eq!(data.frets.len(), 6);
+        // No -1 value from "frets" being misinterpreted as a fret.
+        assert!(!data.frets.contains(&-1));
     }
 
     // --- from_raw_frets / from_raw_infer_frets tests (#623) ---
