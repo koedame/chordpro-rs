@@ -589,6 +589,11 @@ impl ImageAttributes {
 /// string). Handles both quoted values (`key="value with spaces"`) and
 /// unquoted values (`key=value`).
 ///
+/// Unquoted values may not contain `=`. If the next token after `key=`
+/// contains `=`, it is treated as a separate attribute and the current
+/// attribute is returned as empty-valued. Use quoted values for values
+/// containing `=`.
+///
 /// Returns `Some(value)` if found (and mutates `s` to remove the attribute),
 /// or `None` if not found.
 fn extract_attribute(s: &mut String, key: &str) -> Option<String> {
@@ -3204,6 +3209,28 @@ mod chord_definition_tests {
         let def = ChordDefinition::parse_value("Am format= display=\"A minor\"");
         assert_eq!(def.format, Some(String::new()));
         assert_eq!(def.display, Some("A minor".to_string()));
+    }
+
+    // --- Unquoted value with embedded '=' (#688) ---
+
+    #[test]
+    fn test_unquoted_value_with_equals_treated_as_empty() {
+        // An unquoted value containing '=' is treated as a separate attribute,
+        // so the current attribute becomes empty-valued. Users should quote
+        // values that contain '='.
+        let def = ChordDefinition::parse_value("Am display=val=ue");
+        assert_eq!(
+            def.display,
+            Some(String::new()),
+            "unquoted value with '=' should be treated as empty"
+        );
+    }
+
+    #[test]
+    fn test_quoted_value_with_equals_preserved() {
+        // Quoted values may contain '=' without issue.
+        let def = ChordDefinition::parse_value("Am display=\"val=ue\"");
+        assert_eq!(def.display, Some("val=ue".to_string()));
     }
 
     // --- Forward-reference {define} (#657) ---
