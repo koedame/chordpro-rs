@@ -178,10 +178,14 @@ impl fmt::Display for Value {
             Value::Null => write!(f, "null"),
             Value::Bool(b) => write!(f, "{b}"),
             Value::Number(n) => {
+                // Display whole numbers without a decimal point. The upper
+                // bound uses strict less-than because `i64::MAX as f64`
+                // rounds up to a value larger than `i64::MAX`, and casting
+                // such a value `as i64` would overflow to `i64::MIN`.
                 if n.fract() == 0.0
                     && n.is_finite()
                     && *n >= i64::MIN as f64
-                    && *n <= i64::MAX as f64
+                    && *n < i64::MAX as f64
                 {
                     write!(f, "{}", *n as i64)
                 } else {
@@ -677,7 +681,8 @@ impl<'a> Parser<'a> {
         if self.peek() == Some('-') {
             self.advance();
         }
-        // Integer part
+        // Integer part — require at least one digit.
+        let integer_start = self.pos;
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() {
                 self.advance();
@@ -685,9 +690,12 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
+        let has_integer_digits = self.pos > integer_start;
         // Fractional part
+        let mut has_fraction_digits = false;
         if self.peek() == Some('.') {
             self.advance();
+            let frac_start = self.pos;
             while let Some(c) = self.peek() {
                 if c.is_ascii_digit() {
                     self.advance();
@@ -695,6 +703,12 @@ impl<'a> Parser<'a> {
                     break;
                 }
             }
+            has_fraction_digits = self.pos > frac_start;
+        }
+        // Require at least one digit somewhere in the number.
+        if !has_integer_digits && !has_fraction_digits {
+            let num_str = &self.input[start..self.pos];
+            return Err(self.error(&format!("expected digit after minus sign: {num_str}")));
         }
         // Exponent
         if self.peek() == Some('e') || self.peek() == Some('E') {
@@ -1754,5 +1768,89 @@ mod tests {
     fn test_dotted_key_valid_segments() {
         let result = parse_rrjson("a.b.c = 1");
         assert!(result.is_ok());
+    }
+
+    // --- Number parser edge cases (#575) ---
+
+    #[test]
+    fn test_bare_minus_rejected() {
+        let result = parse_rrjson(r#"{"x": -}"#);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().message;
+        assert!(
+            msg.contains("expected digit"),
+            "bare minus should produce digit error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_minus_dot_rejected() {
+        let result = parse_rrjson(r#"{"x": -.}"#);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().message;
+        assert!(
+            msg.contains("expected digit"),
+            "minus-dot should produce digit error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_minus_dot_five_accepted() {
+        // -.5 has digits after the decimal point, so it is a valid number.
+        let result = parse_rrjson(r#"{"x": -.5}"#);
+        assert!(result.is_ok());
+        let obj = result.unwrap();
+        if let Value::Object(entries) = obj {
+            let val = entries.iter().find(|(k, _)| k == "x").map(|(_, v)| v);
+            assert_eq!(val, Some(&Value::Number(-0.5)));
+        } else {
+            panic!("expected object");
+        }
+    }
+
+    #[test]
+    fn test_negative_number_accepted() {
+        let result = parse_rrjson(r#"{"x": -42}"#);
+        assert!(result.is_ok());
+        let obj = result.unwrap();
+        if let Value::Object(entries) = obj {
+            let val = entries.iter().find(|(k, _)| k == "x").map(|(_, v)| v);
+            assert_eq!(val, Some(&Value::Number(-42.0)));
+        } else {
+            panic!("expected object");
+        }
+    }
+
+    // --- Value::Display i64 boundary (#576) ---
+
+    #[test]
+    fn test_display_i64_max_boundary_no_overflow() {
+        // 9223372036854775808.0 is just above i64::MAX (9223372036854775807).
+        // It must NOT be displayed as a negative number from i64 overflow.
+        let val = Value::Number(9_223_372_036_854_775_808.0);
+        let s = val.to_string();
+        assert!(
+            !s.starts_with('-'),
+            "value near i64::MAX must not overflow to negative: {s}"
+        );
+    }
+
+    #[test]
+    fn test_display_i64_min_boundary() {
+        // i64::MIN as f64 is exact, so it should display as an integer.
+        let val = Value::Number(i64::MIN as f64);
+        assert_eq!(val.to_string(), "-9223372036854775808");
+    }
+
+    #[test]
+    fn test_display_normal_integer() {
+        let val = Value::Number(42.0);
+        assert_eq!(val.to_string(), "42");
+    }
+
+    #[test]
+    fn test_display_fractional() {
+        let val = Value::Number(1.5);
+        assert_eq!(val.to_string(), "1.5");
     }
 }
