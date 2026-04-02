@@ -985,8 +985,12 @@ fn render_chord_diagram_pdf(
     data: &chordpro_core::chord_diagram::DiagramData,
     doc: &mut PdfDocument,
 ) {
-    // Guard: need at least 2 strings to compute grid width without underflow.
-    if data.strings < 2 {
+    // Guard: mirror render_svg bounds checks for strings and frets_shown.
+    if data.strings < chordpro_core::chord_diagram::MIN_STRINGS
+        || data.strings > chordpro_core::chord_diagram::MAX_STRINGS
+        || data.frets_shown < chordpro_core::chord_diagram::MIN_FRETS_SHOWN
+        || data.frets_shown > chordpro_core::chord_diagram::MAX_FRETS_SHOWN
+    {
         return;
     }
 
