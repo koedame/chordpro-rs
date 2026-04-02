@@ -24,10 +24,10 @@
 //! ```
 
 /// Minimum number of strings for a valid chord diagram.
-const MIN_STRINGS: usize = 2;
+pub const MIN_STRINGS: usize = 2;
 
 /// Maximum number of strings for a valid chord diagram (covers 12-string guitar).
-const MAX_STRINGS: usize = 12;
+pub const MAX_STRINGS: usize = 12;
 
 /// Default number of frets shown in a chord diagram.
 pub const DEFAULT_FRETS_SHOWN: usize = 5;
@@ -808,6 +808,8 @@ mod tests {
         assert_eq!(data.fingers, vec![0, 0, 2]);
         // Both frets batches (6 + 6) are accumulated by the outer loop.
         assert_eq!(data.frets.len(), 12);
+        // strings is max(num_strings, frets.len()) = max(6, 12) = 12.
+        assert_eq!(data.strings, 12);
     }
 
     #[test]
