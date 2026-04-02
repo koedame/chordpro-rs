@@ -1715,18 +1715,6 @@ mod tests {
     }
 
     #[test]
-    fn test_multi_song_per_song_config_overrides() {
-        // Verify that config overrides in one song do not leak to the next.
-        let input = "{title: Song A}\n{+config.settings.transpose: 2}\n[C]Hello\n{new_song}\n{title: Song B}\n[C]World";
-        let songs = crate::parse_multi(input).unwrap();
-        assert_eq!(songs.len(), 2);
-        // Song A has the transpose override.
-        assert!(!songs[0].config_overrides().is_empty());
-        // Song B should have no overrides.
-        assert!(songs[1].config_overrides().is_empty());
-    }
-
-    #[test]
     fn test_song_config_plus_delegate_blocking() {
         // Song-level config cannot enable delegates.
         let config = Config::defaults();

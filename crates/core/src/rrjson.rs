@@ -1888,13 +1888,14 @@ mod tests {
     fn test_duplicate_keys_last_wins() {
         let result = parse_rrjson(r#"{"a": 1, "a": 2}"#).unwrap();
         if let Value::Object(entries) = result {
-            // Last value should win for the key.
+            // Duplicate key should be deduplicated to exactly one entry.
             let vals: Vec<_> = entries
                 .iter()
                 .filter(|(k, _)| k == "a")
                 .map(|(_, v)| v)
                 .collect();
-            assert_eq!(vals.last(), Some(&&Value::Number(2.0)));
+            assert_eq!(vals.len(), 1);
+            assert_eq!(vals[0], &Value::Number(2.0));
         } else {
             panic!("expected object");
         }
