@@ -44,31 +44,33 @@
 Before closing a phase tracking issue, perform the following review against
 `main`:
 
-1. **`/review`** — full code review of the phase's changes on `main`.
-2. **`/security-review`** — security review of the phase's changes on `main`.
-3. If either review finds issues, create new sub-issues under the phase tracking
-   issue for each finding. These sub-issues follow normal workflow (implement,
-   PR, CI, review, merge).
-4. Repeat steps 1–3 until a review pass produces **no new findings**.
-5. Only when both `/review` and `/security-review` pass with no new sub-issues
-   may the phase tracking issue be closed.
+1. **Initial review** — run `/review` and `/security-review` on the full phase
+   diff (may run in parallel).
+2. **Classify findings** by severity (see
+   [Severity Definitions](pr-workflow.md#severity-definitions)).
+3. **Blocking findings** (High, Medium) — create sub-issues, implement fixes
+   via normal PR workflow, and merge to `main`.
+4. **Non-blocking findings** (Low, Nit) — create issues for future work. These
+   do **not** block phase closure.
+5. **Delta review** — run `/review` and `/security-review` on only the fix
+   commits merged since the initial review. Do **not** re-review the entire
+   phase. Only new blocking findings in the fix code require further fixes.
+6. **Repeat steps 3–5** until a delta review produces no new blocking findings.
+7. **Close** the phase tracking issue when all blocking findings are resolved
+   and all non-blocking findings are tracked as issues.
 
 ### Review Finding Accountability
 
-All review findings — regardless of severity (Major, Minor, Nit, Low,
-Informational) — must be:
+All review findings must be:
 
 1. **Individually documented** in the review comment on the tracking issue or PR,
-   with a clear description of each finding.
+   with a clear description and severity classification.
 2. **Resolved or tracked** before the phase or PR is closed:
-   - **Fixed** in the current cycle, or
-   - **Issue created** for deferred items (with a link in the review comment).
+   - **Blocking** (High, Medium) — fixed in the current cycle.
+   - **Non-blocking** (Low, Nit) — GitHub Issue created for future work.
 3. **Never silently dropped.** Aggregate counts like "14 Low findings" without
    enumeration are not acceptable. Every finding must be enumerable and
    traceable.
-
-Non-blocking findings (Nit, Low) may be deferred to future work, but a GitHub
-Issue must exist for each deferred finding so it is not lost.
 
 ### Creating Sub-Issue Relationships
 

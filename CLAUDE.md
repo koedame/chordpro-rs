@@ -75,10 +75,11 @@ Pull requests follow this workflow before merging to `main`:
 
 1. **Implement + test** — author opens PR with code and tests
 2. **CI passes** — fmt, clippy, test must all be green
-3. **`/review`** — code review; fix any issues raised (go back to step 2)
-4. **`/security-review`** — security review; fix any issues raised (go back to step 2)
-5. **CI passes on the final commit** — after all fixes, CI must be green again
-6. **Merge** — only when CI is green on the latest commit and both reviews approve
+3. **`/review` + `/security-review`** — run both reviews (may run in parallel)
+4. **Fix blocking findings** (High/Medium) — delta review on fixes only
+5. **Track non-blocking findings** (Low/Nit) — create issues, do not block merge
+6. **CI passes on the final commit** — after all fixes, CI must be green again
+7. **Merge** — only when CI is green and all blocking findings are resolved
 
 Branch protection requires status checks to pass on the HEAD commit before merging.
 No merge is possible unless CI is green on the latest commit, regardless of how many
