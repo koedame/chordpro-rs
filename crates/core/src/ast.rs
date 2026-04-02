@@ -697,12 +697,23 @@ impl ChordDefinition {
             return def;
         }
 
+        // Extract known attributes (display=, format=) from the value first,
+        // so they work with all definition variants (fretted, keys, copy, copyall).
+        let mut remaining = rest.to_string();
+        def.display = extract_attribute(&mut remaining, "display");
+        def.format = extract_attribute(&mut remaining, "format");
+        let remaining = remaining.trim();
+
+        if remaining.is_empty() {
+            return def;
+        }
+
         // Check for "keys <n1> <n2> ..."
         // Key values are MIDI note numbers (0-127). Non-numeric and
         // out-of-range values are silently dropped.
-        if let Some(keys_str) = rest
+        if let Some(keys_str) = remaining
             .strip_prefix("keys ")
-            .or_else(|| rest.strip_prefix("keys\t"))
+            .or_else(|| remaining.strip_prefix("keys\t"))
         {
             let keys: Vec<i32> = keys_str
                 .split_whitespace()
@@ -713,33 +724,32 @@ impl ChordDefinition {
             def.keys = if keys.is_empty() { None } else { Some(keys) };
             return def;
         }
-        if rest == "keys" {
+        if remaining == "keys" {
             // {define: Am keys} with no values — no keys defined.
             return def;
         }
 
         // Check for "copy <source>" or "copyall <source>"
-        if let Some(source) = rest.strip_prefix("copyall ") {
-            def.copyall = Some(source.trim().to_string());
+        // Only the first token after the prefix is used as the source name.
+        if let Some(source) = remaining.strip_prefix("copyall ") {
+            let name = source.split_whitespace().next().unwrap_or("").trim();
+            if !name.is_empty() {
+                def.copyall = Some(name.to_string());
+            }
             return def;
         }
-        if let Some(source) = rest.strip_prefix("copy ") {
-            def.copy = Some(source.trim().to_string());
+        if let Some(source) = remaining.strip_prefix("copy ") {
+            let name = source.split_whitespace().next().unwrap_or("").trim();
+            if !name.is_empty() {
+                def.copy = Some(name.to_string());
+            }
             return def;
         }
 
-        // Extract known attributes (display=, format=) from the raw value,
-        // stripping them so they are not passed to DiagramData.
-        let mut remaining = rest.to_string();
-
-        def.display = extract_attribute(&mut remaining, "display");
-        def.format = extract_attribute(&mut remaining, "format");
-
-        let trimmed = remaining.trim();
-        def.raw = if trimmed.is_empty() {
+        def.raw = if remaining.is_empty() {
             None
         } else {
-            Some(trimmed.to_string())
+            Some(remaining.to_string())
         };
 
         def
@@ -2934,6 +2944,56 @@ mod chord_definition_tests {
         let def = ChordDefinition::parse_value("Am copyall Amin");
         assert_eq!(def.name, "Am");
         assert_eq!(def.copyall, Some("Amin".to_string()));
+    }
+
+    #[test]
+    fn test_parse_copy_first_token_only() {
+        // Only the first token after "copy" is the source name (#607).
+        let def = ChordDefinition::parse_value("Am copy Amin extra stuff");
+        assert_eq!(def.copy, Some("Amin".to_string()));
+    }
+
+    #[test]
+    fn test_parse_copyall_first_token_only() {
+        let def = ChordDefinition::parse_value("Am copyall Amin extra stuff");
+        assert_eq!(def.copyall, Some("Amin".to_string()));
+    }
+
+    #[test]
+    fn test_parse_copy_with_display() {
+        // display= should be extracted even on copy definitions (#601).
+        let def = ChordDefinition::parse_value("Am copy Bm display=\"Alt\"");
+        assert_eq!(def.copy, Some("Bm".to_string()));
+        assert_eq!(def.display, Some("Alt".to_string()));
+    }
+
+    #[test]
+    fn test_parse_copyall_with_display() {
+        let def = ChordDefinition::parse_value("Am copyall Bm display=\"Alt\"");
+        assert_eq!(def.copyall, Some("Bm".to_string()));
+        assert_eq!(def.display, Some("Alt".to_string()));
+    }
+
+    #[test]
+    fn test_parse_copy_with_format() {
+        let def = ChordDefinition::parse_value("Am copy Bm format=\"%{root}m\"");
+        assert_eq!(def.copy, Some("Bm".to_string()));
+        assert_eq!(def.format, Some("%{root}m".to_string()));
+    }
+
+    #[test]
+    fn test_parse_keys_with_display() {
+        // display= should be extracted even on keys definitions (#601).
+        let def = ChordDefinition::parse_value("Am keys 0 3 7 display=\"A minor\"");
+        assert_eq!(def.keys, Some(vec![0, 3, 7]));
+        assert_eq!(def.display, Some("A minor".to_string()));
+    }
+
+    #[test]
+    fn test_parse_keys_with_format() {
+        let def = ChordDefinition::parse_value("Am keys 0 3 7 format=\"%{root}m\"");
+        assert_eq!(def.keys, Some(vec![0, 3, 7]));
+        assert_eq!(def.format, Some("%{root}m".to_string()));
     }
 
     #[test]
