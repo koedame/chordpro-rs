@@ -3179,6 +3179,12 @@ mod chord_definition_tests {
         assert_eq!(def.copy, Some("Amin".to_string()));
     }
 
+    #[test]
+    fn test_parse_copyall_mixed_whitespace() {
+        let def = ChordDefinition::parse_value("Am copyall \t Amin");
+        assert_eq!(def.copyall, Some("Amin".to_string()));
+    }
+
     // --- extract_attribute empty value (#650) ---
 
     #[test]

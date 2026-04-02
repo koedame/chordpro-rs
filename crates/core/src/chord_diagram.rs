@@ -197,8 +197,8 @@ impl DiagramData {
             return None;
         }
 
-        // Ensure frets_shown is at least 1 to avoid nonsensical diagrams.
-        let frets_shown = frets_shown.max(1);
+        // Clamp frets_shown to the valid range, mirroring base_fret clamping.
+        let frets_shown = frets_shown.clamp(MIN_FRETS_SHOWN, MAX_FRETS_SHOWN);
 
         // Clamp positive fret values to the visible range to prevent
         // rendering dots outside the fret grid.
@@ -949,6 +949,15 @@ mod tests {
             fingers: vec![],
         };
         assert!(!render_svg(&data).is_empty());
+    }
+
+    // --- from_raw_frets clamps frets_shown (#691) ---
+
+    #[test]
+    fn test_from_raw_frets_clamps_excessive_frets_shown() {
+        // frets_shown > MAX_FRETS_SHOWN should be clamped, not rejected.
+        let data = DiagramData::from_raw_frets("Am", "frets x 0 2 2 1 0", 6, 100).unwrap();
+        assert_eq!(data.frets_shown, MAX_FRETS_SHOWN);
     }
 
     // --- "fingers" self-referencing stop-word (#647) ---
