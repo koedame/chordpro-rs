@@ -243,14 +243,20 @@ pub fn render_songs_with_warnings(
         if i > 0 {
             body_doc.new_page();
         }
-        // Apply per-song config overrides (e.g. pdf.margins.*).
+        // Apply per-song config overrides (e.g. pdf.margins.*), always
+        // resetting to the base-config margins first so that song N's
+        // overrides do not bleed into song N+1.
         let song_overrides = song.config_overrides();
-        if !song_overrides.is_empty() {
-            let effective_config = config
+        let song_config;
+        let effective_config = if song_overrides.is_empty() {
+            config
+        } else {
+            song_config = config
                 .clone()
                 .with_song_overrides(&song_overrides, &mut warnings);
-            body_doc.update_margins_from_config(&effective_config, &mut warnings);
-        }
+            &song_config
+        };
+        body_doc.reset_margins_from_config(effective_config, &mut warnings);
         let start_page = body_doc.page_count();
         let title = song
             .metadata
@@ -1622,23 +1628,30 @@ impl PdfDocument {
         Self::with_margins(top, bottom, left, right)
     }
 
-    /// Update the document margins from a config, e.g. after applying
-    /// per-song config overrides in multi-song rendering.
-    fn update_margins_from_config(&mut self, config: &Config, warnings: &mut Vec<String>) {
-        if let Some(v) = config.get_path("pdf.margins.top").as_f64() {
-            self.margin_top = Self::validate_margin(v as f32, self.margin_top, "top", warnings);
-        }
-        if let Some(v) = config.get_path("pdf.margins.bottom").as_f64() {
-            self.margin_bottom =
-                Self::validate_margin(v as f32, self.margin_bottom, "bottom", warnings);
-        }
-        if let Some(v) = config.get_path("pdf.margins.left").as_f64() {
-            self.margin_left = Self::validate_margin(v as f32, self.margin_left, "left", warnings);
-        }
-        if let Some(v) = config.get_path("pdf.margins.right").as_f64() {
-            self.margin_right =
-                Self::validate_margin(v as f32, self.margin_right, "right", warnings);
-        }
+    /// Reset the document margins from a config, falling back to the built-in
+    /// defaults for any margin not explicitly set. Used in multi-song rendering
+    /// so that per-song overrides from song N do not bleed into song N+1.
+    fn reset_margins_from_config(&mut self, config: &Config, warnings: &mut Vec<String>) {
+        self.margin_top = config
+            .get_path("pdf.margins.top")
+            .as_f64()
+            .map(|v| Self::validate_margin(v as f32, MARGIN_TOP, "top", warnings))
+            .unwrap_or(MARGIN_TOP);
+        self.margin_bottom = config
+            .get_path("pdf.margins.bottom")
+            .as_f64()
+            .map(|v| Self::validate_margin(v as f32, MARGIN_BOTTOM, "bottom", warnings))
+            .unwrap_or(MARGIN_BOTTOM);
+        self.margin_left = config
+            .get_path("pdf.margins.left")
+            .as_f64()
+            .map(|v| Self::validate_margin(v as f32, MARGIN_LEFT, "left", warnings))
+            .unwrap_or(MARGIN_LEFT);
+        self.margin_right = config
+            .get_path("pdf.margins.right")
+            .as_f64()
+            .map(|v| Self::validate_margin(v as f32, MARGIN_RIGHT, "right", warnings))
+            .unwrap_or(MARGIN_RIGHT);
     }
 
     /// Returns the current Y position.
