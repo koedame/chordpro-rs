@@ -225,26 +225,7 @@ pub fn render_songs_with_warnings(
     let mut warnings = Vec::new();
 
     if songs.len() == 1 {
-        // Apply song-level config overrides before creating the document.
-        let song_overrides = songs[0].config_overrides();
-        let song_config;
-        let effective_config = if song_overrides.is_empty() {
-            config
-        } else {
-            song_config = config
-                .clone()
-                .with_song_overrides(&song_overrides, &mut warnings);
-            &song_config
-        };
-        let mut doc = PdfDocument::from_config_with_warnings(effective_config, &mut warnings);
-        render_song_into_doc(
-            &songs[0],
-            cli_transpose,
-            effective_config,
-            &mut doc,
-            &mut warnings,
-        );
-        return RenderResult::with_warnings(doc.build_pdf(), warnings);
+        return render_song_with_warnings(&songs[0], cli_transpose, config);
     }
 
     // Phase 1: render all songs and record which page each starts on.
