@@ -1182,7 +1182,7 @@ fn render_directive_inner(
         }
         DirectiveKind::StartOfSection(section_name) => {
             let class = format!("section-{}", sanitize_css_class(section_name));
-            let label = chordpro_core::capitalize(&escape(section_name));
+            let label = escape(&chordpro_core::capitalize(section_name));
             render_section_open(&class, &label, &directive.value, html);
         }
         DirectiveKind::EndOfChorus
@@ -1723,6 +1723,18 @@ mod tests {
         assert!(html.contains("section-a-b-c-d"));
         // Label still uses HTML escaping for display
         assert!(html.contains("&amp;"));
+    }
+
+    #[test]
+    fn test_custom_section_capitalize_before_escape() {
+        // Section name starting with "&" — capitalize must run on the
+        // original text, then escape the result. If escape runs first,
+        // capitalize would operate on "&amp;" instead.
+        let html = render("{start_of_&test}\ntext\n{end_of_&test}");
+        // Should capitalize the "&" (no-op) then escape -> "&amp;test"
+        // NOT capitalize "&amp;" -> "&Amp;test"
+        assert!(html.contains("&amp;test"));
+        assert!(!html.contains("&Amp;"));
     }
 
     #[test]
