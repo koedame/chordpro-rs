@@ -129,7 +129,8 @@ impl DiagramData {
         let tokens: Vec<&str> = raw.split_whitespace().collect();
         let mut i = 0;
         while i < tokens.len() {
-            match tokens[i] {
+            let tok_lower = tokens[i].to_ascii_lowercase();
+            match tok_lower.as_str() {
                 "base-fret" => {
                     if i + 1 < tokens.len() {
                         base_fret = tokens[i + 1].parse().unwrap_or(1).clamp(1, MAX_BASE_FRET);
@@ -140,15 +141,20 @@ impl DiagramData {
                 }
                 "frets" => {
                     i += 1;
-                    while i < tokens.len()
-                        && !matches!(
-                            tokens[i],
+                    while i < tokens.len() {
+                        let low = tokens[i].to_ascii_lowercase();
+                        if matches!(
+                            low.as_str(),
                             "frets" | "fingers" | "base-fret" | "display" | "format"
-                        )
-                    {
-                        let val = match tokens[i].to_ascii_lowercase().as_str() {
+                        ) {
+                            break;
+                        }
+                        let val = match low.as_str() {
                             "x" | "n" => -1,
-                            s => s.parse::<i32>().unwrap_or(-1),
+                            s => {
+                                let v = s.parse::<i32>().unwrap_or(-1);
+                                if v < -1 { -1 } else { v }
+                            }
                         };
                         frets.push(val);
                         i += 1;
@@ -156,9 +162,14 @@ impl DiagramData {
                 }
                 "fingers" => {
                     i += 1;
-                    while i < tokens.len()
-                        && !matches!(tokens[i], "frets" | "base-fret" | "display" | "format")
-                    {
+                    while i < tokens.len() {
+                        let low = tokens[i].to_ascii_lowercase();
+                        if matches!(
+                            low.as_str(),
+                            "frets" | "fingers" | "base-fret" | "display" | "format"
+                        ) {
+                            break;
+                        }
                         fingers.push(tokens[i].parse().unwrap_or(0));
                         i += 1;
                     }
@@ -868,5 +879,96 @@ mod tests {
             fingers: vec![],
         };
         assert!(render_svg(&data).is_empty());
+    }
+
+    // --- "fingers" self-referencing stop-word (#647) ---
+
+    #[test]
+    fn test_duplicate_fingers_keyword_is_stop_word() {
+        // Duplicate "fingers" keyword should stop finger parsing, not be
+        // parsed as a finger value.
+        let data = DiagramData::from_raw("Am", "frets x 0 2 2 1 0 fingers 0 0 2 fingers 0 0 2", 6)
+            .unwrap();
+        // Only 3 finger values before the second "fingers" token.
+        assert_eq!(data.fingers.len(), 6);
+        // No spurious 0 from parsing the keyword.
+        assert_eq!(data.fingers, vec![0, 0, 2, 0, 0, 2]);
+    }
+
+    // --- Negative fret clamping (#648) ---
+
+    #[test]
+    fn test_negative_fret_below_minus_one_clamped() {
+        let data = DiagramData::from_raw("X", "frets -5 0 2 2 1 0", 6).unwrap();
+        // -5 should be treated as -1 (muted)
+        assert_eq!(data.frets[0], -1);
+    }
+
+    #[test]
+    fn test_minus_one_fret_unchanged() {
+        let data = DiagramData::from_raw("X", "frets -1 0 2 2 1 0", 6).unwrap();
+        assert_eq!(data.frets[0], -1);
+    }
+
+    #[test]
+    fn test_large_negative_fret_clamped() {
+        let data = DiagramData::from_raw("X", "frets -100 0 0 0 0 0", 6).unwrap();
+        assert_eq!(data.frets[0], -1);
+    }
+
+    // --- Case-insensitive keyword matching (#651) ---
+
+    #[test]
+    fn test_mixed_case_keywords() {
+        let data =
+            DiagramData::from_raw("Am", "Base-Fret 3 Frets x 0 2 2 1 0 Fingers 0 0 2 3 1 0", 6)
+                .unwrap();
+        assert_eq!(data.base_fret, 3);
+        assert_eq!(data.frets, vec![-1, 0, 2, 2, 1, 0]);
+        assert_eq!(data.fingers, vec![0, 0, 2, 3, 1, 0]);
+    }
+
+    #[test]
+    fn test_uppercase_keywords() {
+        let data =
+            DiagramData::from_raw("Am", "BASE-FRET 2 FRETS X 0 2 2 1 0 FINGERS 0 0 2 3 1 0", 6)
+                .unwrap();
+        assert_eq!(data.base_fret, 2);
+        assert_eq!(data.frets, vec![-1, 0, 2, 2, 1, 0]);
+        assert_eq!(data.fingers, vec![0, 0, 2, 3, 1, 0]);
+    }
+
+    #[test]
+    fn test_mixed_case_display_stop_word() {
+        let data = DiagramData::from_raw("Am", "frets x 0 2 2 1 0 Display", 6).unwrap();
+        // "Display" should stop fret parsing (case-insensitive)
+        assert_eq!(data.frets, vec![-1, 0, 2, 2, 1, 0]);
+    }
+
+    #[test]
+    fn test_mixed_case_format_stop_word() {
+        let data = DiagramData::from_raw("Am", "frets x 0 2 2 1 0 Format", 6).unwrap();
+        assert_eq!(data.frets, vec![-1, 0, 2, 2, 1, 0]);
+    }
+
+    // --- Fewer fret values than string count (#660) ---
+
+    #[test]
+    fn test_fewer_fret_values_than_num_strings() {
+        // 3 fret values but num_strings=6 -> strings=6, only 3 have markers
+        let data = DiagramData::from_raw("X", "frets 1 2 3", 6).unwrap();
+        assert_eq!(data.strings, 6);
+        assert_eq!(data.frets.len(), 3);
+        // Should render without panic; remaining strings have no markers
+        let svg = render_svg(&data);
+        assert!(svg.contains("<svg"));
+    }
+
+    #[test]
+    fn test_fewer_fret_values_inferred() {
+        // With from_raw_infer, strings = frets.len()
+        let data = DiagramData::from_raw_infer("X", "frets 1 2 3").unwrap();
+        assert_eq!(data.strings, 3);
+        assert_eq!(data.frets.len(), 3);
     }
 }
