@@ -2564,6 +2564,8 @@ Sing along
         let song_on = chordpro_core::parse(input_on).unwrap();
         let bytes_on = render_song(&song_on);
         let content_on = String::from_utf8_lossy(&bytes_on);
+        // "l S" counts PDF lineto (l) + stroke (S) operations emitted by
+        // render_chord_diagram_pdf for fret grid lines, nut, and string lines.
         let diagram_lines_off = content.matches("l S").count();
         let diagram_lines_on = content_on.matches("l S").count();
         assert!(
@@ -3403,6 +3405,55 @@ mod chord_diagram_pdf_tests {
         };
         let mut doc = PdfDocument::new();
         render_chord_diagram_pdf(&data, &mut doc);
+        // No panic = pass. The guard returned early.
+    }
+
+    #[test]
+    fn test_render_chord_diagram_pdf_exceeding_max_strings_no_panic() {
+        let data = chordpro_core::chord_diagram::DiagramData {
+            name: "X".to_string(),
+            display_name: None,
+            strings: chordpro_core::chord_diagram::MAX_STRINGS + 1,
+            frets_shown: 5,
+            base_fret: 1,
+            frets: vec![0; chordpro_core::chord_diagram::MAX_STRINGS + 1],
+            fingers: vec![],
+        };
+        let mut doc = PdfDocument::new();
+        render_chord_diagram_pdf(&data, &mut doc);
+        // No panic = pass. The guard returned early.
+    }
+
+    #[test]
+    fn test_render_chord_diagram_pdf_zero_frets_shown_no_panic() {
+        let data = chordpro_core::chord_diagram::DiagramData {
+            name: "X".to_string(),
+            display_name: None,
+            strings: 6,
+            frets_shown: 0,
+            base_fret: 1,
+            frets: vec![0; 6],
+            fingers: vec![],
+        };
+        let mut doc = PdfDocument::new();
+        render_chord_diagram_pdf(&data, &mut doc);
+        // No panic = pass. The guard returned early.
+    }
+
+    #[test]
+    fn test_render_chord_diagram_pdf_exceeding_max_frets_shown_no_panic() {
+        let data = chordpro_core::chord_diagram::DiagramData {
+            name: "X".to_string(),
+            display_name: None,
+            strings: 6,
+            frets_shown: chordpro_core::chord_diagram::MAX_FRETS_SHOWN + 1,
+            base_fret: 1,
+            frets: vec![0; 6],
+            fingers: vec![],
+        };
+        let mut doc = PdfDocument::new();
+        render_chord_diagram_pdf(&data, &mut doc);
+        // No panic = pass. The guard returned early.
     }
 }
 
