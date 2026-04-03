@@ -2444,6 +2444,28 @@ Verse text\n\
     }
 
     #[test]
+    fn test_abc_section_null_config_auto_detect_disabled() {
+        // Default config has delegates.abc2svg=null (auto-detect).
+        // When abc2svg is not installed, sections render as plain text.
+        if chordpro_core::external_tool::has_abc2svg() {
+            return; // Skip on machines with abc2svg installed
+        }
+        let input = "{start_of_abc}\nX:1\n{end_of_abc}";
+        let song = chordpro_core::parse(input).unwrap();
+        // Use defaults — delegates.abc2svg is null (auto-detect)
+        let config = chordpro_core::config::Config::defaults();
+        assert!(
+            config.get_path("delegates.abc2svg").is_null(),
+            "default config should have null delegates.abc2svg"
+        );
+        let html = render_song_with_transpose(&song, 0, &config);
+        assert!(
+            html.contains("<section class=\"abc\">"),
+            "null auto-detect with no abc2svg should render as text section"
+        );
+    }
+
+    #[test]
     fn test_abc_section_fallback_preformatted() {
         // With delegate enabled but abc2svg not available, falls back to <pre>
         if chordpro_core::external_tool::has_abc2svg() {

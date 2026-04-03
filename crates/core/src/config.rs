@@ -527,11 +527,15 @@ impl Config {
             config = config
                 .with_define(&format!("delegates.abc2svg={reset}"))
                 .expect("hardcoded define is valid");
-            warnings.push(
-                "delegates.abc2svg was escalated by a project-level config file and has been \
-                 restored for security; use --define delegates.abc2svg=true to enable"
-                    .to_string(),
-            );
+            let explanation = if reset == "null" {
+                "reset to null (auto-detect: enabled only if abc2svg is installed)"
+            } else {
+                "reset to false (disabled)"
+            };
+            warnings.push(format!(
+                "delegates.abc2svg was enabled by a project-level config file and has been \
+                 {explanation} for security; use --define delegates.abc2svg=true to enable"
+            ));
         }
         if delegate_perm(&current_lilypond) > delegate_perm(&trusted_lilypond) {
             let reset = if trusted_lilypond.is_null() {
@@ -544,11 +548,15 @@ impl Config {
             config = config
                 .with_define(&format!("delegates.lilypond={reset}"))
                 .expect("hardcoded define is valid");
-            warnings.push(
-                "delegates.lilypond was escalated by a project-level config file and has been \
-                 restored for security; use --define delegates.lilypond=true to enable"
-                    .to_string(),
-            );
+            let explanation = if reset == "null" {
+                "reset to null (auto-detect: enabled only if lilypond is installed)"
+            } else {
+                "reset to false (disabled)"
+            };
+            warnings.push(format!(
+                "delegates.lilypond was enabled by a project-level config file and has been \
+                 {explanation} for security; use --define delegates.lilypond=true to enable"
+            ));
         }
 
         ConfigLoadResult { config, warnings }
