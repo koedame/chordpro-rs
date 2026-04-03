@@ -15,6 +15,8 @@ set -euo pipefail
 
 FORMAT="${1:-text}"
 CORPUS_DIR="${2:-tests/corpus}"
+# Perl ChordPro uses capitalized format names (Text, HTML, PDF).
+PERL_FORMAT="$(echo "${FORMAT:0:1}" | tr '[:lower:]' '[:upper:]')${FORMAT:1}"
 RUST_BIN="./target/release/chordpro"
 PERL_BIN="chordpro"
 OUTPUT_DIR="/tmp/chordpro-comparison"
@@ -60,8 +62,9 @@ echo "Format: $FORMAT"
 echo "Corpus: $CORPUS_DIR"
 echo ""
 
-# Process each .cho file
-find "$CORPUS_DIR" -name '*.cho' -type f | sort | while read -r cho_file; do
+# Process each .cho file.
+# Use process substitution (not pipe) so counter variables survive the loop.
+while read -r cho_file; do
     relative="${cho_file#"$CORPUS_DIR"/}"
     base="${relative%.cho}"
     safe_name="${base//\//_}"
@@ -77,8 +80,8 @@ find "$CORPUS_DIR" -name '*.cho' -type f | sort | while read -r cho_file; do
         continue
     fi
 
-    # Run Perl implementation
-    if ! "$PERL_BIN" --generate "$FORMAT" "$cho_file" > "$perl_out" 2>/dev/null; then
+    # Run Perl implementation (uses capitalized format name).
+    if ! "$PERL_BIN" --generate "$PERL_FORMAT" "$cho_file" > "$perl_out" 2>/dev/null; then
         echo -e "${YELLOW}SKIP${NC} $relative (Perl error)"
         SKIP=$((SKIP + 1))
         continue
@@ -93,7 +96,7 @@ find "$CORPUS_DIR" -name '*.cho' -type f | sort | while read -r cho_file; do
         echo -e "${RED}DIFF${NC} $relative"
         FAIL=$((FAIL + 1))
     fi
-done
+done < <(find "$CORPUS_DIR" -name '*.cho' -type f | sort)
 
 echo ""
 echo "=== Results ==="
