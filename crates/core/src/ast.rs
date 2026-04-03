@@ -208,6 +208,10 @@ pub struct Metadata {
     pub tags: Vec<String>,
     /// Custom metadata directives not covered by the standard fields.
     /// Each entry is a `(name, value)` pair.
+    ///
+    /// All custom entries (from both unknown directives and unrecognized
+    /// `{meta}` keys) share a single size cap. Filling the vec with one
+    /// key prevents other keys from being stored.
     pub custom: Vec<(String, String)>,
 }
 

@@ -3965,4 +3965,20 @@ mod metadata_cap_tests {
         assert_eq!(song.metadata.subtitles.len(), Parser::MAX_METADATA_ENTRIES);
         assert_eq!(song.metadata.artists.len(), 1);
     }
+
+    #[test]
+    fn test_metadata_cap_via_meta_directive() {
+        // The {meta: subtitle ...} path should also enforce the cap.
+        let count = Parser::MAX_METADATA_ENTRIES + 50;
+        let mut input = String::new();
+        for i in 0..count {
+            input.push_str(&format!("{{meta: subtitle s{i}}}\n"));
+        }
+        let song = parse(&input).unwrap();
+        assert_eq!(
+            song.metadata.subtitles.len(),
+            Parser::MAX_METADATA_ENTRIES,
+            "meta directive path should also cap subtitles"
+        );
+    }
 }
