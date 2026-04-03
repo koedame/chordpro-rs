@@ -1337,9 +1337,11 @@ mod tests {
     }
 
     #[test]
-    fn test_song_override_cannot_escalate_false_to_null() {
-        // Simulate a user-level false baseline (via with_define), then verify
-        // that a song override setting null is blocked as an escalation.
+    fn test_song_override_blocks_delegate_key() {
+        // Song overrides block all `delegates.*` keys because they are not
+        // on the allowlist (ALLOWED_PREFIXES / ALLOWED_EXACT_KEYS). This is
+        // not escalation-based — any song override of a delegate key is
+        // rejected regardless of the current or target value.
         let config = Config::defaults()
             .with_define("delegates.abc2svg=false")
             .expect("hardcoded");
@@ -1349,7 +1351,7 @@ mod tests {
         assert_eq!(
             config.get_path("delegates.abc2svg"),
             &Value::Bool(false),
-            "false→null escalation via song override should be blocked"
+            "delegate key should remain unchanged — not on song-override allowlist"
         );
         assert!(
             warnings
