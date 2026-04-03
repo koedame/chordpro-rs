@@ -1084,9 +1084,16 @@ mod delegate_tests {
         let song = chordpro_core::parse(input).unwrap();
         let ctx = chordpro_core::selector::SelectorContext::new(Some("guitar"), None);
         let filtered = ctx.filter_song(&song);
+        // The piano textfont directive should be absent from the filtered song.
+        let has_textfont = filtered.lines.iter().any(|l| {
+            matches!(l, chordpro_core::ast::Line::Directive(d) if d.kind == chordpro_core::ast::DirectiveKind::TextFont)
+        });
+        assert!(
+            !has_textfont,
+            "piano textfont directive should be removed for guitar context"
+        );
         let output = render_song(&filtered);
-        // Piano directive should not produce any textfont effect in output
-        assert!(output.contains("Hello"));
+        assert!(output.contains("Hello"), "lyrics should survive filtering");
     }
 
     #[test]
