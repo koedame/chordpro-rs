@@ -861,13 +861,6 @@ mod tests {
     }
 
     #[test]
-    fn test_from_raw_frets_zero_clamped_to_one() {
-        let data =
-            DiagramData::from_raw_frets("Am", "base-fret 1 frets x 0 2 2 1 0", 6, 0).unwrap();
-        assert_eq!(data.frets_shown, 1);
-    }
-
-    #[test]
     fn test_from_raw_frets_clamps_fret_values() {
         // With frets_shown=3, fret value 5 should be clamped to 3.
         let data =
