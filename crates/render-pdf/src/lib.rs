@@ -1108,11 +1108,29 @@ fn render_chorus_recall(
     }
 }
 
-fn render_comment(_style: CommentStyle, text: &str, doc: &mut PdfDocument) {
+fn render_comment(style: CommentStyle, text: &str, doc: &mut PdfDocument) {
     let font = Font::HelveticaOblique;
-    doc.ensure_space(COMMENT_SIZE + LINE_GAP);
-    doc.text(text, font, COMMENT_SIZE);
-    doc.newline(COMMENT_SIZE + LINE_GAP);
+    match style {
+        CommentStyle::Normal | CommentStyle::Italic => {
+            doc.ensure_space(COMMENT_SIZE + LINE_GAP);
+            doc.text(text, font, COMMENT_SIZE);
+            doc.newline(COMMENT_SIZE + LINE_GAP);
+        }
+        CommentStyle::Boxed => {
+            let padding = 3.0_f32;
+            let box_h = COMMENT_SIZE + padding * 2.0;
+            doc.ensure_space(box_h + LINE_GAP);
+            let x = doc.margin_left();
+            let text_y = doc.y();
+            // PDF rect y is bottom-left; text_y is the baseline top.
+            let rect_y = text_y - COMMENT_SIZE - padding;
+            let text_w = text.chars().count() as f32 * COMMENT_SIZE * CHAR_WIDTH;
+            let box_w = text_w + padding * 2.0;
+            doc.rect_stroke(x, rect_y, box_w, box_h, 0.5);
+            doc.text_at(text, font, COMMENT_SIZE, x + padding, text_y);
+            doc.newline(box_h + LINE_GAP);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1829,6 +1847,19 @@ impl PdfDocument {
             fmt_f32(y1),
             fmt_f32(x2),
             fmt_f32(y2)
+        ));
+    }
+
+    /// Draw a stroked (unfilled) rectangle.
+    fn rect_stroke(&mut self, x: f32, y: f32, w: f32, h: f32, line_width: f32) {
+        let ops = self.current_page_mut();
+        ops.push(format!("{} w", fmt_f32(line_width)));
+        ops.push(format!(
+            "{} {} {} {} re S",
+            fmt_f32(x),
+            fmt_f32(y),
+            fmt_f32(w),
+            fmt_f32(h)
         ));
     }
 
@@ -2645,6 +2676,64 @@ Sing along
         assert!(
             content.contains("(3)"),
             "finger numbers should appear in rendered PDF output"
+        );
+    }
+}
+
+#[cfg(test)]
+mod comment_style_tests {
+    use super::*;
+
+    #[test]
+    fn test_comment_normal_renders_text() {
+        let input = "{comment: This is normal}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            content.contains("This is normal"),
+            "normal comment text should appear in PDF"
+        );
+    }
+
+    #[test]
+    fn test_comment_italic_renders_text() {
+        let input = "{comment_italic: Italic note}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            content.contains("Italic note"),
+            "italic comment text should appear in PDF"
+        );
+    }
+
+    #[test]
+    fn test_comment_box_renders_with_rect() {
+        let input = "{comment_box: Boxed note}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            content.contains("Boxed note"),
+            "boxed comment text should appear in PDF"
+        );
+        // Boxed comments use "re S" (rect stroke) PDF operator.
+        assert!(
+            content.contains("re S"),
+            "boxed comment should draw a rectangle border"
+        );
+    }
+
+    #[test]
+    fn test_comment_normal_no_rect() {
+        let input = "{comment: No box here}";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            !content.contains("re S"),
+            "normal comment should not draw a rectangle"
         );
     }
 }
