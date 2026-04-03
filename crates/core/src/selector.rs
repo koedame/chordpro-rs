@@ -47,10 +47,12 @@ impl SelectorContext {
         let instrument = config
             .get_path("instrument.type")
             .as_str()
+            .filter(|s| !s.trim().is_empty())
             .map(|s| s.to_ascii_lowercase());
         let user = config
             .get_path("user.name")
             .as_str()
+            .filter(|s| !s.trim().is_empty())
             .map(|s| s.to_ascii_lowercase());
         Self { instrument, user }
     }
@@ -240,6 +242,23 @@ mod tests {
         let ctx = SelectorContext::from_config(&config);
         assert!(ctx.matches(None));
         assert!(!ctx.matches(Some("guitar")));
+    }
+
+    #[test]
+    fn test_from_config_empty_instrument_treated_as_none() {
+        let config = crate::config::Config::parse(r#"{"instrument": {"type": ""}}"#).unwrap();
+        let ctx = SelectorContext::from_config(&config);
+        assert!(ctx.instrument.is_none(), "empty instrument should be None");
+    }
+
+    #[test]
+    fn test_from_config_whitespace_instrument_treated_as_none() {
+        let config = crate::config::Config::parse(r#"{"instrument": {"type": "  "}}"#).unwrap();
+        let ctx = SelectorContext::from_config(&config);
+        assert!(
+            ctx.instrument.is_none(),
+            "whitespace-only instrument should be None"
+        );
     }
 
     #[test]

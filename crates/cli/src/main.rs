@@ -104,10 +104,14 @@ fn main() -> ExitCode {
     }
 
     // Apply --instrument shorthand before --define so that --define can override.
+    // Empty/whitespace-only values are ignored — they would silently remove all
+    // selector-bearing directives since no selector matches the empty string.
     if let Some(ref instrument) = cli.instrument {
-        config = config
-            .with_define(&format!("instrument.type={instrument}"))
-            .expect("instrument.type define is valid");
+        if !instrument.trim().is_empty() {
+            config = config
+                .with_define(&format!("instrument.type={instrument}"))
+                .expect("instrument.type define is valid");
+        }
     }
 
     // Apply --define overrides (highest precedence)
