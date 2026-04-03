@@ -296,6 +296,9 @@ fn render_song_body(
                     continue;
                 }
                 if directive.kind.is_font_size_color() {
+                    if let Some(buf) = chorus_buf.as_mut() {
+                        buf.push(line.clone());
+                    }
                     fmt_state.apply(&directive.kind, &directive.value);
                     continue;
                 }
@@ -1438,11 +1441,18 @@ fn render_chorus_recall(
         _ => "Chorus".to_string(),
     };
     let _ = writeln!(html, "<div class=\"section-label\">{display_label}</div>");
+    // Use a local copy of fmt_state so in-chorus formatting directives
+    // (e.g. {size}, {bold}) are applied during recall without mutating
+    // the caller's state.
+    let mut local_fmt = fmt_state.clone();
     for line in chorus_body {
         match line {
-            Line::Lyrics(lyrics) => render_lyrics(lyrics, transpose_offset, fmt_state, html),
+            Line::Lyrics(lyrics) => render_lyrics(lyrics, transpose_offset, &local_fmt, html),
             Line::Comment(style, text) => render_comment(*style, text, html),
             Line::Empty => html.push_str("<div class=\"empty-line\"></div>\n"),
+            Line::Directive(d) if d.kind.is_font_size_color() => {
+                local_fmt.apply(&d.kind, &d.value);
+            }
             Line::Directive(d) if !d.kind.is_metadata() => {
                 render_directive_inner(d, show_diagrams, diagram_frets, html);
             }
@@ -1875,6 +1885,20 @@ mod transpose_tests {
         assert!(
             html.contains("<span class=\"chord\">A</span>"),
             "recalled chorus should have transposed chord A, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn test_chorus_recall_preserves_formatting_directives() {
+        // A {textsize: 20} inside the chorus should be applied at recall time.
+        let html =
+            render("{start_of_chorus}\n{textsize: 20}\n[Am]Big text\n{end_of_chorus}\n{chorus}");
+        // The recall section should contain the font-size style.
+        let recall_start = html.find("chorus-recall").expect("should have recall");
+        let recall_section = &html[recall_start..];
+        assert!(
+            recall_section.contains("font-size"),
+            "recalled chorus should apply in-chorus formatting directives"
         );
     }
 
