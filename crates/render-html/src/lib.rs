@@ -1927,7 +1927,7 @@ mod transpose_tests {
         let post_chorus_line = &html[line_start..after_chorus + 20];
         assert!(
             !post_chorus_line.contains("font-size"),
-            "in-chorus {textsize} should not leak to post-chorus content: {post_chorus_line}"
+            "in-chorus {{textsize}} should not leak to post-chorus content: {post_chorus_line}"
         );
     }
 
