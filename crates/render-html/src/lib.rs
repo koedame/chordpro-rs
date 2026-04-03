@@ -1915,9 +1915,8 @@ mod transpose_tests {
     #[test]
     fn test_chorus_formatting_does_not_leak_to_outer_scope() {
         // {textsize: 20} inside chorus must not affect text after the chorus.
-        let html = render(
-            "{start_of_chorus}\n{textsize: 20}\n[Am]Big\n{end_of_chorus}\n[G]Normal text",
-        );
+        let html =
+            render("{start_of_chorus}\n{textsize: 20}\n[Am]Big\n{end_of_chorus}\n[G]Normal text");
         // Find content after </section> (end of chorus)
         let after_chorus = html
             .rfind("Normal text")
