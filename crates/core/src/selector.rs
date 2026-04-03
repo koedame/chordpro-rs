@@ -263,6 +263,23 @@ mod tests {
     }
 
     #[test]
+    fn test_from_config_empty_user_treated_as_none() {
+        let config = crate::config::Config::parse(r#"{"user": {"name": ""}}"#).unwrap();
+        let ctx = SelectorContext::from_config(&config);
+        assert!(ctx.user.is_none(), "empty user.name should be None");
+    }
+
+    #[test]
+    fn test_from_config_whitespace_user_treated_as_none() {
+        let config = crate::config::Config::parse(r#"{"user": {"name": "  "}}"#).unwrap();
+        let ctx = SelectorContext::from_config(&config);
+        assert!(
+            ctx.user.is_none(),
+            "whitespace-only user.name should be None"
+        );
+    }
+
+    #[test]
     fn test_matches_directive() {
         let ctx = SelectorContext::new(Some("guitar"), None);
         let directive = crate::ast::Directive {
