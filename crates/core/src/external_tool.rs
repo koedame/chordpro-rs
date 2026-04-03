@@ -193,8 +193,11 @@ const DANGEROUS_SCHEME_FUNCTIONS: &[&str] = &[
     "primitive-load",
     "primitive-load-path",
     "eval-string",
+    "load",
     "ly:gulp-file",
     "ly:system",
+    "ly:parser-include",
+    "ly:set-option",
 ];
 
 /// Strip dangerous Scheme directives from Lilypond content as defense-in-depth.
@@ -630,6 +633,27 @@ mod tests {
         let input = "\\relative c' { c4$\\markup{test} }\n";
         let result = super::sanitize_lilypond_content(input);
         assert_eq!(result, "\\relative c' { c4$\\markup{test} }");
+    }
+
+    #[test]
+    fn sanitize_lilypond_strips_load() {
+        let input = "#(load \"/etc/lilypond-init.scm\")\n\\relative c' { c4 }\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert!(!result.contains("load"));
+    }
+
+    #[test]
+    fn sanitize_lilypond_strips_ly_parser_include() {
+        let input = "#(ly:parser-include \"/etc/passwd\")\n\\relative c' { c4 }\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert!(!result.contains("ly:parser-include"));
+    }
+
+    #[test]
+    fn sanitize_lilypond_strips_ly_set_option() {
+        let input = "#(ly:set-option 'safe #f)\n\\relative c' { c4 }\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert!(!result.contains("ly:set-option"));
     }
 
     #[test]

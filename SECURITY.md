@@ -81,7 +81,8 @@ Multiple defense layers are applied:
 All SVG content (from delegates or `{start_of_svg}` sections) is sanitized:
 
 - **Dangerous elements stripped**: `<script>`, `<foreignobject>`, `<iframe>`,
-  `<object>`, `<embed>`.
+  `<object>`, `<embed>`, `<math>`, `<set>`, `<animate>`, `<animatetransform>`,
+  `<animatemotion>`.
 - **Event handlers removed**: all `on*` attributes (case-insensitive).
 - **URI scheme validation**: `href`, `src`, and `xlink:href` attributes are
   checked; `javascript:`, `vbscript:`, and `data:` schemes are blocked.
