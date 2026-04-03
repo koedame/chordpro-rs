@@ -1227,32 +1227,26 @@ fn render_chorus_recall(
 }
 
 fn render_comment(style: CommentStyle, text: &str, doc: &mut PdfDocument) {
-    match style {
-        CommentStyle::Normal => {
-            doc.ensure_space(COMMENT_SIZE + LINE_GAP);
-            doc.text(text, Font::Helvetica, COMMENT_SIZE);
-            doc.newline(COMMENT_SIZE + LINE_GAP);
-        }
-        CommentStyle::Italic => {
-            doc.ensure_space(COMMENT_SIZE + LINE_GAP);
-            doc.text(text, Font::HelveticaOblique, COMMENT_SIZE);
-            doc.newline(COMMENT_SIZE + LINE_GAP);
-        }
-        CommentStyle::Boxed => {
-            let font = Font::HelveticaOblique;
-            let padding = 3.0_f32;
-            let box_h = COMMENT_SIZE + padding * 2.0;
-            doc.ensure_space(box_h + LINE_GAP);
-            let x = doc.margin_left();
-            let text_y = doc.y();
-            // PDF rect y is bottom-left; text_y is the baseline top.
-            let rect_y = text_y - COMMENT_SIZE - padding;
-            let text_w = text_width(text, COMMENT_SIZE);
-            let box_w = text_w + padding * 2.0;
-            doc.rect_stroke(x, rect_y, box_w, box_h, 0.5);
-            doc.text_at(text, font, COMMENT_SIZE, x + padding, text_y);
-            doc.newline(box_h + LINE_GAP);
-        }
+    let font = match style {
+        CommentStyle::Normal => Font::Helvetica,
+        CommentStyle::Italic | CommentStyle::Boxed => Font::HelveticaOblique,
+    };
+    if style == CommentStyle::Boxed {
+        let padding = 3.0_f32;
+        let box_h = COMMENT_SIZE + padding * 2.0;
+        doc.ensure_space(box_h + LINE_GAP);
+        let x = doc.margin_left();
+        let text_y = doc.y();
+        let rect_y = text_y - COMMENT_SIZE - padding;
+        let text_w = text_width(text, COMMENT_SIZE);
+        let box_w = text_w + padding * 2.0;
+        doc.rect_stroke(x, rect_y, box_w, box_h, 0.5);
+        doc.text_at(text, font, COMMENT_SIZE, x + padding, text_y);
+        doc.newline(box_h + LINE_GAP);
+    } else {
+        doc.ensure_space(COMMENT_SIZE + LINE_GAP);
+        doc.text(text, font, COMMENT_SIZE);
+        doc.newline(COMMENT_SIZE + LINE_GAP);
     }
 }
 
