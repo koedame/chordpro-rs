@@ -1313,6 +1313,53 @@ mod tests {
     }
 
     #[test]
+    fn test_load_project_null_does_not_escalate_default_null() {
+        // Config::load() with a project config that sets delegates to null.
+        // Default trusted baseline is null, so null→null is not an escalation
+        // and no warning should be emitted.
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("chordpro.json"),
+            r#"{ "delegates": { "abc2svg": null } }"#,
+        )
+        .unwrap();
+
+        let result = Config::load(Some(dir.path().to_str().unwrap()), None);
+        assert_eq!(result.config.get_path("delegates.abc2svg"), &Value::Null);
+        assert!(
+            !result
+                .warnings
+                .iter()
+                .any(|w| w.contains("delegates.abc2svg")),
+            "null→null should not trigger a delegate warning: {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_song_override_cannot_escalate_false_to_null() {
+        // Simulate a user-level false baseline (via with_define), then verify
+        // that a song override setting null is blocked as an escalation.
+        let config = Config::defaults()
+            .with_define("delegates.abc2svg=false")
+            .expect("hardcoded");
+        let mut warnings = Vec::new();
+        let overrides = vec![("delegates.abc2svg", "null")];
+        let config = config.with_song_overrides(&overrides, &mut warnings);
+        assert_eq!(
+            config.get_path("delegates.abc2svg"),
+            &Value::Bool(false),
+            "false→null escalation via song override should be blocked"
+        );
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("delegates.abc2svg") && w.contains("cannot be overridden")),
+            "should warn about blocked delegate override: {warnings:?}"
+        );
+    }
+
+    #[test]
     fn test_project_config_cannot_escalate_false_to_null() {
         // Verify that null (auto-detect) is more permissive than false (disabled).
         // The merge itself changes the value; the security check in load() restores it.
