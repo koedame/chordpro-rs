@@ -233,12 +233,11 @@ fn render_song_body(
             (n as usize).max(1)
         });
 
-    // Stores the rendered HTML of the most recently defined chorus body
-    // (everything between StartOfChorus and EndOfChorus, excluding the
-    // section open/close tags). Used by `{chorus}` recall.
-    let mut chorus_html = String::new();
-    // Temporary buffer for collecting chorus content while inside a chorus section.
-    let mut chorus_buf: Option<String> = None;
+    // Stores the AST lines of the most recently defined chorus body.
+    // Re-rendered at recall time so the current transpose offset is applied.
+    let mut chorus_body: Vec<Line> = Vec::new();
+    // Temporary buffer for collecting chorus AST lines.
+    let mut chorus_buf: Option<Vec<Line>> = None;
     let mut chorus_recall_count: usize = 0;
 
     for line in &song.lines {
@@ -262,12 +261,10 @@ fn render_song_body(
                     buf.push_str(&raw);
                     buf.push('\n');
                 } else {
-                    let mut target = String::new();
-                    render_lyrics(lyrics_line, transpose_offset, &fmt_state, &mut target);
                     if let Some(buf) = chorus_buf.as_mut() {
-                        buf.push_str(&target);
+                        buf.push(line.clone());
                     }
-                    html.push_str(&target);
+                    render_lyrics(lyrics_line, transpose_offset, &fmt_state, html);
                 }
             }
             Line::Directive(directive) => {
@@ -305,27 +302,25 @@ fn render_song_body(
                 match &directive.kind {
                     DirectiveKind::StartOfChorus => {
                         render_section_open("chorus", "Chorus", &directive.value, html);
-                        // Begin collecting chorus content.
-                        chorus_buf = Some(String::new());
+                        chorus_buf = Some(Vec::new());
                     }
                     DirectiveKind::EndOfChorus => {
                         html.push_str("</section>\n");
-                        // Finish collecting: store the buffered HTML as the
-                        // most recent chorus for future recall.
-                        //
-                        // NOTE: This captures the diagram state at definition time.
-                        // If {diagrams: off} appears between {end_of_chorus} and
-                        // {chorus}, the recall still uses the captured HTML (with
-                        // diagrams). The PDF renderer re-renders at recall time
-                        // with current state, which is arguably more correct but
-                        // would require an architecture change here.
                         if let Some(buf) = chorus_buf.take() {
-                            chorus_html = buf;
+                            chorus_body = buf;
                         }
                     }
                     DirectiveKind::Chorus => {
                         if chorus_recall_count < MAX_CHORUS_RECALLS {
-                            render_chorus_recall(&directive.value, &chorus_html, html);
+                            render_chorus_recall(
+                                &directive.value,
+                                &chorus_body,
+                                transpose_offset,
+                                &fmt_state,
+                                show_diagrams,
+                                diagram_frets,
+                                html,
+                            );
                             chorus_recall_count += 1;
                         } else if chorus_recall_count == MAX_CHORUS_RECALLS {
                             warnings.push(format!(
@@ -381,17 +376,10 @@ fn render_song_body(
                             abc_buf = Some(String::new());
                             abc_label = directive.value.clone();
                         } else {
-                            let mut target = String::new();
-                            render_directive_inner(
-                                directive,
-                                show_diagrams,
-                                diagram_frets,
-                                &mut target,
-                            );
                             if let Some(buf) = chorus_buf.as_mut() {
-                                buf.push_str(&target);
+                                buf.push(line.clone());
                             }
-                            html.push_str(&target);
+                            render_directive_inner(directive, show_diagrams, diagram_frets, html);
                         }
                     }
                     DirectiveKind::EndOfAbc if abc_buf.is_some() => {
@@ -407,17 +395,10 @@ fn render_song_body(
                             ly_buf = Some(String::new());
                             ly_label = directive.value.clone();
                         } else {
-                            let mut target = String::new();
-                            render_directive_inner(
-                                directive,
-                                show_diagrams,
-                                diagram_frets,
-                                &mut target,
-                            );
                             if let Some(buf) = chorus_buf.as_mut() {
-                                buf.push_str(&target);
+                                buf.push(line.clone());
                             }
-                            html.push_str(&target);
+                            render_directive_inner(directive, show_diagrams, diagram_frets, html);
                         }
                     }
                     DirectiveKind::EndOfLy if ly_buf.is_some() => {
@@ -438,34 +419,24 @@ fn render_song_body(
                         }
                     }
                     _ => {
-                        let mut target = String::new();
-                        render_directive_inner(
-                            directive,
-                            show_diagrams,
-                            diagram_frets,
-                            &mut target,
-                        );
                         if let Some(buf) = chorus_buf.as_mut() {
-                            buf.push_str(&target);
+                            buf.push(line.clone());
                         }
-                        html.push_str(&target);
+                        render_directive_inner(directive, show_diagrams, diagram_frets, html);
                     }
                 }
             }
             Line::Comment(style, text) => {
-                let mut target = String::new();
-                render_comment(*style, text, &mut target);
                 if let Some(buf) = chorus_buf.as_mut() {
-                    buf.push_str(&target);
+                    buf.push(line.clone());
                 }
-                html.push_str(&target);
+                render_comment(*style, text, html);
             }
             Line::Empty => {
-                let empty = "<div class=\"empty-line\"></div>\n";
                 if let Some(buf) = chorus_buf.as_mut() {
-                    buf.push_str(empty);
+                    buf.push(line.clone());
                 }
-                html.push_str(empty);
+                html.push_str("<div class=\"empty-line\"></div>\n");
             }
         }
     }
@@ -1449,16 +1420,35 @@ fn render_section_open(class: &str, label: &str, value: &Option<String>, html: &
 
 /// Render a `{chorus}` recall directive as HTML.
 ///
-/// Wraps the recalled chorus content in a `<div class="chorus-recall">` with
-/// a section label. If no chorus has been defined yet, only the label is emitted.
-fn render_chorus_recall(value: &Option<String>, chorus_html: &str, html: &mut String) {
+/// Re-renders the stored chorus AST lines with the current transpose offset,
+/// so chords are transposed correctly even if `{transpose}` changed after
+/// the chorus was defined.
+fn render_chorus_recall(
+    value: &Option<String>,
+    chorus_body: &[Line],
+    transpose_offset: i8,
+    fmt_state: &FormattingState,
+    show_diagrams: bool,
+    diagram_frets: usize,
+    html: &mut String,
+) {
     html.push_str("<div class=\"chorus-recall\">\n");
     let display_label = match value {
         Some(v) if !v.is_empty() => format!("Chorus: {}", escape(v)),
         _ => "Chorus".to_string(),
     };
     let _ = writeln!(html, "<div class=\"section-label\">{display_label}</div>");
-    html.push_str(chorus_html);
+    for line in chorus_body {
+        match line {
+            Line::Lyrics(lyrics) => render_lyrics(lyrics, transpose_offset, fmt_state, html),
+            Line::Comment(style, text) => render_comment(*style, text, html),
+            Line::Empty => html.push_str("<div class=\"empty-line\"></div>\n"),
+            Line::Directive(d) if !d.kind.is_metadata() => {
+                render_directive_inner(d, show_diagrams, diagram_frets, html);
+            }
+            _ => {}
+        }
+    }
     html.push_str("</div>\n");
 }
 
@@ -1869,6 +1859,23 @@ mod transpose_tests {
         // "Chorus text" should appear twice: once in original, once in recall
         let count = html.matches("Chorus text").count();
         assert_eq!(count, 2, "chorus content should appear twice");
+    }
+
+    #[test]
+    fn test_chorus_recall_applies_current_transpose() {
+        // Chorus defined with no transpose, recalled after {transpose: 2}.
+        // G should become A in the recalled chorus.
+        let html = render("{start_of_chorus}\n[G]La la\n{end_of_chorus}\n{transpose: 2}\n{chorus}");
+        // Original chorus has chord "G"
+        assert!(
+            html.contains("<span class=\"chord\">G</span>"),
+            "original chorus should have G"
+        );
+        // Recalled chorus should have transposed chord "A"
+        assert!(
+            html.contains("<span class=\"chord\">A</span>"),
+            "recalled chorus should have transposed chord A, got:\n{html}"
+        );
     }
 
     // -- inline markup rendering tests ----------------------------------------
