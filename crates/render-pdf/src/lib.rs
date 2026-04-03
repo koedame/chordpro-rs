@@ -91,8 +91,124 @@ const SECTION_SIZE: f32 = 10.0;
 const COMMENT_SIZE: f32 = 9.0;
 /// Spacing between lines.
 const LINE_GAP: f32 = 4.0;
-/// Average character width as fraction of font size (Helvetica approximation).
-const CHAR_WIDTH: f32 = 0.52;
+/// Per-character width as fraction of font size for Helvetica.
+///
+/// Uses standard Helvetica AFM glyph widths (divided by 1000) for ASCII
+/// printable characters. Non-ASCII and control characters fall back to
+/// the average width of 0.52.
+fn char_width(c: char) -> f32 {
+    // Helvetica AFM widths for ASCII 32–126, divided by 1000.
+    #[rustfmt::skip]
+    const WIDTHS: [f32; 95] = [
+        0.278, // space
+        0.278, // !
+        0.355, // "
+        0.556, // #
+        0.556, // $
+        0.889, // %
+        0.667, // &
+        0.222, // '
+        0.333, // (
+        0.333, // )
+        0.389, // *
+        0.584, // +
+        0.278, // ,
+        0.333, // -
+        0.278, // .
+        0.278, // /
+        0.556, // 0
+        0.556, // 1
+        0.556, // 2
+        0.556, // 3
+        0.556, // 4
+        0.556, // 5
+        0.556, // 6
+        0.556, // 7
+        0.556, // 8
+        0.556, // 9
+        0.278, // :
+        0.278, // ;
+        0.584, // <
+        0.584, // =
+        0.584, // >
+        0.556, // ?
+        1.015, // @
+        0.667, // A
+        0.667, // B
+        0.722, // C
+        0.722, // D
+        0.667, // E
+        0.611, // F
+        0.778, // G
+        0.722, // H
+        0.278, // I
+        0.500, // J
+        0.667, // K
+        0.556, // L
+        0.833, // M
+        0.722, // N
+        0.778, // O
+        0.667, // P
+        0.778, // Q
+        0.722, // R
+        0.667, // S
+        0.611, // T
+        0.722, // U
+        0.667, // V
+        0.944, // W
+        0.667, // X
+        0.667, // Y
+        0.611, // Z
+        0.278, // [
+        0.278, // backslash
+        0.278, // ]
+        0.469, // ^
+        0.556, // _
+        0.333, // `
+        0.556, // a
+        0.556, // b
+        0.500, // c
+        0.556, // d
+        0.556, // e
+        0.278, // f
+        0.556, // g
+        0.556, // h
+        0.222, // i
+        0.222, // j
+        0.500, // k
+        0.222, // l
+        0.833, // m
+        0.556, // n
+        0.556, // o
+        0.556, // p
+        0.556, // q
+        0.333, // r
+        0.500, // s
+        0.278, // t
+        0.556, // u
+        0.500, // v
+        0.722, // w
+        0.500, // x
+        0.500, // y
+        0.500, // z
+        0.334, // {
+        0.260, // |
+        0.334, // }
+        0.584, // ~
+    ];
+    let code = c as u32;
+    if (32..=126).contains(&code) {
+        WIDTHS[(code - 32) as usize]
+    } else {
+        0.52 // fallback for non-ASCII
+    }
+}
+
+/// Compute text width in points for a string at the given font size.
+fn text_width(s: &str, font_size: f32) -> f32 {
+    s.chars().map(|c| char_width(c) * font_size).sum()
+}
+
 /// Table of Contents entry font size.
 const TOC_ENTRY_SIZE: f32 = 11.0;
 /// Maximum number of pages a single document can contain.
@@ -304,7 +420,7 @@ pub fn render_songs_with_warnings(
 
         // Render page number right-aligned
         let num_str = page_num.to_string();
-        let num_width = num_str.len() as f32 * TOC_ENTRY_SIZE * CHAR_WIDTH;
+        let num_width = text_width(&num_str, TOC_ENTRY_SIZE);
         let right_x = PAGE_W - toc_doc.margin_right - num_width;
         toc_doc.text_at(&num_str, Font::Helvetica, TOC_ENTRY_SIZE, right_x, y);
 
@@ -540,10 +656,10 @@ fn render_lyrics(
         if let Some(ref name) = chord_display {
             doc.text_at(name, Font::HelveticaBold, chord_size, x, start_y);
         }
-        let text_w = seg.text.chars().count() as f32 * lyrics_size * CHAR_WIDTH;
-        let chord_w = chord_display.as_ref().map_or(0.0, |name| {
-            name.chars().count() as f32 * chord_size * CHAR_WIDTH + 2.0
-        });
+        let text_w = text_width(&seg.text, lyrics_size);
+        let chord_w = chord_display
+            .as_ref()
+            .map_or(0.0, |name| text_width(name, chord_size) + 2.0);
         x += text_w.max(chord_w);
     }
 
@@ -569,7 +685,7 @@ fn render_lyrics_spans(lyrics: &LyricsLine, font_size: f32, doc: &mut PdfDocumen
             x = render_span_list(&seg.spans, doc, x, y, font_size, false, false);
         } else {
             doc.text_at(&seg.text, Font::Helvetica, font_size, x, y);
-            x += seg.text.chars().count() as f32 * font_size * CHAR_WIDTH;
+            x += text_width(&seg.text, font_size);
         }
     }
 }
@@ -596,7 +712,7 @@ fn render_span_list(
                     (false, false) => Font::Helvetica,
                 };
                 doc.text_at(text, font, font_size, x, y);
-                x += text.chars().count() as f32 * font_size * CHAR_WIDTH;
+                x += text_width(text, font_size);
             }
             TextSpan::Bold(children) => {
                 x = render_span_list(children, doc, x, y, font_size, true, italic);
@@ -1124,7 +1240,7 @@ fn render_comment(style: CommentStyle, text: &str, doc: &mut PdfDocument) {
             let text_y = doc.y();
             // PDF rect y is bottom-left; text_y is the baseline top.
             let rect_y = text_y - COMMENT_SIZE - padding;
-            let text_w = text.chars().count() as f32 * COMMENT_SIZE * CHAR_WIDTH;
+            let text_w = text_width(text, COMMENT_SIZE);
             let box_w = text_w + padding * 2.0;
             doc.rect_stroke(x, rect_y, box_w, box_h, 0.5);
             doc.text_at(text, font, COMMENT_SIZE, x + padding, text_y);
