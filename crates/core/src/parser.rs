@@ -187,9 +187,13 @@ impl Parser {
         while !self.is_at_end() {
             let line = self.parse_line()?;
 
-            // If this is a metadata directive, populate the Song's metadata.
+            // If this is a metadata directive without a selector, populate
+            // the Song's metadata. Selector-bearing directives are deferred
+            // to filter_song(), which re-derives metadata after filtering.
             if let Line::Directive(ref directive) = line {
-                Self::populate_metadata(&mut song.metadata, directive);
+                if directive.selector.is_none() {
+                    Self::populate_metadata(&mut song.metadata, directive);
+                }
             }
 
             song.lines.push(line);
@@ -220,7 +224,9 @@ impl Parser {
             match self.parse_line() {
                 Ok(line) => {
                     if let Line::Directive(ref directive) = line {
-                        Self::populate_metadata(&mut song.metadata, directive);
+                        if directive.selector.is_none() {
+                            Self::populate_metadata(&mut song.metadata, directive);
+                        }
                     }
                     song.lines.push(line);
                 }
@@ -254,7 +260,12 @@ impl Parser {
 
     /// Populates metadata fields from a directive, if it is a known metadata
     /// directive with a value.
-    fn populate_metadata(metadata: &mut crate::ast::Metadata, directive: &Directive) {
+    /// Populate metadata fields from a directive's kind and value.
+    ///
+    /// This is called during parsing for unselectored directives, and again
+    /// by [`SelectorContext::filter_song`](crate::selector::SelectorContext::filter_song)
+    /// after filtering to re-derive metadata from matching selector-bearing directives.
+    pub fn populate_metadata(metadata: &mut crate::ast::Metadata, directive: &Directive) {
         let value = match directive.value.as_deref() {
             Some(v) => v.to_string(),
             None => return, // Metadata directives without values are no-ops.

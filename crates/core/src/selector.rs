@@ -93,26 +93,71 @@ impl SelectorContext {
         self.matches(directive.selector.as_deref())
     }
 
-    /// Filter a song's lines, removing directives whose selectors don't match.
+    /// Filter a song's lines based on the active selector context.
     ///
-    /// Non-directive lines (lyrics, comments, empty) are always kept.
-    /// Directives without selectors are always kept.
-    /// Directives with non-matching selectors are removed.
+    /// - Directives without selectors are always kept.
+    /// - Directives with matching selectors are kept.
+    /// - Directives with non-matching selectors are removed.
+    /// - When a non-matching section-start directive is removed, all lines
+    ///   until (and including) its corresponding section-end are also removed.
     ///
-    /// Returns a new [`Song`](crate::ast::Song) with filtered lines.
+    /// After filtering, metadata is re-derived: the base metadata (from
+    /// unselectored directives) is augmented with metadata from any
+    /// selector-bearing directives that survived filtering.
     #[must_use]
     pub fn filter_song(&self, song: &crate::ast::Song) -> crate::ast::Song {
-        let filtered_lines = song
-            .lines
-            .iter()
-            .filter(|line| match line {
-                crate::ast::Line::Directive(d) => self.matches_directive(d),
-                _ => true,
-            })
-            .cloned()
-            .collect();
+        let mut filtered_lines = Vec::new();
+        // Depth counter for non-matching sections. When > 0, all lines are suppressed.
+        let mut suppress_depth: usize = 0;
+
+        for line in &song.lines {
+            match line {
+                crate::ast::Line::Directive(d) => {
+                    if suppress_depth > 0 {
+                        // Inside a suppressed section — track nested section boundaries.
+                        if d.kind.is_section_start() {
+                            suppress_depth += 1;
+                        } else if d.kind.is_section_end() {
+                            suppress_depth -= 1;
+                        }
+                        // All lines inside the suppressed section are dropped.
+                        continue;
+                    }
+
+                    if !self.matches_directive(d) {
+                        // Non-matching directive.
+                        if d.kind.is_section_start() {
+                            // Begin suppressing all content until the matching end.
+                            suppress_depth = 1;
+                        }
+                        // Either way, this directive is removed.
+                        continue;
+                    }
+
+                    filtered_lines.push(line.clone());
+                }
+                _ => {
+                    if suppress_depth == 0 {
+                        filtered_lines.push(line.clone());
+                    }
+                }
+            }
+        }
+
+        // Re-derive metadata: start from the base metadata (unselectored directives
+        // were already populated during parsing) and add metadata from any
+        // selector-bearing directives that survived filtering.
+        let mut metadata = song.metadata.clone();
+        for line in &filtered_lines {
+            if let crate::ast::Line::Directive(d) = line {
+                if d.selector.is_some() {
+                    crate::parser::Parser::populate_metadata(&mut metadata, d);
+                }
+            }
+        }
+
         crate::ast::Song {
-            metadata: song.metadata.clone(),
+            metadata,
             lines: filtered_lines,
         }
     }
@@ -323,5 +368,91 @@ mod tests {
             .filter(|l| matches!(l, crate::ast::Line::Directive(_)))
             .count();
         assert_eq!(directive_count, 1);
+    }
+
+    // -- Section content filtering (#319) ------------------------------------
+
+    #[test]
+    fn test_filter_song_removes_section_contents() {
+        let input =
+            "{start_of_chorus-piano}\n[C]La la la\n{end_of_chorus-piano}\n[Am]Regular lyrics";
+        let song = crate::parse(input).unwrap();
+        let ctx = SelectorContext::new(Some("guitar"), None);
+        let filtered = ctx.filter_song(&song);
+        // The piano chorus and its lyrics should be removed.
+        let texts: Vec<_> = filtered
+            .lines
+            .iter()
+            .filter_map(|l| match l {
+                crate::ast::Line::Lyrics(ly) => Some(ly.text()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            !texts.iter().any(|t| t.contains("La la")),
+            "piano chorus lyrics should be removed"
+        );
+        assert!(
+            texts.iter().any(|t| t.contains("Regular")),
+            "unselectored lyrics should remain"
+        );
+    }
+
+    #[test]
+    fn test_filter_song_keeps_matching_section_contents() {
+        let input = "{start_of_chorus-guitar}\n[C]Guitar chorus\n{end_of_chorus-guitar}";
+        let song = crate::parse(input).unwrap();
+        let ctx = SelectorContext::new(Some("guitar"), None);
+        let filtered = ctx.filter_song(&song);
+        let has_chorus_lyrics = filtered.lines.iter().any(|l| match l {
+            crate::ast::Line::Lyrics(ly) => ly.text().contains("Guitar chorus"),
+            _ => false,
+        });
+        assert!(
+            has_chorus_lyrics,
+            "matching section contents should be kept"
+        );
+    }
+
+    // -- Metadata re-derivation (#318) ---------------------------------------
+
+    #[test]
+    fn test_metadata_skips_selector_directives_during_parse() {
+        let input = "{title: Main Title}\n{title-band: Band Title}";
+        let song = crate::parse(input).unwrap();
+        // During parsing, only the unselectored title should populate metadata.
+        assert_eq!(
+            song.metadata.title.as_deref(),
+            Some("Main Title"),
+            "selector-bearing title should not overwrite metadata during parsing"
+        );
+    }
+
+    #[test]
+    fn test_filter_song_rederives_metadata_from_matching_selector() {
+        let input = "{title: Main Title}\n{title-band: Band Title}";
+        let song = crate::parse(input).unwrap();
+        // When filtering for "band", the band title should be applied.
+        let ctx = SelectorContext::new(None, Some("band"));
+        let filtered = ctx.filter_song(&song);
+        assert_eq!(
+            filtered.metadata.title.as_deref(),
+            Some("Band Title"),
+            "matching selector title should override metadata after filtering"
+        );
+    }
+
+    #[test]
+    fn test_filter_song_keeps_base_metadata_when_no_selector_match() {
+        let input = "{title: Main Title}\n{title-band: Band Title}";
+        let song = crate::parse(input).unwrap();
+        // When filtering for "guitar" (no match for "band"), only the base title remains.
+        let ctx = SelectorContext::new(Some("guitar"), None);
+        let filtered = ctx.filter_song(&song);
+        assert_eq!(
+            filtered.metadata.title.as_deref(),
+            Some("Main Title"),
+            "base metadata should remain when selector doesn't match"
+        );
     }
 }

@@ -1,7 +1,7 @@
 Song {
     metadata: Metadata {
         title: Some(
-            "Override Title",
+            "Selector Test",
         ),
         subtitles: [],
         artists: [],
@@ -9,16 +9,10 @@ Song {
         lyricists: [],
         album: None,
         year: None,
-        key: Some(
-            "E",
-        ),
-        tempo: Some(
-            "120",
-        ),
+        key: None,
+        tempo: None,
         time: None,
-        capo: Some(
-            "3",
-        ),
+        capo: None,
         sort_title: None,
         sort_artist: None,
         arrangers: [],
