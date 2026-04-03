@@ -96,6 +96,7 @@ const LINE_GAP: f32 = 4.0;
 /// Uses standard Helvetica AFM glyph widths (divided by 1000) for ASCII
 /// printable characters. Non-ASCII and control characters fall back to
 /// the average width of 0.52.
+#[must_use]
 fn char_width(c: char) -> f32 {
     // Helvetica AFM widths for ASCII 32–126, divided by 1000.
     #[rustfmt::skip]
@@ -205,6 +206,7 @@ fn char_width(c: char) -> f32 {
 }
 
 /// Compute text width in points for a string at the given font size.
+#[must_use]
 fn text_width(s: &str, font_size: f32) -> f32 {
     s.chars().map(|c| char_width(c) * font_size).sum()
 }
@@ -1225,14 +1227,19 @@ fn render_chorus_recall(
 }
 
 fn render_comment(style: CommentStyle, text: &str, doc: &mut PdfDocument) {
-    let font = Font::HelveticaOblique;
     match style {
-        CommentStyle::Normal | CommentStyle::Italic => {
+        CommentStyle::Normal => {
             doc.ensure_space(COMMENT_SIZE + LINE_GAP);
-            doc.text(text, font, COMMENT_SIZE);
+            doc.text(text, Font::Helvetica, COMMENT_SIZE);
+            doc.newline(COMMENT_SIZE + LINE_GAP);
+        }
+        CommentStyle::Italic => {
+            doc.ensure_space(COMMENT_SIZE + LINE_GAP);
+            doc.text(text, Font::HelveticaOblique, COMMENT_SIZE);
             doc.newline(COMMENT_SIZE + LINE_GAP);
         }
         CommentStyle::Boxed => {
+            let font = Font::HelveticaOblique;
             let padding = 3.0_f32;
             let box_h = COMMENT_SIZE + padding * 2.0;
             doc.ensure_space(box_h + LINE_GAP);
@@ -1954,8 +1961,12 @@ impl PdfDocument {
     }
 
     /// Draw a line from (x1, y1) to (x2, y2) with the given width.
+    ///
+    /// Wraps the operation in `q`/`Q` (save/restore graphics state) so the
+    /// line width does not leak to subsequent drawing operations.
     fn line_at(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, width: f32) {
         let ops = self.current_page_mut();
+        ops.push("q".to_string());
         ops.push(format!("{} w", fmt_f32(width)));
         ops.push(format!(
             "{} {} m {} {} l S",
@@ -1964,11 +1975,16 @@ impl PdfDocument {
             fmt_f32(x2),
             fmt_f32(y2)
         ));
+        ops.push("Q".to_string());
     }
 
     /// Draw a stroked (unfilled) rectangle.
+    ///
+    /// Wraps the operation in `q`/`Q` (save/restore graphics state) so the
+    /// line width does not leak to subsequent drawing operations.
     fn rect_stroke(&mut self, x: f32, y: f32, w: f32, h: f32, line_width: f32) {
         let ops = self.current_page_mut();
+        ops.push("q".to_string());
         ops.push(format!("{} w", fmt_f32(line_width)));
         ops.push(format!(
             "{} {} {} {} re S",
@@ -1977,6 +1993,7 @@ impl PdfDocument {
             fmt_f32(w),
             fmt_f32(h)
         ));
+        ops.push("Q".to_string());
     }
 
     /// Draw a filled circle at (cx, cy) with the given radius.
