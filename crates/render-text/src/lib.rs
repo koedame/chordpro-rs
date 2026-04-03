@@ -1076,6 +1076,36 @@ mod delegate_tests {
         assert!(!output.contains("[Image"));
     }
 
+    // -- Selector filtering integration (#320) --
+
+    #[test]
+    fn test_selector_filtering_removes_non_matching_directive() {
+        let input = "{title: Song}\n{textfont-piano: Courier}\n[Am]Hello";
+        let song = chordpro_core::parse(input).unwrap();
+        let ctx = chordpro_core::selector::SelectorContext::new(Some("guitar"), None);
+        let filtered = ctx.filter_song(&song);
+        let output = render_song(&filtered);
+        // Piano directive should not produce any textfont effect in output
+        assert!(output.contains("Hello"));
+    }
+
+    #[test]
+    fn test_selector_filtering_removes_section_with_contents() {
+        let input = "{title: Song}\n{start_of_chorus-piano}\n[C]Piano only\n{end_of_chorus-piano}\n[Am]Guitar verse";
+        let song = chordpro_core::parse(input).unwrap();
+        let ctx = chordpro_core::selector::SelectorContext::new(Some("guitar"), None);
+        let filtered = ctx.filter_song(&song);
+        let output = render_song(&filtered);
+        assert!(
+            !output.contains("Piano only"),
+            "piano chorus should be removed for guitar context"
+        );
+        assert!(
+            output.contains("Guitar verse"),
+            "unselectored content should remain"
+        );
+    }
+
     #[test]
     fn test_render_decomposed_diacritics_alignment() {
         // "e\u{0301}" is a decomposed e-acute (U+0065 + U+0301 combining acute).
