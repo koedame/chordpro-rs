@@ -326,9 +326,13 @@ pub fn invoke_lilypond(ly_content: &str) -> Result<String, String> {
 }
 
 /// Returns `true` if the Perl `chordpro` reference implementation is available.
+///
+/// The result is cached at the process level via `OnceLock`, so the
+/// subprocess check runs at most once.
 #[must_use]
 pub fn has_perl_chordpro() -> bool {
-    is_available("chordpro")
+    static CACHE: OnceLock<bool> = OnceLock::new();
+    *CACHE.get_or_init(|| is_available("chordpro"))
 }
 
 #[cfg(test)]

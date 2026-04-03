@@ -2556,6 +2556,10 @@ Verse text\n\
         );
         if !chordpro_core::external_tool::has_lilypond() {
             assert!(
+                html.contains("\\relative"),
+                "raw Lilypond content should be present without tool"
+            );
+            assert!(
                 !html.contains("<svg"),
                 "no SVG should be generated without lilypond"
             );
