@@ -63,8 +63,8 @@ Multiple defense layers are applied:
      removed (case-insensitive).
    - Lilypond: lines containing dangerous Scheme functions (`system`, `getenv`,
      `open-input-file`, `open-output-file`, `open-file`, `primitive-load`,
-     `primitive-load-path`, `eval-string`, `ly:gulp-file`, `ly:system`) are
-     stripped.
+     `primitive-load-path`, `eval-string`, `load`, `ly:gulp-file`, `ly:system`,
+     `ly:parser-include`, `ly:set-option`) are stripped.
 2. **Process sandboxing** — Lilypond is invoked with the `-dsafe` flag to
    sandbox its embedded Scheme interpreter.
 3. **Safe command construction** — all arguments are passed via the
