@@ -238,6 +238,9 @@ fn render_song_body(
     let mut chorus_body: Vec<Line> = Vec::new();
     // Temporary buffer for collecting chorus AST lines.
     let mut chorus_buf: Option<Vec<Line>> = None;
+    // Saved fmt_state before entering a chorus, restored on EndOfChorus
+    // to prevent in-chorus formatting directives from leaking outward.
+    let mut saved_fmt_state: Option<FormattingState> = None;
     let mut chorus_recall_count: usize = 0;
 
     for line in &song.lines {
@@ -306,11 +309,18 @@ fn render_song_body(
                     DirectiveKind::StartOfChorus => {
                         render_section_open("chorus", "Chorus", &directive.value, html);
                         chorus_buf = Some(Vec::new());
+                        // Save fmt_state so in-chorus formatting directives
+                        // do not leak into sections after the chorus.
+                        saved_fmt_state = Some(fmt_state.clone());
                     }
                     DirectiveKind::EndOfChorus => {
                         html.push_str("</section>\n");
                         if let Some(buf) = chorus_buf.take() {
                             chorus_body = buf;
+                        }
+                        // Restore fmt_state to pre-chorus value.
+                        if let Some(saved) = saved_fmt_state.take() {
+                            fmt_state = saved;
                         }
                     }
                     DirectiveKind::Chorus => {
@@ -1899,6 +1909,25 @@ mod transpose_tests {
         assert!(
             recall_section.contains("font-size"),
             "recalled chorus should apply in-chorus formatting directives"
+        );
+    }
+
+    #[test]
+    fn test_chorus_formatting_does_not_leak_to_outer_scope() {
+        // {textsize: 20} inside chorus must not affect text after the chorus.
+        let html = render(
+            "{start_of_chorus}\n{textsize: 20}\n[Am]Big\n{end_of_chorus}\n[G]Normal text",
+        );
+        // Find content after </section> (end of chorus)
+        let after_chorus = html
+            .rfind("Normal text")
+            .expect("should have post-chorus text");
+        // Look backward from "Normal text" for the nearest <div class="line">
+        let line_start = html[..after_chorus].rfind("<div class=\"line\"").unwrap();
+        let post_chorus_line = &html[line_start..after_chorus + 20];
+        assert!(
+            !post_chorus_line.contains("font-size"),
+            "in-chorus {textsize} should not leak to post-chorus content: {post_chorus_line}"
         );
     }
 
