@@ -485,6 +485,7 @@ fn render_song_into_doc(
     let mut chorus_body: Vec<Line> = Vec::new();
     // Temporary buffer for collecting chorus content while inside a chorus section.
     let mut chorus_buf: Option<Vec<Line>> = None;
+    let mut saved_fmt_state: Option<PdfFormattingState> = None;
     let mut chorus_recall_count: usize = 0;
 
     for line in &song.lines {
@@ -525,10 +526,14 @@ fn render_song_into_doc(
                     DirectiveKind::StartOfChorus => {
                         render_section_label(d, doc);
                         chorus_buf = Some(Vec::new());
+                        saved_fmt_state = Some(fmt_state.clone());
                     }
                     DirectiveKind::EndOfChorus => {
                         if let Some(buf) = chorus_buf.take() {
                             chorus_body = buf;
+                        }
+                        if let Some(saved) = saved_fmt_state.take() {
+                            fmt_state = saved;
                         }
                     }
                     DirectiveKind::Chorus => {
@@ -1237,6 +1242,7 @@ fn render_comment(style: CommentStyle, text: &str, doc: &mut PdfDocument) {
         doc.ensure_space(box_h + LINE_GAP);
         let x = doc.margin_left();
         let text_y = doc.y();
+        // PDF rect y is bottom-left; text_y is the baseline top.
         let rect_y = text_y - COMMENT_SIZE - padding;
         let text_w = text_width(text, COMMENT_SIZE);
         let box_w = text_w + padding * 2.0;

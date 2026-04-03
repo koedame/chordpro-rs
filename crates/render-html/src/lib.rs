@@ -1923,7 +1923,10 @@ mod transpose_tests {
             .expect("should have post-chorus text");
         // Look backward from "Normal text" for the nearest <div class="line">
         let line_start = html[..after_chorus].rfind("<div class=\"line\"").unwrap();
-        let post_chorus_line = &html[line_start..after_chorus + 20];
+        let line_end = html[line_start..]
+            .find("</div>")
+            .map_or(html.len(), |i| line_start + i + 6);
+        let post_chorus_line = &html[line_start..line_end];
         assert!(
             !post_chorus_line.contains("font-size"),
             "in-chorus {{textsize}} should not leak to post-chorus content: {post_chorus_line}"
