@@ -466,16 +466,10 @@ impl Config {
 
         // Snapshot delegate settings from trusted sources (system + user config).
         // Project-level and song-specific configs must not silently enable
-        // delegate execution — only CLI flags, auto-detection, or explicit
-        // user config (~/.config/chordpro/) may enable delegates.
-        let trusted_abc2svg = config
-            .get_path("delegates.abc2svg")
-            .as_bool()
-            .unwrap_or(false);
-        let trusted_lilypond = config
-            .get_path("delegates.lilypond")
-            .as_bool()
-            .unwrap_or(false);
+        // delegate execution — only CLI flags or explicit user config
+        // (~/.config/chordpro/) may enable delegates.
+        let trusted_abc2svg = config.get_path("delegates.abc2svg").clone();
+        let trusted_lilypond = config.get_path("delegates.lilypond").clone();
 
         // Project config (untrusted — reduced size limit)
         if let Some(dir) = project_dir {
@@ -509,19 +503,18 @@ impl Config {
 
         // Restore delegate settings to trusted values. If a project or song
         // config attempted to enable a delegate, override it back and warn.
-        let project_abc2svg = config
-            .get_path("delegates.abc2svg")
-            .as_bool()
-            .unwrap_or(false);
-        let project_lilypond = config
-            .get_path("delegates.lilypond")
-            .as_bool()
-            .unwrap_or(false);
+        let current_abc2svg = config.get_path("delegates.abc2svg").as_bool();
+        let current_lilypond = config.get_path("delegates.lilypond").as_bool();
 
-        if project_abc2svg && !trusted_abc2svg {
-            // Hardcoded key=value — unwrap is safe.
+        if current_abc2svg == Some(true) && trusted_abc2svg.as_bool() != Some(true) {
+            // Reset to trusted value (null=auto or false=disabled).
+            let reset = if trusted_abc2svg.is_null() {
+                "null"
+            } else {
+                "false"
+            };
             config = config
-                .with_define("delegates.abc2svg=false")
+                .with_define(&format!("delegates.abc2svg={reset}"))
                 .expect("hardcoded define is valid");
             warnings.push(
                 "delegates.abc2svg was enabled by a project-level config file and has been \
@@ -529,10 +522,15 @@ impl Config {
                     .to_string(),
             );
         }
-        if project_lilypond && !trusted_lilypond {
-            // Hardcoded key=value — unwrap is safe.
+        if current_lilypond == Some(true) && trusted_lilypond.as_bool() != Some(true) {
+            // Reset to trusted value (null=auto or false=disabled).
+            let reset = if trusted_lilypond.is_null() {
+                "null"
+            } else {
+                "false"
+            };
             config = config
-                .with_define("delegates.lilypond=false")
+                .with_define(&format!("delegates.lilypond={reset}"))
                 .expect("hardcoded define is valid");
             warnings.push(
                 "delegates.lilypond was enabled by a project-level config file and has been \
@@ -819,10 +817,11 @@ const DEFAULT_CONFIG: &str = r#"{
         separator: "; "
     },
 
-    // Delegate environments (external tool integration)
+    // Delegate environments (external tool integration).
+    // null = auto-detect on first use; true = force enable; false = force disable.
     delegates: {
-        abc2svg: false,
-        lilypond: false
+        abc2svg: null,
+        lilypond: null
     }
 }"#;
 
@@ -1260,15 +1259,9 @@ mod tests {
         .unwrap();
 
         let result = Config::load(Some(dir.path().to_str().unwrap()), None);
-        // Delegates should be reset to false
-        assert_eq!(
-            result.config.get_path("delegates.abc2svg"),
-            &Value::Bool(false)
-        );
-        assert_eq!(
-            result.config.get_path("delegates.lilypond"),
-            &Value::Bool(false)
-        );
+        // Delegates should be reset to null (auto-detect default)
+        assert_eq!(result.config.get_path("delegates.abc2svg"), &Value::Null);
+        assert_eq!(result.config.get_path("delegates.lilypond"), &Value::Null);
         // Warnings should be emitted
         assert!(
             result
@@ -1534,9 +1527,9 @@ mod tests {
             ("delegates.lilypond", "true"),
         ];
         let config = config.with_song_overrides(&overrides, &mut warnings);
-        // Delegate keys should remain at their default (false)
-        assert_eq!(config.get_path("delegates.abc2svg"), &Value::Bool(false));
-        assert_eq!(config.get_path("delegates.lilypond"), &Value::Bool(false));
+        // Delegate keys should remain at their default (null = auto-detect)
+        assert_eq!(config.get_path("delegates.abc2svg"), &Value::Null);
+        assert_eq!(config.get_path("delegates.lilypond"), &Value::Null);
         assert_eq!(warnings.len(), 2);
         assert!(warnings[0].contains("delegates.abc2svg"));
         assert!(warnings[1].contains("delegates.lilypond"));

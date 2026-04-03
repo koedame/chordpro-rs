@@ -210,18 +210,14 @@ fn render_song_body(
     let mut columns_open = false;
     // Tracks whether we are inside an SVG delegate section.
     let mut in_svg_section = false;
-    // Buffer for collecting ABC notation content when abc2svg rendering is enabled.
-    let abc2svg_enabled = config
-        .get_path("delegates.abc2svg")
-        .as_bool()
-        .unwrap_or(false);
+    // Delegate tool availability: Some(true) = force enable, Some(false) = force
+    // disable, None = auto-detect on first encounter. The auto-detect value is
+    // lazily resolved (via `get_or_insert_with`) so that subprocess checks only
+    // run when a delegate section is actually present in the input.
+    let mut abc2svg_resolved: Option<bool> = config.get_path("delegates.abc2svg").as_bool();
+    let mut lilypond_resolved: Option<bool> = config.get_path("delegates.lilypond").as_bool();
     let mut abc_buf: Option<String> = None;
     let mut abc_label: Option<String> = None;
-    // Buffer for collecting Lilypond notation content when lilypond rendering is enabled.
-    let lilypond_enabled = config
-        .get_path("delegates.lilypond")
-        .as_bool()
-        .unwrap_or(false);
     let mut ly_buf: Option<String> = None;
     let mut ly_label: Option<String> = None;
 
@@ -377,9 +373,25 @@ fn render_song_body(
                         // in duplex printing.
                         html.push_str("<div style=\"break-before: recto;\"></div>\n");
                     }
-                    DirectiveKind::StartOfAbc if abc2svg_enabled => {
-                        abc_buf = Some(String::new());
-                        abc_label = directive.value.clone();
+                    DirectiveKind::StartOfAbc => {
+                        let enabled = *abc2svg_resolved
+                            .get_or_insert_with(chordpro_core::external_tool::has_abc2svg);
+                        if enabled {
+                            abc_buf = Some(String::new());
+                            abc_label = directive.value.clone();
+                        } else {
+                            let mut target = String::new();
+                            render_directive_inner(
+                                directive,
+                                show_diagrams,
+                                diagram_frets,
+                                &mut target,
+                            );
+                            if let Some(buf) = chorus_buf.as_mut() {
+                                buf.push_str(&target);
+                            }
+                            html.push_str(&target);
+                        }
                     }
                     DirectiveKind::EndOfAbc if abc_buf.is_some() => {
                         if let Some(abc_content) = abc_buf.take() {
@@ -387,9 +399,25 @@ fn render_song_body(
                             abc_label = None;
                         }
                     }
-                    DirectiveKind::StartOfLy if lilypond_enabled => {
-                        ly_buf = Some(String::new());
-                        ly_label = directive.value.clone();
+                    DirectiveKind::StartOfLy => {
+                        let enabled = *lilypond_resolved
+                            .get_or_insert_with(chordpro_core::external_tool::has_lilypond);
+                        if enabled {
+                            ly_buf = Some(String::new());
+                            ly_label = directive.value.clone();
+                        } else {
+                            let mut target = String::new();
+                            render_directive_inner(
+                                directive,
+                                show_diagrams,
+                                diagram_frets,
+                                &mut target,
+                            );
+                            if let Some(buf) = chorus_buf.as_mut() {
+                                buf.push_str(&target);
+                            }
+                            html.push_str(&target);
+                        }
                     }
                     DirectiveKind::EndOfLy if ly_buf.is_some() => {
                         if let Some(ly_content) = ly_buf.take() {
@@ -2386,9 +2414,14 @@ Verse text\n\
     // -- abc2svg delegate rendering tests -----------------------------------------
 
     #[test]
-    fn test_abc_section_without_delegate_config() {
-        // Default config has delegates.abc2svg=false, so ABC renders as text
-        let html = render("{start_of_abc}\nX:1\n{end_of_abc}");
+    fn test_abc_section_disabled_by_config() {
+        // With delegates.abc2svg explicitly disabled, ABC renders as text
+        let input = "{start_of_abc}\nX:1\n{end_of_abc}";
+        let song = chordpro_core::parse(input).unwrap();
+        let config = chordpro_core::config::Config::defaults()
+            .with_define("delegates.abc2svg=false")
+            .unwrap();
+        let html = render_song_with_transpose(&song, 0, &config);
         assert!(html.contains("<section class=\"abc\">"));
         assert!(html.contains("ABC"));
         assert!(html.contains("</section>"));
@@ -2448,9 +2481,14 @@ Verse text\n\
     // -- lilypond delegate rendering tests ----------------------------------------
 
     #[test]
-    fn test_ly_section_without_delegate_config() {
-        // Default config has delegates.lilypond=false, so Ly renders as text
-        let html = render("{start_of_ly}\n\\relative c' { c4 }\n{end_of_ly}");
+    fn test_ly_section_disabled_by_config() {
+        // With delegates.lilypond explicitly disabled, Ly renders as text
+        let input = "{start_of_ly}\n\\relative c' { c4 }\n{end_of_ly}";
+        let song = chordpro_core::parse(input).unwrap();
+        let config = chordpro_core::config::Config::defaults()
+            .with_define("delegates.lilypond=false")
+            .unwrap();
+        let html = render_song_with_transpose(&song, 0, &config);
         assert!(html.contains("<section class=\"ly\">"));
         assert!(html.contains("Lilypond"));
         assert!(html.contains("</section>"));
