@@ -526,27 +526,23 @@ fn render_lyrics(
     let mut x = doc.margin_left();
     let start_y = doc.y();
     for seg in &lyrics.segments {
-        if let Some(chord) = &seg.chord {
-            let display_name = if transpose_offset != 0 {
-                transpose_chord(chord, transpose_offset)
+        // Compute the display name once per segment, reusing it for both
+        // rendering and width measurement to avoid duplicate transposition.
+        let chord_display: Option<String> = seg.chord.as_ref().map(|c| {
+            if transpose_offset != 0 {
+                transpose_chord(c, transpose_offset)
                     .display_name()
                     .to_string()
             } else {
-                chord.display_name().to_string()
-            };
-            doc.text_at(&display_name, Font::HelveticaBold, chord_size, x, start_y);
+                c.display_name().to_string()
+            }
+        });
+        if let Some(ref name) = chord_display {
+            doc.text_at(name, Font::HelveticaBold, chord_size, x, start_y);
         }
         let text_w = seg.text.chars().count() as f32 * lyrics_size * CHAR_WIDTH;
-        let chord_w = seg.chord.as_ref().map_or(0.0, |c| {
-            let display_len = if transpose_offset != 0 {
-                transpose_chord(c, transpose_offset)
-                    .display_name()
-                    .chars()
-                    .count()
-            } else {
-                c.display_name().chars().count()
-            };
-            display_len as f32 * chord_size * CHAR_WIDTH + 2.0
+        let chord_w = chord_display.as_ref().map_or(0.0, |name| {
+            name.chars().count() as f32 * chord_size * CHAR_WIDTH + 2.0
         });
         x += text_w.max(chord_w);
     }
