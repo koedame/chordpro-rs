@@ -517,12 +517,13 @@ impl Config {
         let current_lilypond = config.get_path("delegates.lilypond").clone();
 
         if delegate_perm(&current_abc2svg) > delegate_perm(&trusted_abc2svg) {
+            // trusted is either null (perm 1) or false (perm 0). If it were
+            // true (perm 2), no current value could exceed it.
             let reset = if trusted_abc2svg.is_null() {
                 "null"
-            } else if trusted_abc2svg.as_bool() == Some(false) {
-                "false"
             } else {
-                "true"
+                debug_assert_eq!(trusted_abc2svg.as_bool(), Some(false));
+                "false"
             };
             config = config
                 .with_define(&format!("delegates.abc2svg={reset}"))
@@ -538,12 +539,12 @@ impl Config {
             ));
         }
         if delegate_perm(&current_lilypond) > delegate_perm(&trusted_lilypond) {
+            // trusted is either null (perm 1) or false (perm 0). See abc2svg comment above.
             let reset = if trusted_lilypond.is_null() {
                 "null"
-            } else if trusted_lilypond.as_bool() == Some(false) {
-                "false"
             } else {
-                "true"
+                debug_assert_eq!(trusted_lilypond.as_bool(), Some(false));
+                "false"
             };
             config = config
                 .with_define(&format!("delegates.lilypond={reset}"))
