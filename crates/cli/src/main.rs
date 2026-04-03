@@ -44,6 +44,14 @@ struct Cli {
     /// Only built-in defaults are used as the base. --config and --define still apply.
     #[arg(long = "no-default-configs")]
     no_default_configs: bool,
+
+    /// Set the active instrument for selector filtering.
+    ///
+    /// Directives with a selector suffix (e.g., `{textfont-piano: Courier}`)
+    /// are kept only when the selector matches the active instrument or user.
+    /// Equivalent to `--define instrument.type=<INSTRUMENT>`.
+    #[arg(long)]
+    instrument: Option<String>,
 }
 
 /// Supported output formats.
@@ -93,6 +101,13 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         }
+    }
+
+    // Apply --instrument shorthand before --define so that --define can override.
+    if let Some(ref instrument) = cli.instrument {
+        config = config
+            .with_define(&format!("instrument.type={instrument}"))
+            .expect("instrument.type define is valid");
     }
 
     // Apply --define overrides (highest precedence)
@@ -158,6 +173,15 @@ fn main() -> ExitCode {
             }
         }
         all_songs.extend(result.results.into_iter().map(|r| r.song));
+    }
+
+    // Apply selector filtering if an instrument or user is configured.
+    let selector_ctx = chordpro_core::selector::SelectorContext::from_config(&config);
+    if selector_ctx.instrument.is_some() || selector_ctx.user.is_some() {
+        all_songs = all_songs
+            .iter()
+            .map(|song| selector_ctx.filter_song(song))
+            .collect();
     }
 
     /// Output produced by a renderer.
