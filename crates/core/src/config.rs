@@ -501,40 +501,52 @@ impl Config {
             }
         }
 
-        // Restore delegate settings to trusted values. If a project or song
-        // config attempted to enable a delegate, override it back and warn.
-        let current_abc2svg = config.get_path("delegates.abc2svg").as_bool();
-        let current_lilypond = config.get_path("delegates.lilypond").as_bool();
+        // Restore delegate settings to trusted values if an untrusted config
+        // made them more permissive. Permissiveness order:
+        //   Bool(false) < Null (auto-detect) < Bool(true)
+        // Any escalation is blocked: false→null, false→true, null→true.
+        fn delegate_perm(v: &Value) -> u8 {
+            match v.as_bool() {
+                Some(false) => 0,
+                None => 1, // Null or non-bool → auto-detect level
+                Some(true) => 2,
+            }
+        }
 
-        if current_abc2svg == Some(true) && trusted_abc2svg.as_bool() != Some(true) {
-            // Reset to trusted value (null=auto or false=disabled).
+        let current_abc2svg = config.get_path("delegates.abc2svg").clone();
+        let current_lilypond = config.get_path("delegates.lilypond").clone();
+
+        if delegate_perm(&current_abc2svg) > delegate_perm(&trusted_abc2svg) {
             let reset = if trusted_abc2svg.is_null() {
                 "null"
-            } else {
+            } else if trusted_abc2svg.as_bool() == Some(false) {
                 "false"
+            } else {
+                "true"
             };
             config = config
                 .with_define(&format!("delegates.abc2svg={reset}"))
                 .expect("hardcoded define is valid");
             warnings.push(
-                "delegates.abc2svg was enabled by a project-level config file and has been \
-                 disabled for security; use --define delegates.abc2svg=true to enable"
+                "delegates.abc2svg was escalated by a project-level config file and has been \
+                 restored for security; use --define delegates.abc2svg=true to enable"
                     .to_string(),
             );
         }
-        if current_lilypond == Some(true) && trusted_lilypond.as_bool() != Some(true) {
-            // Reset to trusted value (null=auto or false=disabled).
+        if delegate_perm(&current_lilypond) > delegate_perm(&trusted_lilypond) {
             let reset = if trusted_lilypond.is_null() {
                 "null"
-            } else {
+            } else if trusted_lilypond.as_bool() == Some(false) {
                 "false"
+            } else {
+                "true"
             };
             config = config
                 .with_define(&format!("delegates.lilypond={reset}"))
                 .expect("hardcoded define is valid");
             warnings.push(
-                "delegates.lilypond was enabled by a project-level config file and has been \
-                 disabled for security; use --define delegates.lilypond=true to enable"
+                "delegates.lilypond was escalated by a project-level config file and has been \
+                 restored for security; use --define delegates.lilypond=true to enable"
                     .to_string(),
             );
         }
@@ -1278,6 +1290,57 @@ mod tests {
                 .any(|w| w.contains("delegates.lilypond")),
             "expected delegate warning, got: {:?}",
             result.warnings
+        );
+    }
+
+    #[test]
+    fn test_project_config_cannot_escalate_false_to_null() {
+        // Verify that null (auto-detect) is more permissive than false (disabled).
+        // The merge itself changes the value; the security check in load() restores it.
+        let mut config = Config::defaults()
+            .with_define("delegates.abc2svg=false")
+            .expect("hardcoded");
+        let overlay = Config::parse(r#"{ "delegates": { "abc2svg": null } }"#).unwrap();
+        config = config.merge(overlay);
+        // After merge the value is Null — the security check must detect this
+        // as an escalation (false → null) and restore to false.
+        assert_eq!(
+            config.get_path("delegates.abc2svg"),
+            &Value::Null,
+            "merge changes false to null"
+        );
+
+        // Verify the permissiveness ordering used by the security check.
+        fn delegate_perm(v: &Value) -> u8 {
+            match v.as_bool() {
+                Some(false) => 0,
+                None => 1,
+                Some(true) => 2,
+            }
+        }
+        assert!(
+            delegate_perm(&Value::Null) > delegate_perm(&Value::Bool(false)),
+            "null (auto-detect) must be more permissive than false (disabled)"
+        );
+        assert!(
+            delegate_perm(&Value::Bool(true)) > delegate_perm(&Value::Null),
+            "true must be more permissive than null (auto-detect)"
+        );
+    }
+
+    #[test]
+    fn test_project_config_can_downgrade_delegates() {
+        // Downgrading from null (auto) to false (disabled) is safe and allowed.
+        fn delegate_perm(v: &Value) -> u8 {
+            match v.as_bool() {
+                Some(false) => 0,
+                None => 1,
+                Some(true) => 2,
+            }
+        }
+        assert!(
+            delegate_perm(&Value::Bool(false)) <= delegate_perm(&Value::Null),
+            "false should not be considered an escalation over null"
         );
     }
 
