@@ -534,7 +534,7 @@ impl Config {
                 "reset to false (disabled)"
             };
             warnings.push(format!(
-                "delegates.abc2svg was enabled by a project-level config file and has been \
+                "delegates.abc2svg was escalated by an untrusted config and has been \
                  {explanation} for security; use --define delegates.abc2svg=true to enable"
             ));
         }
@@ -555,7 +555,7 @@ impl Config {
                 "reset to false (disabled)"
             };
             warnings.push(format!(
-                "delegates.lilypond was enabled by a project-level config file and has been \
+                "delegates.lilypond was escalated by an untrusted config and has been \
                  {explanation} for security; use --define delegates.lilypond=true to enable"
             ));
         }
@@ -884,6 +884,16 @@ static PRESET_UKULELE: &str = r#"{
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    /// Map a delegate config value to a permissiveness level for ordering.
+    /// Matches the `delegate_perm` function used in `Config::load()`.
+    fn delegate_perm(v: &Value) -> u8 {
+        match v.as_bool() {
+            Some(false) => 0,
+            None => 1, // Null or non-bool → auto-detect level
+            Some(true) => 2,
+        }
+    }
 
     #[test]
     fn test_defaults_load() {
@@ -1320,13 +1330,6 @@ mod tests {
         );
 
         // Verify the permissiveness ordering used by the security check.
-        fn delegate_perm(v: &Value) -> u8 {
-            match v.as_bool() {
-                Some(false) => 0,
-                None => 1,
-                Some(true) => 2,
-            }
-        }
         assert!(
             delegate_perm(&Value::Null) > delegate_perm(&Value::Bool(false)),
             "null (auto-detect) must be more permissive than false (disabled)"
@@ -1340,13 +1343,6 @@ mod tests {
     #[test]
     fn test_project_config_can_downgrade_delegates() {
         // Downgrading from null (auto) to false (disabled) is safe and allowed.
-        fn delegate_perm(v: &Value) -> u8 {
-            match v.as_bool() {
-                Some(false) => 0,
-                None => 1,
-                Some(true) => 2,
-            }
-        }
         assert!(
             delegate_perm(&Value::Bool(false)) <= delegate_perm(&Value::Null),
             "false should not be considered an escalation over null"
