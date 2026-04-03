@@ -91,11 +91,11 @@ fn render_song_impl(
     let (combined_transpose, _) =
         chordpro_core::transpose::combine_transpose(cli_transpose, song_transpose_delta);
     let mut transpose_offset: i8 = combined_transpose;
-    // Stores the rendered text lines of the most recently defined chorus,
-    // excluding the "[Chorus]" header itself. Used by `{chorus}` recall.
-    let mut chorus_lines: Vec<String> = Vec::new();
-    // Temporary buffer for collecting chorus content while inside a chorus section.
-    let mut chorus_buf: Option<Vec<String>> = None;
+    // Stores the AST lines of the most recently defined chorus body.
+    // Re-rendered at recall time so the current transpose offset is applied.
+    let mut chorus_body: Vec<Line> = Vec::new();
+    // Temporary buffer for collecting chorus AST lines.
+    let mut chorus_buf: Option<Vec<Line>> = None;
     let mut chorus_recall_count: usize = 0;
 
     render_metadata(&song.metadata, &mut output);
@@ -103,12 +103,10 @@ fn render_song_impl(
     for line in &song.lines {
         match line {
             Line::Lyrics(lyrics_line) => {
-                let mut target = Vec::new();
-                render_lyrics(lyrics_line, transpose_offset, &mut target);
                 if let Some(buf) = chorus_buf.as_mut() {
-                    buf.extend(target.iter().cloned());
+                    buf.push(line.clone());
                 }
-                output.extend(target);
+                render_lyrics(lyrics_line, transpose_offset, &mut output);
             }
             Line::Directive(directive) => {
                 // Metadata directives are already rendered via song.metadata;
@@ -141,15 +139,18 @@ fn render_song_impl(
                         chorus_buf = Some(Vec::new());
                     }
                     DirectiveKind::EndOfChorus => {
-                        // Finish collecting: store the buffered lines as the
-                        // most recent chorus for future recall.
                         if let Some(buf) = chorus_buf.take() {
-                            chorus_lines = buf;
+                            chorus_body = buf;
                         }
                     }
                     DirectiveKind::Chorus => {
                         if chorus_recall_count < MAX_CHORUS_RECALLS {
-                            render_chorus_recall(&directive.value, &chorus_lines, &mut output);
+                            render_chorus_recall(
+                                &directive.value,
+                                &chorus_body,
+                                transpose_offset,
+                                &mut output,
+                            );
                             chorus_recall_count += 1;
                         } else if chorus_recall_count == MAX_CHORUS_RECALLS {
                             warnings.push(format!(
@@ -160,26 +161,24 @@ fn render_song_impl(
                         }
                     }
                     _ => {
+                        if let Some(buf) = chorus_buf.as_mut() {
+                            buf.push(line.clone());
+                        }
                         let mut target = Vec::new();
                         render_directive(directive, &mut target);
-                        if let Some(buf) = chorus_buf.as_mut() {
-                            buf.extend(target.iter().cloned());
-                        }
                         output.extend(target);
                     }
                 }
             }
             Line::Comment(style, text) => {
-                let mut target = Vec::new();
-                render_comment(*style, text, &mut target);
                 if let Some(buf) = chorus_buf.as_mut() {
-                    buf.extend(target.iter().cloned());
+                    buf.push(line.clone());
                 }
-                output.extend(target);
+                render_comment(*style, text, &mut output);
             }
             Line::Empty => {
                 if let Some(buf) = chorus_buf.as_mut() {
-                    buf.push(String::new());
+                    buf.push(line.clone());
                 }
                 output.push(String::new());
             }
@@ -419,12 +418,25 @@ fn render_directive(directive: &chordpro_core::ast::Directive, output: &mut Vec<
 
 /// Render a `{chorus}` recall directive.
 ///
-/// If a chorus has been previously defined (via `{start_of_chorus}`...`{end_of_chorus}`),
-/// its content is replayed with a `[Chorus]` (or custom label) header. If no chorus
-/// has been defined, only the header marker is emitted.
-fn render_chorus_recall(value: &Option<String>, chorus_lines: &[String], output: &mut Vec<String>) {
+/// Re-renders the stored chorus AST lines with the current transpose offset,
+/// so chords are transposed correctly even if `{transpose}` changed after
+/// the chorus was defined.
+fn render_chorus_recall(
+    value: &Option<String>,
+    chorus_body: &[Line],
+    transpose_offset: i8,
+    output: &mut Vec<String>,
+) {
     render_section_header("Chorus", value, output);
-    output.extend(chorus_lines.iter().cloned());
+    for line in chorus_body {
+        match line {
+            Line::Lyrics(lyrics) => render_lyrics(lyrics, transpose_offset, output),
+            Line::Comment(style, text) => render_comment(*style, text, output),
+            Line::Empty => output.push(String::new()),
+            Line::Directive(d) if !d.kind.is_metadata() => render_directive(d, output),
+            _ => {}
+        }
+    }
 }
 
 /// Render a section header like "Chorus" or "Verse 1".
@@ -933,6 +945,28 @@ Second chorus
         let output = render(input);
         // The recall should use "Second chorus", not "First chorus"
         assert!(output.ends_with("[Chorus]\nSecond chorus\n"));
+    }
+
+    #[test]
+    fn test_chorus_recall_applies_current_transpose() {
+        // Chorus defined with no transpose, recalled after {transpose: 2}.
+        // G should become A in the recalled chorus.
+        let input = "\
+{start_of_chorus}
+[G]La la
+{end_of_chorus}
+{transpose: 2}
+{chorus}";
+        let output = render(input);
+        // Original chorus has [G], recalled chorus should have [A].
+        // The recalled chorus should show "A" (G+2) not "G".
+        // The output has chord on one line and lyrics on next.
+        let recall_idx = output.rfind("[Chorus]").expect("should have recall");
+        let recall_section = &output[recall_idx..];
+        assert!(
+            recall_section.contains('A') && !recall_section.contains('G'),
+            "recalled chorus should have transposed chord A (not G), got:\n{recall_section}"
+        );
     }
 
     #[test]
