@@ -2520,8 +2520,7 @@ Verse text\n\
     fn test_abc_section_auto_detect_default_config() {
         // Default config has delegates.abc2svg=null (auto-detect).
         // When the tool is not found, auto-detect resolves to false and the
-        // section renders as regular text (not <pre>). When the tool is found
-        // and succeeds, SVG is embedded.
+        // section renders with raw content as regular text (no SVG, no <pre>).
         let input = "{start_of_abc}\nX:1\nT:Test\nK:C\n{end_of_abc}";
         let song = chordpro_core::parse(input).unwrap();
         let config = chordpro_core::config::Config::defaults();
@@ -2530,6 +2529,16 @@ Verse text\n\
             html.contains("<section class=\"abc\">"),
             "auto-detect should produce abc section"
         );
+        if !chordpro_core::external_tool::has_abc2svg() {
+            assert!(
+                html.contains("X:1"),
+                "raw ABC content should be present without tool"
+            );
+            assert!(
+                !html.contains("<svg"),
+                "no SVG should be generated without abc2svg"
+            );
+        }
     }
 
     // -- lilypond delegate rendering tests ----------------------------------------
@@ -2545,6 +2554,12 @@ Verse text\n\
             html.contains("<section class=\"ly\">"),
             "auto-detect should produce ly section"
         );
+        if !chordpro_core::external_tool::has_lilypond() {
+            assert!(
+                !html.contains("<svg"),
+                "no SVG should be generated without lilypond"
+            );
+        }
     }
 
     #[test]
