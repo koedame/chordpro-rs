@@ -116,7 +116,7 @@ General rendering settings.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `settings.columns` | integer | `1` | Number of columns for layout |
-| `settings.suppress_empty_chords` | boolean | `false` | Hide empty chord lines |
+| `settings.suppress_empty_chords` | boolean | `true` | Hide empty chord lines |
 | `settings.lyrics_only` | boolean | `false` | Suppress all chords |
 | `settings.transpose` | integer | `0` | Transpose all chords by N semitones |
 
@@ -132,7 +132,7 @@ PDF renderer settings.
 | `pdf.spacing` | object | | Line and section spacing |
 | `pdf.chorus` | object | | Chorus indentation and styling |
 | `pdf.margins` | object | | Page margins |
-| `pdf.columns` | integer | | Number of columns (overrides `settings.columns` for PDF) |
+| `pdf.columns.gap` | number | `20` | Gap between columns in points |
 
 ### `html`
 
@@ -151,13 +151,13 @@ Chord display settings.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `chords.show` | string | `"all"` | Which chords to display |
-| `chords.capo` | integer | `0` | Capo position |
+| `chords.capo.show` | boolean | `true` | Show capo indicator in chord names |
 
 ### `metadata`
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `metadata.separator` | string | | Separator for multi-value metadata |
+| `metadata.separator` | string | `"; "` | Separator for multi-value metadata |
 
 ### `instrument`
 
