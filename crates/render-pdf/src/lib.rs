@@ -1922,13 +1922,37 @@ impl PdfDocument {
     }
 
     /// Emit text at an explicit (x, y) position.
+    ///
+    /// In multi-column layouts, a clipping rectangle is applied to prevent
+    /// text from overflowing the column boundary into adjacent columns.
     fn text_at(&mut self, text: &str, font: Font, size: f32, x: f32, y: f32) {
+        let clip = self.num_columns > 1;
+        // Pre-compute column right edge before borrowing self mutably.
+        let col_right = if clip {
+            self.margin_left() + self.column_width()
+        } else {
+            0.0
+        };
         let ops = self.current_page_mut();
+        if clip {
+            let clip_w = (col_right - x).max(0.0);
+            ops.push("q".to_string());
+            ops.push(format!(
+                "{} {} {} {} re W n",
+                fmt_f32(x),
+                fmt_f32(0.0),
+                fmt_f32(clip_w),
+                fmt_f32(PAGE_H)
+            ));
+        }
         ops.push("BT".to_string());
         ops.push(format!("{} {} Tf", font.pdf_name(), fmt_f32(size)));
         ops.push(format!("{} {} Td", fmt_f32(x), fmt_f32(y)));
         ops.push(format!("({}) Tj", pdf_escape(text)));
         ops.push("ET".to_string());
+        if clip {
+            ops.push("Q".to_string());
+        }
     }
 
     /// Emit a text string at absolute coordinates in white.
@@ -3384,6 +3408,34 @@ mod column_tests {
         // Non-numeric value defaults to 1 column — should still render.
         assert!(content.contains("Am"));
         assert!(content.contains("Hello"));
+    }
+
+    #[test]
+    fn test_multi_column_text_clipped() {
+        // In a 2-column layout, text_at should emit clipping operators
+        // (q/re W n/Q) to prevent overflow into adjacent columns.
+        let input = "{columns: 2}\n[Am]Hello world this is a very long line of lyrics";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        // Multi-column layout should include clipping rectangle operator.
+        assert!(
+            content.contains("re W n"),
+            "multi-column PDF should contain clipping rectangle operator"
+        );
+    }
+
+    #[test]
+    fn test_single_column_no_clipping() {
+        // Single-column layout should NOT emit clipping operators.
+        let input = "[Am]Hello world";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            !content.contains("re W n"),
+            "single-column PDF should not contain clipping operator"
+        );
     }
 
     // --- Multi-song rendering ---
