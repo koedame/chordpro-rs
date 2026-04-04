@@ -89,6 +89,7 @@ println!("{text}");
 
 - [ChordPro file format specification](https://www.chordpro.org/chordpro/)
 - [Configuration guide](docs/configuration.md)
+- [Versioning and release process](docs/releasing.md)
 - [SECURITY.md](SECURITY.md)
 - [CHANGELOG.md](CHANGELOG.md)
 
