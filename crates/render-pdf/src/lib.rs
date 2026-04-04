@@ -685,15 +685,37 @@ fn render_lyrics(
 /// Walks the span tree for each segment, switching between Helvetica,
 /// HelveticaBold, HelveticaOblique, and HelveticaBoldOblique as needed.
 fn render_lyrics_spans(lyrics: &LyricsLine, font_size: f32, doc: &mut PdfDocument) {
+    let clip = doc.num_columns > 1;
+    let col_right = if clip {
+        doc.margin_left() + doc.column_width()
+    } else {
+        0.0
+    };
     let mut x = doc.margin_left();
     let y = doc.y();
+    if clip {
+        let clip_w = (col_right - x).max(0.0);
+        let ops = doc.current_page_mut();
+        ops.push("q".to_string());
+        ops.push(format!(
+            "{} {} {} {} re W n",
+            fmt_f32(x),
+            fmt_f32(0.0),
+            fmt_f32(clip_w),
+            fmt_f32(PAGE_H)
+        ));
+    }
     for seg in &lyrics.segments {
         if seg.has_markup() {
             x = render_span_list(&seg.spans, doc, x, y, font_size, false, false);
         } else {
-            doc.text_at(&seg.text, Font::Helvetica, font_size, x, y);
+            doc.text_at_raw(&seg.text, Font::Helvetica, font_size, x, y);
             x += text_width(&seg.text, font_size);
         }
+    }
+    if clip {
+        let ops = doc.current_page_mut();
+        ops.push("Q".to_string());
     }
 }
 
@@ -718,7 +740,7 @@ fn render_span_list(
                     (false, true) => Font::HelveticaOblique,
                     (false, false) => Font::Helvetica,
                 };
-                doc.text_at(text, font, font_size, x, y);
+                doc.text_at_raw(text, font, font_size, x, y);
                 x += text_width(text, font_size);
             }
             TextSpan::Bold(children) => {
@@ -1919,6 +1941,19 @@ impl PdfDocument {
     fn text(&mut self, text: &str, font: Font, size: f32) {
         let x = self.margin_left();
         self.text_at(text, font, size, x, self.y);
+    }
+
+    /// Emit text at an explicit (x, y) position without clipping.
+    ///
+    /// Used by callers that manage their own clipping context (e.g.,
+    /// `render_lyrics_spans` which wraps the entire line in a single clip).
+    fn text_at_raw(&mut self, text: &str, font: Font, size: f32, x: f32, y: f32) {
+        let ops = self.current_page_mut();
+        ops.push("BT".to_string());
+        ops.push(format!("{} {} Tf", font.pdf_name(), fmt_f32(size)));
+        ops.push(format!("{} {} Td", fmt_f32(x), fmt_f32(y)));
+        ops.push(format!("({}) Tj", pdf_escape(text)));
+        ops.push("ET".to_string());
     }
 
     /// Emit text at an explicit (x, y) position.
