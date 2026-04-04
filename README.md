@@ -67,11 +67,11 @@ The core parser and renderers are available as separate library crates:
 
 ```rust
 use chordpro_core::parser::parse;
-use chordpro_render_text::render;
+use chordpro_render_text::render_song;
 
 let input = "{title: Amazing Grace}\n{subtitle: Traditional}\n\n[G]Amazing [G7]grace, how [C]sweet the [G]sound";
 let song = parse(input).unwrap();
-let text = render(&song);
+let text = render_song(&song);
 println!("{text}");
 ```
 
