@@ -23,7 +23,7 @@ cargo fmt            # Auto-format code
 
 ## Architecture
 
-This is a Cargo workspace with three crates:
+This is a Cargo workspace with five crates:
 
 | Crate | Path | Kind | Dependencies |
 |---|---|---|---|
@@ -31,7 +31,7 @@ This is a Cargo workspace with three crates:
 | `chordpro-render-text` | `crates/render-text` | lib | `chordpro-core` |
 | `chordpro-render-html` | `crates/render-html` | lib | `chordpro-core` |
 | `chordpro-render-pdf` | `crates/render-pdf` | lib | `chordpro-core` |
-| `chordpro` (CLI) | `crates/cli` | bin | `chordpro-core`, `chordpro-render-text`, `chordpro-render-html`, `chordpro-render-pdf` |
+| `chordpro-rs` (CLI) | `crates/cli` | bin | `chordpro-core`, `chordpro-render-text`, `chordpro-render-html`, `chordpro-render-pdf` |
 
 ### Dependency Policy
 
@@ -56,18 +56,19 @@ High-level phases:
 4. **Phase 4** — CLI tool with file I/O ✅
 5. **Phase 5** — Extended directives, metadata, transposition ✅
 6. **Phase 6** — Additional renderers (HTML, PDF) ✅
-7. **Phase 7** — Missing metadata, `{meta}`, `{transpose}` directives
-8. **Phase 8** — Additional section environments (grid, custom, chorus recall)
-9. **Phase 9** — Inline markup parsing and rendering
-10. **Phase 10** — Font, size, and color directives (legacy formatting)
-11. **Phase 11** — Page control and multi-page PDF
-12. **Phase 12** — Image directive
-13. **Phase 13** — Configuration file system (chordpro.json, RRJSON)
-14. **Phase 14** — Chord diagram rendering and extended `{define}`
-15. **Phase 15** — Delegate environments (ABC, Lilypond, SVG, textblock)
-16. **Phase 16** — Conditional directive selectors
-17. **Phase 17** — Multi-song files and `{new_song}` directive
-18. **Phase 18** — Perl reference implementation compatibility testing
+7. **Phase 7** — Missing metadata, `{meta}`, `{transpose}` directives ✅
+8. **Phase 8** — Additional section environments (grid, custom, chorus recall) ✅
+9. **Phase 9** — Inline markup parsing and rendering ✅
+10. **Phase 10** — Font, size, and color directives (legacy formatting) ✅
+11. **Phase 11** — Page control and multi-page PDF ✅
+12. **Phase 12** — Image directive ✅
+13. **Phase 13** — Configuration file system (chordpro.json, RRJSON) ✅
+14. **Phase 14** — Chord diagram rendering and extended `{define}` ✅
+15. **Phase 15** — Delegate environments (ABC, Lilypond, SVG, textblock) ✅
+16. **Phase 16** — Conditional directive selectors ✅
+17. **Phase 17** — Multi-song files and `{new_song}` directive ✅
+18. **Phase 18** — Perl reference implementation compatibility testing ✅
+19. **Phase 19** — Production readiness and publishing
 
 ## Merge Policy
 
