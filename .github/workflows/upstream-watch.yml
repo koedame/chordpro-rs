@@ -1,0 +1,73 @@
+name: Watch upstream ChordPro releases
+
+on:
+  schedule:
+    - cron: "0 9 * * 1" # Every Monday 09:00 UTC (18:00 JST)
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get upstream latest release
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(gh api repos/ChordPro/chordpro/releases/latest --jq '.tag_name')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Upstream latest: $TAG"
+
+      - name: Get tracked version
+        id: tracked
+        run: |
+          FILE=".github/upstream-version"
+          if [ -f "$FILE" ]; then
+            TRACKED=$(cat "$FILE")
+          else
+            TRACKED="unknown"
+          fi
+          echo "version=$TRACKED" >> "$GITHUB_OUTPUT"
+          echo "Tracked version: $TRACKED"
+
+      - name: Compare and create issue
+        if: steps.upstream.outputs.tag != steps.tracked.outputs.version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
+          TRACKED_VERSION: ${{ steps.tracked.outputs.version }}
+        run: |
+          EXISTING=$(gh issue list --search "upstream ${UPSTREAM_TAG}" --state open --json number --jq 'length')
+          if [ "$EXISTING" -gt 0 ]; then
+            echo "Issue already exists for ${UPSTREAM_TAG}, skipping"
+            exit 0
+          fi
+
+          RELEASE_URL="https://github.com/ChordPro/chordpro/releases/tag/${UPSTREAM_TAG}"
+          COMPARE_URL="https://github.com/ChordPro/chordpro/compare/${TRACKED_VERSION}...${UPSTREAM_TAG}"
+
+          gh issue create \
+            --title "Upstream: ChordPro ${UPSTREAM_TAG} released" \
+            --body "## New upstream ChordPro release detected
+
+**Version**: [${UPSTREAM_TAG}](${RELEASE_URL})
+**Previously tracked**: ${TRACKED_VERSION}
+**Diff**: [${TRACKED_VERSION}...${UPSTREAM_TAG}](${COMPARE_URL})
+
+### TODO
+- [ ] Review release notes
+- [ ] Identify new directives or spec changes
+- [ ] Assess impact on chordpro-rs
+- [ ] Implement required changes
+- [ ] Update compatibility tests
+- [ ] Update \`.github/upstream-version\` to \`${UPSTREAM_TAG}\`
+
+> Auto-created by upstream-watch workflow." \
+            --label "upstream"
+
+          echo "Created issue for ${UPSTREAM_TAG}"
