@@ -1108,6 +1108,7 @@ fn split_at_new_song(input: &str) -> Vec<&str> {
 ///
 /// # Examples
 ///
+/// ```
 /// use chordpro_core::parser::parse_multi;
 ///
 /// let input = "{title: Song One}\nLyrics one\n{new_song}\n{title: Song Two}\nLyrics two";
