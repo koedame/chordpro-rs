@@ -1958,8 +1958,26 @@ impl PdfDocument {
     /// Emit a text string at absolute coordinates in white.
     ///
     /// Used for finger numbers inside filled dots in chord diagrams.
+    /// In multi-column layouts, applies the same clipping as [`text_at`].
     fn white_text_at(&mut self, text: &str, font: Font, size: f32, x: f32, y: f32) {
+        let clip = self.num_columns > 1;
+        let col_right = if clip {
+            self.margin_left() + self.column_width()
+        } else {
+            0.0
+        };
         let ops = self.current_page_mut();
+        if clip {
+            let clip_w = (col_right - x).max(0.0);
+            ops.push("q".to_string());
+            ops.push(format!(
+                "{} {} {} {} re W n",
+                fmt_f32(x),
+                fmt_f32(0.0),
+                fmt_f32(clip_w),
+                fmt_f32(PAGE_H)
+            ));
+        }
         ops.push("BT".to_string());
         ops.push("1 1 1 rg".to_string()); // white fill color
         ops.push(format!("{} {} Tf", font.pdf_name(), fmt_f32(size)));
@@ -1967,6 +1985,9 @@ impl PdfDocument {
         ops.push(format!("({}) Tj", pdf_escape(text)));
         ops.push("ET".to_string());
         ops.push("0 0 0 rg".to_string()); // reset to black
+        if clip {
+            ops.push("Q".to_string());
+        }
     }
 
     /// Move the Y cursor down. May trigger a column/page break if past bottom margin.
@@ -3422,6 +3443,21 @@ mod column_tests {
         assert!(
             content.contains("re W n"),
             "multi-column PDF should contain clipping rectangle operator"
+        );
+        // Verify clipping rectangle has reasonable column width.
+        // Default 2-column: usable = 595 - 56 - 56 = 483, col_w = (483-20)/2 = 231.5
+        // The clip rect should contain a width value around 231.
+        let clip_line = content
+            .lines()
+            .find(|l| l.contains("re W n"))
+            .expect("should find clip rect line");
+        let parts: Vec<&str> = clip_line.split_whitespace().collect();
+        // Format: "{x} {y} {w} {h} re W n"
+        assert!(parts.len() >= 6, "clip rect should have x y w h re W n");
+        let w: f32 = parts[2].parse().expect("width should be a number");
+        assert!(
+            w > 100.0 && w < 300.0,
+            "clip width {w} should be a reasonable column width"
         );
     }
 
