@@ -1,40 +1,95 @@
 # chordpro-rs
 
-A Rust rewrite of the Perl [ChordPro](https://www.chordpro.org/) reference
-implementation, aiming for full compatibility with the ChordPro file format.
+A Rust implementation of the [ChordPro](https://www.chordpro.org/) file format
+parser and renderer. Supports parsing ChordPro files into a structured AST and
+rendering to plain text, HTML, and PDF.
 
-## Status
+## Features
 
-Early development — workspace scaffolding and CI are in place. See the
-[roadmap](https://github.com/koedame/chordpro-rs/issues) for planned work.
+- Full [ChordPro](https://www.chordpro.org/chordpro/) format parser with zero
+  external dependencies in the core crate
+- Three output formats: plain text, HTML, and PDF
+- Chord transposition
+- Configuration file system (chordpro.json)
+- Inline markup (bold, italic, etc.)
+- Chord diagrams and extended `{define}` directives
+- Section environments (verse, chorus, tab, grid, custom)
+- Delegate environments (ABC, Lilypond, SVG, textblock)
+- Conditional directive selectors (instrument, user)
+- Multi-song files (`{new_song}`)
+- Font, size, and color directives
+- Image directive
+- Multi-page PDF with page control
 
-## Build
+## Installation
+
+### From crates.io
+
+```bash
+cargo install chordpro-rs
+```
+
+### From source
 
 Requires Rust 1.85 or later.
 
 ```bash
-cargo build          # Build all crates
-cargo test           # Run all tests
-cargo clippy         # Lint
-cargo fmt            # Format code
+git clone https://github.com/koedame/chordpro-rs.git
+cd chordpro-rs
+cargo install --path crates/cli
+```
+
+## Usage
+
+```bash
+# Render to plain text (default)
+chordpro song.cho
+
+# Render to HTML
+chordpro -f html song.cho -o song.html
+
+# Render to PDF
+chordpro -f pdf song.cho -o song.pdf
+
+# Transpose up 2 semitones
+chordpro --transpose 2 song.cho
+
+# Use a custom config file
+chordpro -c myconfig.json song.cho
+
+# Process multiple files
+chordpro -f pdf song1.cho song2.cho -o songbook.pdf
+```
+
+## Library Usage
+
+The core parser and renderers are available as separate library crates:
+
+```rust
+use chordpro_core::parser::parse;
+use chordpro_render_text::render;
+
+let input = "{title: Amazing Grace}\n{subtitle: Traditional}\n\n[G]Amazing [G7]grace, how [C]sweet the [G]sound";
+let song = parse(input).unwrap();
+let text = render(&song);
+println!("{text}");
 ```
 
 ## Workspace Structure
 
-| Crate | Path | Description |
-|---|---|---|
-| `chordpro-core` | `crates/core` | Parser, AST, transforms (zero external dependencies) |
-| `chordpro-render-text` | `crates/render-text` | Plain text renderer |
-| `chordpro` | `crates/cli` | Command-line tool |
+| Crate | Description |
+|---|---|
+| [`chordpro-core`](crates/core) | Parser, AST, and transforms (zero external dependencies) |
+| [`chordpro-render-text`](crates/render-text) | Plain text renderer |
+| [`chordpro-render-html`](crates/render-html) | HTML renderer |
+| [`chordpro-render-pdf`](crates/render-pdf) | PDF renderer |
+| [`chordpro-rs`](crates/cli) | Command-line tool |
 
-## Roadmap
+## Links
 
-1. Workspace setup and CI
-2. Core parser (lexer + AST)
-3. Plain text renderer
-4. CLI with file I/O
-5. Extended directives, metadata, transposition
-6. Additional renderers (HTML, PDF)
+- [ChordPro file format specification](https://www.chordpro.org/chordpro/)
+- [SECURITY.md](SECURITY.md)
+- [CHANGELOG.md](CHANGELOG.md)
 
 ## License
 
