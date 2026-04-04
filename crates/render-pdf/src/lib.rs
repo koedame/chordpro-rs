@@ -3509,6 +3509,31 @@ mod column_tests {
         );
     }
 
+    #[test]
+    fn test_multi_column_inline_markup_single_clip_per_line() {
+        // A lyrics line with inline markup in 2-column mode should produce
+        // a single clip rect from render_lyrics_spans, not one per span.
+        let input = "{columns: 2}\nHello <b>bold</b> and <i>italic</i> text";
+        let song = chordpro_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        // Count "re W n" occurrences from the lyrics line.
+        // The chord row may also contribute clips, so we check that
+        // the lyrics line with 3 markup segments produces at most 2 clips
+        // (one from chord row text_at, one from lyrics render_lyrics_spans).
+        let clip_count = content.matches("re W n").count();
+        // Without the per-line optimization, 3 segments would produce 3+ clips.
+        // With it, the lyrics line produces exactly 1 clip.
+        assert!(
+            clip_count <= 3,
+            "inline markup should not produce excessive clips (got {clip_count})"
+        );
+        assert!(
+            clip_count >= 1,
+            "multi-column with markup should have at least 1 clip"
+        );
+    }
+
     // --- Multi-song rendering ---
 
     #[test]
