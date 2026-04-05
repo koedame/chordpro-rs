@@ -2,6 +2,7 @@
 //!
 //! Run with: `cargo run --example transpose -p chordsketch-core`
 
+use chordsketch_core::ast::Line;
 use chordsketch_core::transpose::transpose;
 
 fn main() {
@@ -15,10 +16,24 @@ fn main() {
     let song = chordsketch_core::parse(input).expect("parse failed");
     let transposed = transpose(&song, 2);
 
-    println!("Original key directives:");
-    println!("  title = {:?}", song.metadata.title);
+    println!("Original:");
+    print_chords(&song.lines);
     println!();
     println!("After transposing +2 semitones:");
-    println!("  title = {:?}", transposed.metadata.title);
-    println!("  (chords shifted: C->D, G->A, Am->Bm, F->G)");
+    print_chords(&transposed.lines);
+}
+
+fn print_chords(lines: &[Line]) {
+    for line in lines {
+        if let Line::Lyrics(lyrics) = line {
+            for seg in &lyrics.segments {
+                if let Some(chord) = &seg.chord {
+                    print!("[{}]{}", chord.display_name(), seg.text);
+                } else {
+                    print!("{}", seg.text);
+                }
+            }
+            println!();
+        }
+    }
 }

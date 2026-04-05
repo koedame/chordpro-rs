@@ -23,7 +23,9 @@ let html = render_song(&song);
 - Chord positioning above lyrics
 - Metadata display (title, subtitle, artist)
 - Section styling
-- HTML escaping for safe output
+- HTML escaping for user-provided text content (note: delegate
+  environments such as `{start_of_svg}` emit raw HTML by design;
+  use a Content Security Policy when rendering untrusted input)
 
 ## Documentation
 

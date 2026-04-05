@@ -561,5 +561,5 @@ fn test_completions_powershell() {
         .args(["--completions", "powershell"])
         .assert()
         .success()
-        .stdout(predicate::str::is_empty().not());
+        .stdout(predicate::str::contains("Register-ArgumentCompleter"));
 }

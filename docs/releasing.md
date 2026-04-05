@@ -15,7 +15,6 @@ changes.
 ## Release Checklist
 
 1. **Update version** in all `Cargo.toml` files:
-   - `Cargo.toml` (workspace root — if `workspace.package.version` exists)
    - `crates/core/Cargo.toml`
    - `crates/render-text/Cargo.toml`
    - `crates/render-html/Cargo.toml`
