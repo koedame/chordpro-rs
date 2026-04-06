@@ -1,0 +1,78 @@
+name: FFI Bindings
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/ffi/**"
+      - "crates/core/**"
+      - "crates/render-*/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ffi.yml"
+  pull_request:
+    paths:
+      - "crates/ffi/**"
+      - "crates/core/**"
+      - "crates/render-*/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ffi.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and test FFI crate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@97031894c7e5700702c0bbabe624e1e4de0f0519 # v2
+        with:
+          shared-key: ffi
+
+      - name: Build
+        run: cargo build -p chordsketch-ffi
+
+      - name: Test
+        run: cargo test -p chordsketch-ffi
+
+      - name: Clippy
+        run: cargo clippy -p chordsketch-ffi -- -D warnings
+
+  generate-bindings:
+    name: Generate ${{ matrix.language }} bindings
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: [python, swift, kotlin, ruby]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@97031894c7e5700702c0bbabe624e1e4de0f0519 # v2
+        with:
+          shared-key: ffi
+
+      - name: Build FFI crate
+        run: cargo build -p chordsketch-ffi
+
+      - name: Generate bindings
+        run: |
+          cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
+            --library target/debug/libchordsketch_ffi.so \
+            --language ${{ matrix.language }} \
+            --out-dir bindings/${{ matrix.language }}
+
+      - name: Upload bindings artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: bindings-${{ matrix.language }}
+          path: bindings/${{ matrix.language }}/
