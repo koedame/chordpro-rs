@@ -22,11 +22,14 @@ jobs:
 
       - name: Determine version
         id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.tag }}"
+            TAG="$INPUT_TAG"
           else
-            TAG="${{ github.event.release.tag_name }}"
+            TAG="$RELEASE_TAG"
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
@@ -40,13 +43,20 @@ jobs:
       - name: Generate formula
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          TAG="${{ steps.version.outputs.tag }}"
 
-          # Extract SHA256 values from checksums.txt
+          # Extract and validate SHA256 values from checksums.txt
           SHA_AARCH64_APPLE=$(grep "aarch64-apple-darwin" checksums.txt | awk '{print $1}')
           SHA_X86_64_APPLE=$(grep "x86_64-apple-darwin" checksums.txt | awk '{print $1}')
           SHA_AARCH64_LINUX=$(grep "aarch64-unknown-linux-gnu" checksums.txt | awk '{print $1}')
           SHA_X86_64_LINUX=$(grep "x86_64-unknown-linux-gnu" checksums.txt | awk '{print $1}')
+
+          for var_name in SHA_AARCH64_APPLE SHA_X86_64_APPLE SHA_AARCH64_LINUX SHA_X86_64_LINUX; do
+            val="${!var_name}"
+            if [[ ! "$val" =~ ^[0-9a-fA-F]{64}$ ]]; then
+              echo "ERROR: missing or invalid SHA256 for ${var_name}: '${val}'" >&2
+              exit 1
+            fi
+          done
 
           # Generate formula from template
           sed \
@@ -65,13 +75,13 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/koedame/homebrew-tap.git" tap
-          mkdir -p tap/Formula
-          cp chordsketch.rb tap/Formula/chordsketch.rb
-
+          git clone "https://github.com/koedame/homebrew-tap.git" tap
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config "http.https://github.com/.extraheader" "AUTHORIZATION: basic $(echo -n "x-access-token:${TAP_TOKEN}" | base64)"
+          mkdir -p Formula
+          cp ../chordsketch.rb Formula/chordsketch.rb
           git add Formula/chordsketch.rb
           git commit -m "Update chordsketch to ${VERSION}"
           git push
@@ -84,11 +94,14 @@ jobs:
 
       - name: Determine version
         id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.tag }}"
+            TAG="$INPUT_TAG"
           else
-            TAG="${{ github.event.release.tag_name }}"
+            TAG="$RELEASE_TAG"
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
@@ -104,6 +117,11 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           SHA_WINDOWS=$(grep "x86_64-pc-windows-msvc" checksums.txt | awk '{print $1}')
 
+          if [[ ! "$SHA_WINDOWS" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "ERROR: missing or invalid SHA256 for x86_64-pc-windows-msvc: '${SHA_WINDOWS}'" >&2
+            exit 1
+          fi
+
           sed \
             -e "s/{{VERSION}}/${VERSION}/g" \
             -e "s/{{SHA256_X86_64_PC_WINDOWS_MSVC}}/${SHA_WINDOWS}/g" \
@@ -117,13 +135,13 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/koedame/scoop-bucket.git" bucket
-          mkdir -p bucket/bucket
-          cp chordsketch.json bucket/bucket/chordsketch.json
-
+          git clone "https://github.com/koedame/scoop-bucket.git" bucket
           cd bucket
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config "http.https://github.com/.extraheader" "AUTHORIZATION: basic $(echo -n "x-access-token:${TAP_TOKEN}" | base64)"
+          mkdir -p bucket
+          cp ../chordsketch.json bucket/chordsketch.json
           git add bucket/chordsketch.json
           git commit -m "Update chordsketch to ${VERSION}"
           git push

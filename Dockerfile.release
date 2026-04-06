@@ -4,8 +4,11 @@
 
 FROM alpine:3
 
+RUN adduser -D -u 1000 chordsketch
+
 ARG TARGETARCH
 COPY chordsketch-${TARGETARCH} /usr/local/bin/chordsketch
 RUN chmod +x /usr/local/bin/chordsketch
+USER chordsketch
 
 ENTRYPOINT ["/usr/local/bin/chordsketch"]
