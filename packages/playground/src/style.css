@@ -1,0 +1,157 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #1a1a2e;
+  --surface: #16213e;
+  --border: #0f3460;
+  --text: #e4e4e4;
+  --accent: #e94560;
+  --accent-dim: #c23152;
+  --editor-bg: #0d1117;
+  --editor-text: #c9d1d9;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+header h1 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: #999;
+}
+
+.controls select,
+.controls input[type="number"] {
+  background: var(--editor-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+.controls input[type="number"] {
+  width: 4rem;
+  text-align: center;
+}
+
+main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-pane {
+  border-right: 1px solid var(--border);
+}
+
+#editor {
+  flex: 1;
+  resize: none;
+  border: none;
+  outline: none;
+  padding: 1rem;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  background: var(--editor-bg);
+  color: var(--editor-text);
+  tab-size: 4;
+}
+
+.output-pane {
+  position: relative;
+  background: #fff;
+}
+
+#preview {
+  flex: 1;
+  border: none;
+  width: 100%;
+  height: 100%;
+  background: #fff;
+}
+
+#text-output {
+  flex: 1;
+  padding: 1rem;
+  overflow: auto;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: #333;
+  background: #fff;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.error {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 0.75rem 1rem;
+  background: #2d1b1b;
+  color: #f87171;
+  font-size: 0.85rem;
+  font-family: monospace;
+  border-bottom: 1px solid #7f1d1d;
+  z-index: 10;
+}
+
+/* Responsive: single column on narrow viewports */
+@media (max-width: 768px) {
+  main {
+    flex-direction: column;
+  }
+  .editor-pane {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    flex: 0 0 40%;
+  }
+  .output-pane {
+    flex: 1;
+  }
+}

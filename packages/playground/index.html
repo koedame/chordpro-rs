@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChordSketch Playground</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <header>
+    <h1>ChordSketch Playground</h1>
+    <div class="controls">
+      <label>
+        Format:
+        <select id="format">
+          <option value="html" selected>HTML</option>
+          <option value="text">Text</option>
+          <option value="pdf">PDF</option>
+        </select>
+      </label>
+      <label>
+        Transpose:
+        <input type="number" id="transpose" value="0" min="-12" max="12" />
+      </label>
+    </div>
+  </header>
+  <main>
+    <div class="pane editor-pane">
+      <textarea id="editor" spellcheck="false" placeholder="Enter ChordPro here..."></textarea>
+    </div>
+    <div class="pane output-pane">
+      <div id="error" class="error" hidden></div>
+      <iframe id="preview" sandbox="allow-same-origin" title="Rendered output"></iframe>
+      <pre id="text-output" hidden></pre>
+    </div>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

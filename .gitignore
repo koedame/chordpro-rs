@@ -18,5 +18,9 @@ crates/wasm/pkg/
 packages/npm/chordsketch_wasm*
 packages/npm/snippets/
 
+# Node.js
+node_modules/
+packages/playground/dist/
+
 # Tools
 .serena/
