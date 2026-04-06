@@ -1,0 +1,160 @@
+name: Ruby Gem
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "crates/ffi/**"
+      - "crates/core/**"
+      - "crates/render-*/**"
+      - "packages/ruby/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ruby.yml"
+  pull_request:
+    paths:
+      - "crates/ffi/**"
+      - "crates/core/**"
+      - "crates/render-*/**"
+      - "packages/ruby/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ruby.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-native:
+    name: Build native library (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            lib: libchordsketch_ffi.so
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            lib: libchordsketch_ffi.so
+            cross: true
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            lib: libchordsketch_ffi.dylib
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            lib: libchordsketch_ffi.dylib
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            lib: chordsketch_ffi.dll
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (aarch64-linux)
+        if: matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ruby-${{ matrix.target }}
+
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross && 'aarch64-linux-gnu-gcc' || '' }}
+        run: cargo build -p chordsketch-ffi --release --target ${{ matrix.target }}
+
+      - name: Upload native library
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/${{ matrix.lib }}
+
+  generate-and-test:
+    name: Generate bindings and test
+    needs: [build-native]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ruby-generate
+
+      - name: Build FFI crate
+        run: cargo build -p chordsketch-ffi
+
+      - name: Generate Ruby bindings
+        run: |
+          cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
+            --library target/debug/libchordsketch_ffi.so \
+            --language ruby \
+            --out-dir packages/ruby/lib/
+
+      - name: Download native library (linux-x86-64)
+        uses: actions/download-artifact@v4
+        with:
+          name: native-x86_64-unknown-linux-gnu
+          path: packages/ruby/lib/
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Install dependencies
+        run: gem install ffi minitest
+
+      - name: Run tests
+        working-directory: packages/ruby
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/packages/ruby/lib
+        run: ruby -Ilib -Itest test/test_chordsketch.rb
+
+  publish:
+    name: Publish to RubyGems
+    needs: [generate-and-test]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ruby-generate
+
+      - name: Build FFI crate
+        run: cargo build -p chordsketch-ffi
+
+      - name: Generate Ruby bindings
+        run: |
+          cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
+            --library target/debug/libchordsketch_ffi.so \
+            --language ruby \
+            --out-dir packages/ruby/lib/
+
+      - name: Download all native libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: packages/ruby/lib/
+          merge-multiple: true
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Build and push gem
+        working-directory: packages/ruby
+        env:
+          GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+        run: |
+          gem build chordsketch.gemspec
+          gem push chordsketch-*.gem
