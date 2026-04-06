@@ -383,8 +383,16 @@ fn render_song_body(
                         html.push_str("<div style=\"break-before: recto;\"></div>\n");
                     }
                     DirectiveKind::StartOfAbc => {
-                        let enabled = *abc2svg_resolved
-                            .get_or_insert_with(chordsketch_core::external_tool::has_abc2svg);
+                        let enabled = *abc2svg_resolved.get_or_insert_with(|| {
+                            #[cfg(not(target_arch = "wasm32"))]
+                            {
+                                chordsketch_core::external_tool::has_abc2svg()
+                            }
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                false
+                            }
+                        });
                         if enabled {
                             abc_buf = Some(String::new());
                             abc_label = directive.value.clone();
@@ -402,8 +410,16 @@ fn render_song_body(
                         }
                     }
                     DirectiveKind::StartOfLy => {
-                        let enabled = *lilypond_resolved
-                            .get_or_insert_with(chordsketch_core::external_tool::has_lilypond);
+                        let enabled = *lilypond_resolved.get_or_insert_with(|| {
+                            #[cfg(not(target_arch = "wasm32"))]
+                            {
+                                chordsketch_core::external_tool::has_lilypond()
+                            }
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                false
+                            }
+                        });
                         if enabled {
                             ly_buf = Some(String::new());
                             ly_label = directive.value.clone();
@@ -1255,6 +1271,7 @@ fn render_directive_inner(
 /// When abc2svg is available and produces valid output, the SVG fragment is
 /// embedded inside a `<section class="abc">` element. When abc2svg is
 /// unavailable or fails, the raw ABC notation is rendered as preformatted text.
+#[cfg(not(target_arch = "wasm32"))]
 fn render_abc_with_fallback(
     abc_content: &str,
     label: &Option<String>,
@@ -1277,6 +1294,23 @@ fn render_abc_with_fallback(
             html.push_str("</section>\n");
         }
     }
+}
+
+/// Fallback for wasm32: external tools are never available, so render as
+/// preformatted text. This function is unreachable in practice because
+/// `has_abc2svg()` always returns false on wasm32, but the compiler needs it.
+#[cfg(target_arch = "wasm32")]
+fn render_abc_with_fallback(
+    abc_content: &str,
+    label: &Option<String>,
+    html: &mut String,
+    _warnings: &mut Vec<String>,
+) {
+    render_section_open("abc", "ABC", label, html);
+    html.push_str("<pre>");
+    html.push_str(&escape(abc_content));
+    html.push_str("</pre>\n");
+    html.push_str("</section>\n");
 }
 
 /// Check whether an image `src` value is safe to emit in HTML.
@@ -1337,6 +1371,7 @@ use chordsketch_core::image_path::{has_traversal, is_windows_absolute};
 /// When lilypond is available and produces valid output, the SVG is embedded
 /// inside a `<section class="ly">` element. When lilypond is unavailable or
 /// fails, the raw notation is rendered as preformatted text.
+#[cfg(not(target_arch = "wasm32"))]
 fn render_ly_with_fallback(
     ly_content: &str,
     label: &Option<String>,
@@ -1359,6 +1394,23 @@ fn render_ly_with_fallback(
             html.push_str("</section>\n");
         }
     }
+}
+
+/// Fallback for wasm32: external tools are never available, so render as
+/// preformatted text. Unreachable in practice because `has_lilypond()` always
+/// returns false on wasm32.
+#[cfg(target_arch = "wasm32")]
+fn render_ly_with_fallback(
+    ly_content: &str,
+    label: &Option<String>,
+    html: &mut String,
+    _warnings: &mut Vec<String>,
+) {
+    render_section_open("ly", "Lilypond", label, html);
+    html.push_str("<pre>");
+    html.push_str(&escape(ly_content));
+    html.push_str("</pre>\n");
+    html.push_str("</section>\n");
 }
 
 /// Render an `{image}` directive as an HTML `<img>` element.
