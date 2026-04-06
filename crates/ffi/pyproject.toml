@@ -1,0 +1,34 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "chordsketch"
+version = "0.1.0"
+description = "ChordPro file format parser and renderer"
+readme = "../../README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+authors = [{ name = "koedame" }]
+keywords = ["chordpro", "music", "chord", "parser", "lyrics"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Programming Language :: Rust",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Text Processing :: Markup",
+]
+
+[project.urls]
+Homepage = "https://github.com/koedame/chordsketch"
+Repository = "https://github.com/koedame/chordsketch"
+Issues = "https://github.com/koedame/chordsketch/issues"
+
+[tool.maturin]
+bindings = "uniffi"
+compatibility = "manylinux2014"
+module-name = "chordsketch._native"

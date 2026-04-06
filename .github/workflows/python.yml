@@ -1,0 +1,159 @@
+name: Python Package
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "crates/ffi/**"
+      - "crates/core/**"
+      - "crates/render-*/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/python.yml"
+  pull_request:
+    paths:
+      - "crates/ffi/**"
+      - "crates/core/**"
+      - "crates/render-*/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/python.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-sdist:
+    name: Build sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: PyO3/maturin-action@aef21716ab1e10e45d4243bca063e7cff3884947 # v1
+        with:
+          command: sdist
+          args: --manifest-path crates/ffi/Cargo.toml --out dist
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: wheels-sdist
+          path: dist
+
+  build-wheels:
+    name: Build ${{ matrix.target }} wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64
+          - os: ubuntu-latest
+            target: aarch64
+          - os: macos-latest
+            target: x86_64
+          - os: macos-latest
+            target: aarch64
+          - os: windows-latest
+            target: x64
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: PyO3/maturin-action@aef21716ab1e10e45d4243bca063e7cff3884947 # v1
+        with:
+          command: build
+          args: --release --manifest-path crates/ffi/Cargo.toml --out dist
+          target: ${{ matrix.target }}
+          manylinux: manylinux2014
+          sccache: "true"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.target }}
+          path: dist
+
+  test:
+    name: Test Python bindings
+    needs: [build-wheels]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: wheels-ubuntu-latest-x86_64
+          path: dist
+
+      - name: Install wheel
+        run: pip install chordsketch --find-links dist --no-index
+
+      - name: Run smoke test
+        run: |
+          python -c "
+          import chordsketch
+
+          # Version check
+          v = chordsketch.version()
+          assert v, 'version should not be empty'
+          print(f'Version: {v}')
+
+          # Text rendering
+          text = chordsketch.parse_and_render_text('{title: Test}\n[C]Hello', None, None)
+          assert 'Test' in text
+          assert 'Hello' in text
+          print('Text render: OK')
+
+          # HTML rendering
+          html = chordsketch.parse_and_render_html('{title: Test}\n[C]Hello', None, None)
+          assert 'Test' in html
+          print('HTML render: OK')
+
+          # PDF rendering
+          pdf = chordsketch.parse_and_render_pdf('{title: Test}\n[C]Hello', None, None)
+          assert pdf[:4] == b'%PDF'
+          print('PDF render: OK')
+
+          # Validate
+          errors = chordsketch.validate('{title: Valid}\n[C]Hello')
+          assert isinstance(errors, list)
+          print('Validate: OK')
+
+          # Config preset
+          text = chordsketch.parse_and_render_text('{title: Test}\n[C]Hello', 'guitar', None)
+          assert 'Test' in text
+          print('Config preset: OK')
+
+          # Transpose
+          text = chordsketch.parse_and_render_text('{title: Test}\n[C]Hello', None, 2)
+          print('Transpose: OK')
+
+          print('All smoke tests passed!')
+          "
+
+  publish:
+    name: Publish to PyPI
+    needs: [build-sdist, build-wheels, test]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/p/chordsketch
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+
+      - uses: PyO3/maturin-action@aef21716ab1e10e45d4243bca063e7cff3884947 # v1
+        with:
+          command: upload
+          args: --non-interactive --skip-existing dist/*
