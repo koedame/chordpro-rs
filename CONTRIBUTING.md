@@ -3,13 +3,27 @@
 Thank you for your interest in contributing to ChordSketch! This document
 explains how to get started.
 
+## Language
+
+All contributions must be in **English**. This includes code, comments,
+documentation, commit messages, PR titles, PR descriptions, issue titles, and
+issue bodies.
+
 ## Filing Issues
 
 - Check [existing issues](https://github.com/koedame/chordsketch/issues)
   before opening a new one.
 - Use a clear, imperative title (e.g., "Fix chord transposition for sharps").
-- Include steps to reproduce for bugs, or a clear goal and acceptance criteria
-  for feature requests.
+- Issue bodies should include the following fields:
+
+  - **Goal** — What should be achieved.
+  - **Acceptance Criteria** — Checkboxes for done-ness.
+  - **Phase** — Which roadmap phase this belongs to (if known).
+
+- For bugs, include steps to reproduce. For features, describe the desired
+  behavior.
+- Labels: `phase:N`, `type:feature`/`type:bug`/`type:docs`/`type:refactor`,
+  `size:small`/`size:medium`/`size:large`, `priority:high`/`priority:medium`/`priority:low`.
 
 ## Development Setup
 
