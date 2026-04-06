@@ -74,7 +74,7 @@ jobs:
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross && 'aarch64-linux-gnu-gcc' || '' }}
         run: |
-          napi build --release --cargo-cwd . --target ${{ matrix.target }}
+          napi build --release --manifest-path Cargo.toml --target ${{ matrix.target }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

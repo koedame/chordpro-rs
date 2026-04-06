@@ -38,7 +38,7 @@
     "@napi-rs/cli": "^3.4.0"
   },
   "scripts": {
-    "build": "napi build --release --cargo-cwd .",
-    "build:debug": "napi build --cargo-cwd ."
+    "build": "napi build --release --manifest-path Cargo.toml",
+    "build:debug": "napi build --manifest-path Cargo.toml"
   }
 }
