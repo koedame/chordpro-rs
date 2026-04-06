@@ -37,8 +37,11 @@ function render(): void {
   const input = editor.value;
   if (!input.trim()) {
     hideError();
+    preview.hidden = false;
     preview.srcdoc = '';
+    textOutput.hidden = true;
     textOutput.textContent = '';
+    pdfPane.hidden = true;
     return;
   }
 

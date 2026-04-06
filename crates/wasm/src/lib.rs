@@ -239,4 +239,33 @@ mod tests {
         let v = version();
         assert!(!v.is_empty());
     }
+
+    // resolve_config delegates to Config::preset and Config::parse.
+    // We test the underlying logic here since JsValue is not available
+    // on native targets.
+
+    #[test]
+    fn test_invalid_rrjson_config_parse_fails() {
+        let result = chordsketch_core::config::Config::parse("{ invalid rrjson !!!");
+        assert!(result.is_err(), "invalid RRJSON should fail to parse");
+    }
+
+    #[test]
+    fn test_preset_config_resolves() {
+        assert!(
+            chordsketch_core::config::Config::preset("guitar").is_some(),
+            "guitar preset should exist"
+        );
+        assert!(
+            chordsketch_core::config::Config::preset("nonexistent").is_none(),
+            "unknown preset should return None"
+        );
+    }
+
+    #[test]
+    fn test_valid_inline_rrjson_config_parses() {
+        let result =
+            chordsketch_core::config::Config::parse(r#"{ "settings": { "transpose": 2 } }"#);
+        assert!(result.is_ok(), "valid RRJSON should parse successfully");
+    }
 }
