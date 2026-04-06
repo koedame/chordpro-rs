@@ -127,6 +127,31 @@ main {
   word-wrap: break-word;
 }
 
+#pdf-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  color: #666;
+  font-size: 0.95rem;
+}
+
+#pdf-pane button {
+  padding: 0.6rem 1.5rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+#pdf-pane button:hover {
+  background: var(--accent-dim);
+}
+
 .error {
   position: absolute;
   top: 0;

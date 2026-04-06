@@ -13,6 +13,8 @@ const formatSelect = document.getElementById('format') as HTMLSelectElement;
 const transposeInput = document.getElementById('transpose') as HTMLInputElement;
 const preview = document.getElementById('preview') as HTMLIFrameElement;
 const textOutput = document.getElementById('text-output') as HTMLPreElement;
+const pdfPane = document.getElementById('pdf-pane') as HTMLDivElement;
+const downloadPdfBtn = document.getElementById('download-pdf') as HTMLButtonElement;
 const errorDiv = document.getElementById('error') as HTMLDivElement;
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -47,6 +49,7 @@ function render(): void {
     if (format === 'html') {
       preview.hidden = false;
       textOutput.hidden = true;
+      pdfPane.hidden = true;
       const html =
         transpose !== 0
           ? render_html_with_options(input, { transpose })
@@ -56,6 +59,7 @@ function render(): void {
     } else if (format === 'text') {
       preview.hidden = true;
       textOutput.hidden = false;
+      pdfPane.hidden = true;
       const text =
         transpose !== 0
           ? render_text_with_options(input, { transpose })
@@ -63,13 +67,9 @@ function render(): void {
       textOutput.textContent = text;
       hideError();
     } else if (format === 'pdf') {
-      preview.hidden = false;
+      preview.hidden = true;
       textOutput.hidden = true;
-      const pdfBytes =
-        transpose !== 0
-          ? render_pdf_with_options(input, { transpose })
-          : render_pdf(input);
-      downloadPdf(pdfBytes);
+      pdfPane.hidden = false;
       hideError();
     }
   } catch (e) {
@@ -100,18 +100,28 @@ function wrapHtml(body: string): string {
 </html>`;
 }
 
-function downloadPdf(bytes: Uint8Array): void {
-  const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'chordsketch-output.pdf';
-  a.click();
-  URL.revokeObjectURL(url);
-  // Show a message in the preview
-  preview.srcdoc = `<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#666;">
-    <p>PDF downloaded.</p>
-  </body></html>`;
+function downloadPdf(): void {
+  const input = editor.value;
+  if (!input.trim()) return;
+
+  const transpose = getTranspose();
+
+  try {
+    const pdfBytes =
+      transpose !== 0
+        ? render_pdf_with_options(input, { transpose })
+        : render_pdf(input);
+    const blob = new Blob([pdfBytes as BlobPart], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'chordsketch-output.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+    hideError();
+  } catch (e) {
+    showError(String(e));
+  }
 }
 
 function scheduleRender(): void {
@@ -134,6 +144,7 @@ async function main(): Promise<void> {
   editor.addEventListener('input', scheduleRender);
   formatSelect.addEventListener('change', render);
   transposeInput.addEventListener('input', scheduleRender);
+  downloadPdfBtn.addEventListener('click', downloadPdf);
 
   render();
 }
