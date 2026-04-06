@@ -118,6 +118,12 @@ jobs:
           chmod +x gradlew 2>/dev/null || true
           ./gradlew test || gradle test
 
+      - name: Upload generated Kotlin bindings
+        uses: actions/upload-artifact@v4
+        with:
+          name: kotlin-bindings
+          path: packages/kotlin/lib/src/main/kotlin/uniffi/
+
   publish:
     name: Publish to Maven Central
     needs: [generate-and-test]
@@ -126,19 +132,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Download generated Kotlin bindings
+        uses: actions/download-artifact@v4
         with:
-          shared-key: kotlin-generate
-
-      - name: Build FFI crate
-        run: cargo build -p chordsketch-ffi
-
-      - name: Generate Kotlin bindings
-        run: |
-          cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
-            --library target/debug/libchordsketch_ffi.so \
-            --language kotlin \
-            --out-dir packages/kotlin/lib/src/main/kotlin/
+          name: kotlin-bindings
+          path: packages/kotlin/lib/src/main/kotlin/uniffi/
 
       - name: Download all JNI artifacts
         uses: actions/download-artifact@v4
