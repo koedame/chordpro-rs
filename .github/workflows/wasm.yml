@@ -29,7 +29,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install wasm-pack
-        run: cargo install wasm-pack --version "=$WASM_PACK_VERSION" --locked
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@${{ env.WASM_PACK_VERSION }}
 
       - name: Build with wasm-pack
         run: wasm-pack build crates/wasm --target web
