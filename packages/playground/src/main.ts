@@ -26,22 +26,26 @@ function getTranspose(): number {
 
 function showError(msg: string): void {
   errorDiv.textContent = msg;
-  errorDiv.hidden = false;
+  errorDiv.style.display = 'block';
 }
 
 function hideError(): void {
-  errorDiv.hidden = true;
+  errorDiv.style.display = 'none';
+}
+
+function showPane(pane: 'html' | 'text' | 'pdf'): void {
+  preview.style.display = pane === 'html' ? 'block' : 'none';
+  textOutput.style.display = pane === 'text' ? 'block' : 'none';
+  pdfPane.style.display = pane === 'pdf' ? 'flex' : 'none';
 }
 
 function render(): void {
   const input = editor.value;
   if (!input.trim()) {
     hideError();
-    preview.hidden = false;
+    showPane('html');
     preview.srcdoc = '';
-    textOutput.hidden = true;
     textOutput.textContent = '';
-    pdfPane.hidden = true;
     return;
   }
 
@@ -50,9 +54,7 @@ function render(): void {
 
   try {
     if (format === 'html') {
-      preview.hidden = false;
-      textOutput.hidden = true;
-      pdfPane.hidden = true;
+      showPane('html');
       const html =
         transpose !== 0
           ? render_html_with_options(input, { transpose })
@@ -60,9 +62,7 @@ function render(): void {
       preview.srcdoc = wrapHtml(html);
       hideError();
     } else if (format === 'text') {
-      preview.hidden = true;
-      textOutput.hidden = false;
-      pdfPane.hidden = true;
+      showPane('text');
       const text =
         transpose !== 0
           ? render_text_with_options(input, { transpose })
@@ -70,9 +70,7 @@ function render(): void {
       textOutput.textContent = text;
       hideError();
     } else if (format === 'pdf') {
-      preview.hidden = true;
-      textOutput.hidden = true;
-      pdfPane.hidden = false;
+      showPane('pdf');
       hideError();
     }
   } catch (e) {
