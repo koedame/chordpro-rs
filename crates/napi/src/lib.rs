@@ -79,11 +79,22 @@ pub fn render_pdf(input: String) -> Result<Buffer> {
     Ok(bytes.into())
 }
 
+/// Parse and validate a transpose value, returning an error if out of range.
+fn parse_transpose(raw: i32) -> Result<i8> {
+    if !(-12..=12).contains(&raw) {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!("transpose must be between -12 and 12, got {raw}"),
+        ));
+    }
+    Ok(raw as i8)
+}
+
 /// Render ChordPro input as plain text with options.
 #[napi]
 pub fn render_text_with_options(input: String, options: RenderOptions) -> Result<String> {
     let config = resolve_config(options.config)?;
-    let transpose = options.transpose.unwrap_or(0) as i8;
+    let transpose = parse_transpose(options.transpose.unwrap_or(0))?;
     let songs = parse_songs(&input)?;
     Ok(chordsketch_render_text::render_songs_with_transpose(
         &songs, transpose, &config,
@@ -94,7 +105,7 @@ pub fn render_text_with_options(input: String, options: RenderOptions) -> Result
 #[napi]
 pub fn render_html_with_options(input: String, options: RenderOptions) -> Result<String> {
     let config = resolve_config(options.config)?;
-    let transpose = options.transpose.unwrap_or(0) as i8;
+    let transpose = parse_transpose(options.transpose.unwrap_or(0))?;
     let songs = parse_songs(&input)?;
     Ok(chordsketch_render_html::render_songs_with_transpose(
         &songs, transpose, &config,
@@ -105,7 +116,7 @@ pub fn render_html_with_options(input: String, options: RenderOptions) -> Result
 #[napi]
 pub fn render_pdf_with_options(input: String, options: RenderOptions) -> Result<Buffer> {
     let config = resolve_config(options.config)?;
-    let transpose = options.transpose.unwrap_or(0) as i8;
+    let transpose = parse_transpose(options.transpose.unwrap_or(0))?;
     let songs = parse_songs(&input)?;
     let bytes = chordsketch_render_pdf::render_songs_with_transpose(&songs, transpose, &config);
     Ok(bytes.into())
