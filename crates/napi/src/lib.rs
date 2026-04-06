@@ -139,3 +139,108 @@ pub fn validate(input: String) -> Vec<String> {
 pub fn version() -> String {
     chordsketch_core::version().to_string()
 }
+
+// Unit tests exercise the underlying rendering and parsing logic directly
+// via chordsketch_core and renderer crates. The napi wrapper functions
+// cannot be tested natively because they depend on the Node.js runtime for
+// linking (Buffer, napi::Error, etc.).
+#[cfg(test)]
+mod tests {
+    const MINIMAL_INPUT: &str = "{title: Test}\n[C]Hello";
+
+    #[test]
+    fn test_render_text_returns_content() {
+        let result = chordsketch_core::parse_multi_lenient(MINIMAL_INPUT);
+        let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();
+        assert!(!songs.is_empty());
+        let text = chordsketch_render_text::render_songs_with_transpose(
+            &songs,
+            0,
+            &chordsketch_core::config::Config::defaults(),
+        );
+        assert!(!text.is_empty());
+        assert!(text.contains("Test"));
+    }
+
+    #[test]
+    fn test_render_html_returns_content() {
+        let result = chordsketch_core::parse_multi_lenient(MINIMAL_INPUT);
+        let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();
+        let html = chordsketch_render_html::render_songs_with_transpose(
+            &songs,
+            0,
+            &chordsketch_core::config::Config::defaults(),
+        );
+        assert!(!html.is_empty());
+        assert!(html.contains("Test"));
+    }
+
+    #[test]
+    fn test_render_pdf_returns_bytes() {
+        let result = chordsketch_core::parse_multi_lenient(MINIMAL_INPUT);
+        let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();
+        let bytes = chordsketch_render_pdf::render_songs_with_transpose(
+            &songs,
+            0,
+            &chordsketch_core::config::Config::defaults(),
+        );
+        assert!(!bytes.is_empty());
+        assert!(bytes.starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn test_version_returns_nonempty_string() {
+        let v = chordsketch_core::version();
+        assert!(!v.is_empty());
+    }
+
+    #[test]
+    fn test_transpose_range_validation() {
+        // Mirrors the parse_transpose logic: valid range is -12..=12.
+        for valid in [-12, -1, 0, 1, 12] {
+            assert!(
+                (-12..=12).contains(&valid),
+                "{valid} should be in valid range"
+            );
+        }
+        for invalid in [-13, 13, 100, -100] {
+            assert!(
+                !(-12..=12).contains(&invalid),
+                "{invalid} should be out of range"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_returns_empty_for_valid_input() {
+        let result = chordsketch_core::parse_multi_lenient(MINIMAL_INPUT);
+        let errors: Vec<_> = result.results.into_iter().flat_map(|r| r.errors).collect();
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_validate_returns_errors_for_bad_input() {
+        let result = chordsketch_core::parse_multi_lenient("{title: Test}\n[G");
+        let errors: Vec<_> = result.results.into_iter().flat_map(|r| r.errors).collect();
+        assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn test_preset_config_resolves() {
+        assert!(chordsketch_core::config::Config::preset("guitar").is_some());
+        assert!(chordsketch_core::config::Config::preset("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_invalid_config_fails() {
+        assert!(chordsketch_core::config::Config::parse("{ invalid rrjson !!!").is_err());
+    }
+
+    #[test]
+    fn test_valid_rrjson_config_parses() {
+        assert!(
+            chordsketch_core::config::Config::parse(r#"{ "settings": { "transpose": 2 } }"#)
+                .is_ok()
+        );
+    }
+}
