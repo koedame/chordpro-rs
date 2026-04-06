@@ -4,6 +4,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 0.2.0). Required for manual triggers.'
+        required: true
+        type: string
 
 jobs:
   publish:
@@ -22,10 +27,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install wasm-pack
-        run: cargo install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build WASM
-        run: wasm-pack build crates/wasm --target web
+        run: wasm-pack build crates/wasm --release --target web
 
       - name: Copy WASM artifacts to npm package
         run: cp crates/wasm/pkg/chordsketch_wasm* packages/npm/
@@ -44,6 +49,12 @@ jobs:
           npm version "$VERSION" --no-git-tag-version --allow-same-version
         if: github.event_name == 'release'
 
+      - name: Set version from workflow input
+        run: |
+          cd packages/npm
+          npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
+        if: github.event_name == 'workflow_dispatch'
+
       - name: Check if version already published
         id: check
         run: |
@@ -60,7 +71,7 @@ jobs:
 
       - name: Publish to npm
         if: steps.check.outputs.skip != 'true'
-        run: npm publish --access public
+        run: npm publish
         working-directory: packages/npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -383,16 +383,11 @@ fn render_song_body(
                         html.push_str("<div style=\"break-before: recto;\"></div>\n");
                     }
                     DirectiveKind::StartOfAbc => {
-                        let enabled = *abc2svg_resolved.get_or_insert_with(|| {
-                            #[cfg(not(target_arch = "wasm32"))]
-                            {
-                                chordsketch_core::external_tool::has_abc2svg()
-                            }
-                            #[cfg(target_arch = "wasm32")]
-                            {
-                                false
-                            }
-                        });
+                        #[cfg(not(target_arch = "wasm32"))]
+                        let enabled = *abc2svg_resolved
+                            .get_or_insert_with(chordsketch_core::external_tool::has_abc2svg);
+                        #[cfg(target_arch = "wasm32")]
+                        let enabled = *abc2svg_resolved.get_or_insert(false);
                         if enabled {
                             abc_buf = Some(String::new());
                             abc_label = directive.value.clone();
@@ -410,16 +405,11 @@ fn render_song_body(
                         }
                     }
                     DirectiveKind::StartOfLy => {
-                        let enabled = *lilypond_resolved.get_or_insert_with(|| {
-                            #[cfg(not(target_arch = "wasm32"))]
-                            {
-                                chordsketch_core::external_tool::has_lilypond()
-                            }
-                            #[cfg(target_arch = "wasm32")]
-                            {
-                                false
-                            }
-                        });
+                        #[cfg(not(target_arch = "wasm32"))]
+                        let enabled = *lilypond_resolved
+                            .get_or_insert_with(chordsketch_core::external_tool::has_lilypond);
+                        #[cfg(target_arch = "wasm32")]
+                        let enabled = *lilypond_resolved.get_or_insert(false);
                         if enabled {
                             ly_buf = Some(String::new());
                             ly_label = directive.value.clone();
