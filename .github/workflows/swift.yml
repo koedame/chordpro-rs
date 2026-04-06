@@ -101,6 +101,23 @@ jobs:
         run: |
           cp generated/chordsketch.swift packages/swift/Sources/ChordSketch/
 
+      - name: Run Swift tests
+        run: |
+          # Copy XCFramework into the Swift package directory
+          cp -R chordsketchFFI.xcframework packages/swift/
+
+          # Rewrite Package.swift to use local path instead of remote URL
+          sed -i '' \
+            -e '/.binaryTarget(/,/)/c\
+            .binaryTarget(\
+                name: "chordsketchFFI",\
+                path: "chordsketchFFI.xcframework"\
+            ),' \
+            packages/swift/Package.swift
+
+          cd packages/swift
+          swift test
+
       - name: Package XCFramework
         run: |
           zip -r chordsketch-xcframework.zip chordsketchFFI.xcframework
