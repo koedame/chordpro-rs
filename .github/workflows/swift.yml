@@ -106,14 +106,23 @@ jobs:
           # Copy XCFramework into the Swift package directory
           cp -R chordsketchFFI.xcframework packages/swift/
 
-          # Rewrite Package.swift to use local path instead of remote URL
-          sed -i '' \
-            -e '/.binaryTarget(/,/)/c\
-            .binaryTarget(\
-                name: "chordsketchFFI",\
-                path: "chordsketchFFI.xcframework"\
-            ),' \
-            packages/swift/Package.swift
+          # Rewrite Package.swift to use local XCFramework path
+          cat > packages/swift/Package.swift << 'EOF'
+          // swift-tools-version: 5.9
+          import PackageDescription
+          let package = Package(
+              name: "ChordSketch",
+              platforms: [.macOS(.v12), .iOS(.v15)],
+              products: [
+                  .library(name: "ChordSketch", targets: ["ChordSketch"]),
+              ],
+              targets: [
+                  .binaryTarget(name: "chordsketchFFI", path: "chordsketchFFI.xcframework"),
+                  .target(name: "ChordSketch", dependencies: ["chordsketchFFI"], path: "Sources/ChordSketch"),
+                  .testTarget(name: "ChordSketchTests", dependencies: ["ChordSketch"], path: "Tests"),
+              ]
+          )
+          EOF
 
           cd packages/swift
           swift test
