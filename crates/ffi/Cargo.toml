@@ -1,0 +1,26 @@
+[package]
+name = "chordsketch-ffi"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "UniFFI bindings for ChordPro parsing and rendering"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[dependencies]
+chordsketch-core = { version = "0.1.0", path = "../core" }
+chordsketch-render-text = { version = "0.1.0", path = "../render-text" }
+chordsketch-render-html = { version = "0.1.0", path = "../render-html" }
+chordsketch-render-pdf = { version = "0.1.0", path = "../render-pdf" }
+uniffi = { version = "0.31", features = ["cli"] }
+thiserror = "2"
+
+[build-dependencies]
+uniffi = { version = "0.31", features = ["build"] }

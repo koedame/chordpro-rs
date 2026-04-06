@@ -1,0 +1,33 @@
+namespace chordsketch {
+    /// Parse ChordPro input and render as plain text.
+    ///
+    /// - `input`: ChordPro source text
+    /// - `config_json`: optional RRJSON configuration string or preset name
+    ///   (e.g., "guitar", "ukulele")
+    /// - `transpose`: semitone transposition offset (default 0)
+    [Throws=ChordSketchError]
+    string parse_and_render_text(string input, string? config_json, i8? transpose);
+
+    /// Parse ChordPro input and render as an HTML document.
+    [Throws=ChordSketchError]
+    string parse_and_render_html(string input, string? config_json, i8? transpose);
+
+    /// Parse ChordPro input and render as a PDF document.
+    [Throws=ChordSketchError]
+    bytes parse_and_render_pdf(string input, string? config_json, i8? transpose);
+
+    /// Validate ChordPro input and return any parse errors as strings.
+    /// Returns an empty list if the input is valid.
+    sequence<string> validate(string input);
+
+    /// Return the ChordSketch library version.
+    string version();
+};
+
+[Error]
+interface ChordSketchError {
+    /// No songs found in the input.
+    NoSongsFound();
+    /// Invalid configuration string.
+    InvalidConfig(string reason);
+};
