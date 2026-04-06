@@ -79,7 +79,7 @@ jobs:
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config "http.https://github.com/.extraheader" "AUTHORIZATION: basic $(echo -n "x-access-token:${TAP_TOKEN}" | base64)"
+          git config "http.https://github.com/.extraheader" "AUTHORIZATION: basic $(echo -n "x-access-token:${TAP_TOKEN}" | base64 -w0)"
           mkdir -p Formula
           cp ../chordsketch.rb Formula/chordsketch.rb
           git add Formula/chordsketch.rb
@@ -139,7 +139,7 @@ jobs:
           cd bucket
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config "http.https://github.com/.extraheader" "AUTHORIZATION: basic $(echo -n "x-access-token:${TAP_TOKEN}" | base64)"
+          git config "http.https://github.com/.extraheader" "AUTHORIZATION: basic $(echo -n "x-access-token:${TAP_TOKEN}" | base64 -w0)"
           mkdir -p bucket
           cp ../chordsketch.json bucket/chordsketch.json
           git add bucket/chordsketch.json
