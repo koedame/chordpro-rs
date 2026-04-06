@@ -6,6 +6,12 @@
   "type": "module",
   "main": "chordsketch_wasm.js",
   "types": "chordsketch_wasm.d.ts",
+  "exports": {
+    ".": {
+      "import": "./chordsketch_wasm.js",
+      "types": "./chordsketch_wasm.d.ts"
+    }
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/koedame/chordsketch.git",
@@ -25,10 +31,11 @@
     "chordsketch_wasm.js",
     "chordsketch_wasm.d.ts",
     "chordsketch_wasm_bg.wasm",
-    "chordsketch_wasm_bg.wasm.d.ts"
+    "chordsketch_wasm_bg.wasm.d.ts",
+    "snippets/"
   ],
   "scripts": {
-    "build": "wasm-pack build ../../crates/wasm --target web && cp ../../crates/wasm/pkg/chordsketch_wasm* ."
+    "build": "wasm-pack build ../../crates/wasm --target web && cp ../../crates/wasm/pkg/chordsketch_wasm* . && cp -r ../../crates/wasm/pkg/snippets . 2>/dev/null || true"
   },
   "sideEffects": [
     "./chordsketch_wasm.js"
