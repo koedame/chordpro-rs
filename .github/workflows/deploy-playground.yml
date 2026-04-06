@@ -1,0 +1,73 @@
+name: Deploy Playground
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/wasm/**'
+      - 'packages/playground/**'
+      - 'packages/npm/**'
+      - '.github/workflows/deploy-playground.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
+
+      - name: Build WASM
+        run: wasm-pack build crates/wasm --target web
+
+      - name: Copy WASM artifacts to npm package
+        run: cp crates/wasm/pkg/chordsketch_wasm* packages/npm/
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install playground dependencies
+        run: npm ci
+        working-directory: packages/playground
+
+      - name: Build playground
+        run: npx vite build
+        working-directory: packages/playground
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/playground/dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
