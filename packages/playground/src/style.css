@@ -4,6 +4,10 @@
   box-sizing: border-box;
 }
 
+.hidden {
+  display: none !important;
+}
+
 :root {
   --bg: #1a1a2e;
   --surface: #16213e;

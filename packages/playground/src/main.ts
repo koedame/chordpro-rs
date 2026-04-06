@@ -26,17 +26,17 @@ function getTranspose(): number {
 
 function showError(msg: string): void {
   errorDiv.textContent = msg;
-  errorDiv.style.display = 'block';
+  errorDiv.classList.remove('hidden');
 }
 
 function hideError(): void {
-  errorDiv.style.display = 'none';
+  errorDiv.classList.add('hidden');
 }
 
 function showPane(pane: 'html' | 'text' | 'pdf'): void {
-  preview.style.display = pane === 'html' ? 'block' : 'none';
-  textOutput.style.display = pane === 'text' ? 'block' : 'none';
-  pdfPane.style.display = pane === 'pdf' ? 'flex' : 'none';
+  preview.classList.toggle('hidden', pane !== 'html');
+  textOutput.classList.toggle('hidden', pane !== 'text');
+  pdfPane.classList.toggle('hidden', pane !== 'pdf');
 }
 
 function render(): void {
