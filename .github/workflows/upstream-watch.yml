@@ -51,23 +51,28 @@ jobs:
           RELEASE_URL="https://github.com/ChordPro/chordpro/releases/tag/${UPSTREAM_TAG}"
           COMPARE_URL="https://github.com/ChordPro/chordpro/compare/${TRACKED_VERSION}...${UPSTREAM_TAG}"
 
+          BODY=$(cat <<BODY_EOF
+          ## New upstream ChordPro release detected
+
+          **Version**: [${UPSTREAM_TAG}](${RELEASE_URL})
+          **Previously tracked**: ${TRACKED_VERSION}
+          **Diff**: [${TRACKED_VERSION}...${UPSTREAM_TAG}](${COMPARE_URL})
+
+          ### TODO
+          - [ ] Review release notes
+          - [ ] Identify new directives or spec changes
+          - [ ] Assess impact on chordsketch
+          - [ ] Implement required changes
+          - [ ] Update compatibility tests
+          - [ ] Update \`.github/upstream-version\` to \`${UPSTREAM_TAG}\`
+
+          > Auto-created by upstream-watch workflow.
+          BODY_EOF
+          )
+
           gh issue create \
             --title "Upstream: ChordPro ${UPSTREAM_TAG} released" \
-            --body "## New upstream ChordPro release detected
-
-**Version**: [${UPSTREAM_TAG}](${RELEASE_URL})
-**Previously tracked**: ${TRACKED_VERSION}
-**Diff**: [${TRACKED_VERSION}...${UPSTREAM_TAG}](${COMPARE_URL})
-
-### TODO
-- [ ] Review release notes
-- [ ] Identify new directives or spec changes
-- [ ] Assess impact on chordsketch
-- [ ] Implement required changes
-- [ ] Update compatibility tests
-- [ ] Update \`.github/upstream-version\` to \`${UPSTREAM_TAG}\`
-
-> Auto-created by upstream-watch workflow." \
+            --body "$BODY" \
             --label "upstream" \
             --label "type:tracking" \
             --label "size:medium" \
