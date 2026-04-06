@@ -85,5 +85,5 @@ jobs:
         run: |
           cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
             --library "${{ steps.lib-path.outputs.path }}" \
-            --language ${{ matrix.language }} \
-            --out-dir bindings/${{ matrix.language }}
+            --language "${{ matrix.language }}" \
+            --out-dir "bindings/${{ matrix.language }}"
