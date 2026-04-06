@@ -30,8 +30,12 @@
     </div>
     <div class="pane output-pane">
       <div id="error" class="error" hidden></div>
-      <iframe id="preview" sandbox="allow-same-origin" title="Rendered output"></iframe>
+      <iframe id="preview" sandbox title="Rendered output"></iframe>
       <pre id="text-output" hidden></pre>
+      <div id="pdf-pane" hidden>
+        <p>Click the button to generate and download a PDF.</p>
+        <button id="download-pdf">Download PDF</button>
+      </div>
     </div>
   </main>
   <script type="module" src="/src/main.ts"></script>

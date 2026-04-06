@@ -1,4 +1,4 @@
-/// Sample ChordPro content preloaded in the editor.
+// Sample ChordPro content preloaded in the editor.
 export const SAMPLE_CHORDPRO = `{title: Amazing Grace}
 {subtitle: John Newton}
 {key: G}
