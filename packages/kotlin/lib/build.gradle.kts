@@ -6,7 +6,12 @@ plugins {
 }
 
 group = "com.koedame"
-version = "0.1.0"
+// Read version from crates/ffi/Cargo.toml to keep in sync with Rust crate.
+version = file("${rootDir}/../../crates/ffi/Cargo.toml").readText()
+    .lineSequence()
+    .first { it.startsWith("version") }
+    .substringAfter('"')
+    .substringBefore('"')
 
 repositories {
     mavenCentral()

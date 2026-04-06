@@ -4,7 +4,8 @@ build-backend = "maturin"
 
 [project]
 name = "chordsketch"
-version = "0.1.0"
+# Version is derived from Cargo.toml automatically by maturin.
+dynamic = ["version"]
 description = "ChordPro file format parser and renderer"
 readme = {text = "ChordPro file format parser and renderer for Python. See https://github.com/koedame/chordsketch for documentation.", content-type = "text/plain"}
 license = { text = "MIT" }
