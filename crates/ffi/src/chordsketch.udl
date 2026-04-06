@@ -1,6 +1,9 @@
 namespace chordsketch {
     /// Parse ChordPro input and render as plain text.
     ///
+    /// Parse warnings are silently discarded. Call `validate()` to retrieve
+    /// diagnostics if needed.
+    ///
     /// - `input`: ChordPro source text
     /// - `config_json`: optional RRJSON configuration string or preset name
     ///   (e.g., "guitar", "ukulele")
@@ -9,15 +12,24 @@ namespace chordsketch {
     string parse_and_render_text(string input, string? config_json, i8? transpose);
 
     /// Parse ChordPro input and render as an HTML document.
+    ///
+    /// Parse warnings are silently discarded. Call `validate()` to retrieve
+    /// diagnostics if needed.
     [Throws=ChordSketchError]
     string parse_and_render_html(string input, string? config_json, i8? transpose);
 
     /// Parse ChordPro input and render as a PDF document.
+    ///
+    /// Parse warnings are silently discarded. Call `validate()` to retrieve
+    /// diagnostics if needed.
     [Throws=ChordSketchError]
     bytes parse_and_render_pdf(string input, string? config_json, i8? transpose);
 
     /// Validate ChordPro input and return any parse errors as strings.
     /// Returns an empty list if the input is valid.
+    ///
+    /// Call this before or after rendering to surface parse diagnostics
+    /// that the render functions silently discard.
     sequence<string> validate(string input);
 
     /// Return the ChordSketch library version.

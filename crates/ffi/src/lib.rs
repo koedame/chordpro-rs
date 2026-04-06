@@ -50,6 +50,10 @@ fn parse_songs(input: &str) -> Result<Vec<chordsketch_core::ast::Song>, ChordSke
 }
 
 /// Parse ChordPro input and render as plain text.
+///
+/// Parse warnings are silently discarded — the lenient parser produces a
+/// best-effort result even when the input contains errors. To retrieve
+/// diagnostics, call [`validate()`] before or after rendering.
 pub fn parse_and_render_text(
     input: String,
     config_json: Option<String>,
@@ -65,6 +69,10 @@ pub fn parse_and_render_text(
 }
 
 /// Parse ChordPro input and render as an HTML document.
+///
+/// Parse warnings are silently discarded — the lenient parser produces a
+/// best-effort result even when the input contains errors. To retrieve
+/// diagnostics, call [`validate()`] before or after rendering.
 pub fn parse_and_render_html(
     input: String,
     config_json: Option<String>,
@@ -80,6 +88,10 @@ pub fn parse_and_render_html(
 }
 
 /// Parse ChordPro input and render as a PDF document.
+///
+/// Parse warnings are silently discarded — the lenient parser produces a
+/// best-effort result even when the input contains errors. To retrieve
+/// diagnostics, call [`validate()`] before or after rendering.
 pub fn parse_and_render_pdf(
     input: String,
     config_json: Option<String>,
@@ -204,6 +216,25 @@ mod tests {
     fn test_version() {
         let v = version();
         assert!(!v.is_empty());
+    }
+
+    #[test]
+    fn test_render_succeeds_despite_parse_warnings() {
+        // Input with an unclosed chord produces parse warnings, but the
+        // lenient parser still yields a song that can be rendered.
+        // Callers who want diagnostics should call validate() separately.
+        let input = "{title: Warn}\n[C]Hello [G\nWorld".to_string();
+        let result = parse_and_render_text(input.clone(), None, None);
+        assert!(result.is_ok(), "render should succeed despite parse errors");
+        let text = result.unwrap();
+        assert!(text.contains("Warn"), "title should be rendered");
+
+        // validate() surfaces the warnings that render silently discards.
+        let warnings = validate(input);
+        assert!(
+            !warnings.is_empty(),
+            "validate should report the unclosed chord"
+        );
     }
 
     #[test]
