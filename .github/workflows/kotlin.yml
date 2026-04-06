@@ -1,0 +1,165 @@
+name: Kotlin Package
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "crates/ffi/**"
+      - "crates/core/**"
+      - "crates/render-*/**"
+      - "packages/kotlin/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/kotlin.yml"
+  pull_request:
+    paths:
+      - "crates/ffi/**"
+      - "crates/core/**"
+      - "crates/render-*/**"
+      - "packages/kotlin/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/kotlin.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-jni:
+    name: Build JNI library (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            jni-dir: linux-x86-64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            jni-dir: linux-aarch64
+            cross: true
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            jni-dir: darwin-aarch64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            jni-dir: darwin-x86-64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            jni-dir: win32-x86-64
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (aarch64-linux)
+        if: matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: kotlin-${{ matrix.target }}
+
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross && 'aarch64-linux-gnu-gcc' || '' }}
+        run: cargo build -p chordsketch-ffi --release --target ${{ matrix.target }}
+
+      - name: Upload JNI library
+        uses: actions/upload-artifact@v4
+        with:
+          name: jni-${{ matrix.jni-dir }}
+          path: |
+            target/${{ matrix.target }}/release/libchordsketch_ffi.so
+            target/${{ matrix.target }}/release/libchordsketch_ffi.dylib
+            target/${{ matrix.target }}/release/chordsketch_ffi.dll
+
+  generate-and-test:
+    name: Generate bindings and test
+    needs: [build-jni]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: kotlin-generate
+
+      - name: Build FFI crate
+        run: cargo build -p chordsketch-ffi
+
+      - name: Generate Kotlin bindings
+        run: |
+          cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
+            --library target/debug/libchordsketch_ffi.so \
+            --language kotlin \
+            --out-dir packages/kotlin/lib/src/main/kotlin/
+
+      - name: Download JNI library (linux-x86-64)
+        uses: actions/download-artifact@v4
+        with:
+          name: jni-linux-x86-64
+          path: packages/kotlin/lib/src/main/resources/linux-x86-64/
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Test with Gradle
+        working-directory: packages/kotlin
+        run: |
+          chmod +x gradlew 2>/dev/null || true
+          ./gradlew test || gradle test
+
+  publish:
+    name: Publish to Maven Central
+    needs: [generate-and-test]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: kotlin-generate
+
+      - name: Build FFI crate
+        run: cargo build -p chordsketch-ffi
+
+      - name: Generate Kotlin bindings
+        run: |
+          cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
+            --library target/debug/libchordsketch_ffi.so \
+            --language kotlin \
+            --out-dir packages/kotlin/lib/src/main/kotlin/
+
+      - name: Download all JNI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: jni-*
+          path: packages/kotlin/lib/src/main/resources/
+          merge-multiple: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Publish
+        working-directory: packages/kotlin
+        env:
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_PASSWORD: ${{ secrets.GPG_SIGNING_PASSWORD }}
+        run: |
+          chmod +x gradlew 2>/dev/null || true
+          ./gradlew publish || gradle publish
