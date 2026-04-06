@@ -196,14 +196,18 @@ mod tests {
 
     #[test]
     fn test_transpose_range_validation() {
-        // Mirrors the parse_transpose logic: valid range is -12..=12.
-        for valid in [-12, -1, 0, 1, 12] {
+        // parse_transpose returns napi::Result which requires the Node.js
+        // runtime for linking (napi::Error drops call napi_delete_reference).
+        // This test validates the range logic directly as a sanity check.
+        // The actual parse_transpose function is tested via the napi addon
+        // in the build job where Node.js is available.
+        for valid in [-12i32, -1, 0, 1, 12] {
             assert!(
                 (-12..=12).contains(&valid),
                 "{valid} should be in valid range"
             );
         }
-        for invalid in [-13, 13, 100, -100] {
+        for invalid in [-13i32, 13, 100, -100] {
             assert!(
                 !(-12..=12).contains(&invalid),
                 "{invalid} should be out of range"

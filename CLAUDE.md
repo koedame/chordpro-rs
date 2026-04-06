@@ -23,7 +23,7 @@ cargo fmt            # Auto-format code
 
 ## Architecture
 
-This is a Cargo workspace with six crates:
+This is a Cargo workspace with the following crates:
 
 | Crate | Path | Kind | Dependencies |
 |---|---|---|---|
