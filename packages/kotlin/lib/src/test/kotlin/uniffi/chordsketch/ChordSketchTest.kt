@@ -1,4 +1,4 @@
-package com.koedame.chordsketch
+package uniffi.chordsketch
 
 import kotlin.test.Test
 import kotlin.test.assertTrue
