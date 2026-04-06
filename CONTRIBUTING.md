@@ -36,6 +36,24 @@ cargo build
 cargo test
 ```
 
+## Playground Development
+
+The web playground requires building the WASM crate first:
+
+```bash
+# Install wasm-pack
+cargo install wasm-pack
+
+# Build WASM and copy artifacts
+wasm-pack build crates/wasm --target web
+cp crates/wasm/pkg/chordsketch_wasm* packages/npm/
+
+# Start the playground dev server
+cd packages/playground
+npm install
+npm run dev
+```
+
 ## Submitting Pull Requests
 
 1. **Open an issue first.** Every change needs a corresponding GitHub issue.

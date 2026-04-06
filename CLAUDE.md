@@ -23,7 +23,7 @@ cargo fmt            # Auto-format code
 
 ## Architecture
 
-This is a Cargo workspace with five crates:
+This is a Cargo workspace with six crates:
 
 | Crate | Path | Kind | Dependencies |
 |---|---|---|---|
@@ -32,6 +32,14 @@ This is a Cargo workspace with five crates:
 | `chordsketch-render-html` | `crates/render-html` | lib | `chordsketch-core` |
 | `chordsketch-render-pdf` | `crates/render-pdf` | lib | `chordsketch-core` |
 | `chordsketch` (CLI) | `crates/cli` | bin | `chordsketch-core`, `chordsketch-render-text`, `chordsketch-render-html`, `chordsketch-render-pdf` |
+| `chordsketch-wasm` | `crates/wasm` | cdylib | `chordsketch-core`, all renderers, `wasm-bindgen`, `serde` |
+
+Additionally, these non-Rust packages exist:
+
+| Package | Path | Description |
+|---|---|---|
+| `@chordsketch/wasm` | `packages/npm` | npm package with TypeScript types |
+| Playground | `packages/playground` | Vite-based browser playground (Vanilla TS) |
 
 ### Dependency Policy
 
@@ -73,7 +81,8 @@ High-level phases:
 16. **Phase 16** — Conditional directive selectors ✅
 17. **Phase 17** — Multi-song files and `{new_song}` directive ✅
 18. **Phase 18** — Perl reference implementation compatibility testing ✅
-19. **Phase 19** — Production readiness and publishing
+19. **Phase 19** — Production readiness and publishing ✅
+20. **Phase 20** — WASM build & web playground
 
 ## Merge Policy
 

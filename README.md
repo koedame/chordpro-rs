@@ -21,7 +21,21 @@ into a structured AST and rendering to plain text, HTML, and PDF.
 - Image directive
 - Multi-page PDF with page control
 
+## Try it Online
+
+**[ChordSketch Playground](https://koedame.github.io/chordsketch/)** — try
+ChordPro rendering directly in your browser, no installation required.
+
 ## Installation
+
+### npm (WASM)
+
+```bash
+npm install @chordsketch/wasm
+```
+
+See the [@chordsketch/wasm README](packages/npm/README.md) for usage with
+JavaScript/TypeScript.
 
 ### Homebrew (macOS / Linux)
 
@@ -111,6 +125,14 @@ println!("{text}");
 | [`chordsketch-render-html`](crates/render-html) | HTML renderer |
 | [`chordsketch-render-pdf`](crates/render-pdf) | PDF renderer |
 | [`chordsketch`](crates/cli) | Command-line tool |
+| [`chordsketch-wasm`](crates/wasm) | WebAssembly bindings via wasm-bindgen |
+
+### Packages
+
+| Package | Path | Description |
+|---|---|---|
+| [`@chordsketch/wasm`](packages/npm) | `packages/npm` | npm package with TypeScript types |
+| [Playground](packages/playground) | `packages/playground` | Browser-based ChordPro editor and renderer |
 
 ## Links
 
