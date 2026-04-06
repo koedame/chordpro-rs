@@ -1,6 +1,9 @@
+cargo_toml = File.read(File.join(__dir__, "..", "..", "crates", "ffi", "Cargo.toml"))
+cargo_version = cargo_toml.match(/^version\s*=\s*"(.+)"$/)[1]
+
 Gem::Specification.new do |s|
   s.name        = "chordsketch"
-  s.version     = "0.1.0"
+  s.version     = cargo_version
   s.summary     = "ChordPro file format parser and renderer"
   s.description = "Parse and render ChordPro files to text, HTML, and PDF. " \
                   "Native bindings via UniFFI for high performance."

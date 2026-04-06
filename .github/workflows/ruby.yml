@@ -36,19 +36,24 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             lib: libchordsketch_ffi.so
+            platform_dir: x86_64-linux
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             lib: libchordsketch_ffi.so
+            platform_dir: aarch64-linux
             cross: true
           - os: macos-latest
             target: aarch64-apple-darwin
             lib: libchordsketch_ffi.dylib
+            platform_dir: aarch64-darwin
           - os: macos-latest
             target: x86_64-apple-darwin
             lib: libchordsketch_ffi.dylib
+            platform_dir: x86_64-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             lib: chordsketch_ffi.dll
+            platform_dir: x86_64-windows
     steps:
       - uses: actions/checkout@v6
 
@@ -96,12 +101,13 @@ jobs:
             --library target/debug/libchordsketch_ffi.so \
             --language ruby \
             --out-dir packages/ruby/lib/
+          mv packages/ruby/lib/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
 
       - name: Download native library (linux-x86-64)
         uses: actions/download-artifact@v4
         with:
           name: native-x86_64-unknown-linux-gnu
-          path: packages/ruby/lib/
+          path: packages/ruby/lib/x86_64-linux/
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -113,8 +119,6 @@ jobs:
 
       - name: Run tests
         working-directory: packages/ruby
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/packages/ruby/lib
         run: ruby -Ilib -Itest test/test_chordsketch.rb
 
   publish:
@@ -138,13 +142,24 @@ jobs:
             --library target/debug/libchordsketch_ffi.so \
             --language ruby \
             --out-dir packages/ruby/lib/
+          mv packages/ruby/lib/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
 
       - name: Download all native libraries
         uses: actions/download-artifact@v4
         with:
           pattern: native-*
           path: packages/ruby/lib/
-          merge-multiple: true
+
+      - name: Organize native libraries by platform
+        run: |
+          cd packages/ruby/lib
+          mkdir -p x86_64-linux aarch64-linux aarch64-darwin x86_64-darwin x86_64-windows
+          mv native-x86_64-unknown-linux-gnu/* x86_64-linux/
+          mv native-aarch64-unknown-linux-gnu/* aarch64-linux/
+          mv native-aarch64-apple-darwin/* aarch64-darwin/
+          mv native-x86_64-apple-darwin/* x86_64-darwin/
+          mv native-x86_64-pc-windows-msvc/* x86_64-windows/
+          rmdir native-*
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
