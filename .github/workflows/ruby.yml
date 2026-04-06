@@ -113,6 +113,8 @@ jobs:
 
       - name: Run tests
         working-directory: packages/ruby
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/packages/ruby/lib
         run: ruby -Ilib -Itest test/test_chordsketch.rb
 
   publish:
