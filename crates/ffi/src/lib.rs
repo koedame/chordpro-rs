@@ -187,12 +187,17 @@ mod tests {
 
     #[test]
     fn test_validate_returns_errors_for_bad_input() {
-        // Strict parsing of unclosed directive would produce an error
-        // but lenient parsing may accept it. Use a structurally invalid directive.
-        let errors = validate("{title: Test}\n{invalid_directive}".to_string());
-        // The lenient parser may or may not produce errors here depending
-        // on how unknown directives are handled, so just check the return type.
-        let _ = errors;
+        // An unclosed chord bracket is always a parse error, even in lenient mode.
+        let errors = validate("{title: Test}\n[G".to_string());
+        assert!(
+            !errors.is_empty(),
+            "unclosed chord should produce a parse error"
+        );
+        assert!(
+            errors[0].contains("unclosed"),
+            "error message should mention 'unclosed', got: {}",
+            errors[0]
+        );
     }
 
     #[test]

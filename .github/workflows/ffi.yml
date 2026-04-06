@@ -42,6 +42,9 @@ jobs:
       - name: Test
         run: cargo test -p chordsketch-ffi
 
+      - name: Format
+        run: cargo fmt -p chordsketch-ffi --check
+
       - name: Clippy
         run: cargo clippy -p chordsketch-ffi -- -D warnings
 
@@ -64,10 +67,19 @@ jobs:
       - name: Build FFI crate
         run: cargo build -p chordsketch-ffi
 
+      - name: Determine library path
+        id: lib-path
+        run: |
+          case "$RUNNER_OS" in
+            Linux)  echo "path=target/debug/libchordsketch_ffi.so" >> "$GITHUB_OUTPUT" ;;
+            macOS)  echo "path=target/debug/libchordsketch_ffi.dylib" >> "$GITHUB_OUTPUT" ;;
+            Windows) echo "path=target/debug/chordsketch_ffi.dll" >> "$GITHUB_OUTPUT" ;;
+          esac
+
       - name: Generate bindings
         run: |
           cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
-            --library target/debug/libchordsketch_ffi.so \
+            --library ${{ steps.lib-path.outputs.path }} \
             --language ${{ matrix.language }} \
             --out-dir bindings/${{ matrix.language }}
 
