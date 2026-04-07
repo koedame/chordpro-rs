@@ -47,10 +47,16 @@ jobs:
         #   - node/ is wasm-pack --target nodejs → CommonJS
         # The root package.json declares "type": "module" (for the web
         # entry), so the node subdir must override it back to commonjs.
+        #
+        # Output must be byte-for-byte identical to what
+        # `packages/npm/scripts/build.mjs` produces locally
+        # (`JSON.stringify({ type }, null, 2) + "\n"`), i.e.
+        # 2-space-indented pretty JSON with a trailing newline.
+        # See #1046 for the divergence that motivated this.
         run: |
           set -euo pipefail
-          printf '%s\n' '{"type":"module"}' > packages/npm/web/package.json
-          printf '%s\n' '{"type":"commonjs"}' > packages/npm/node/package.json
+          printf '%s\n' '{' '  "type": "module"' '}' > packages/npm/web/package.json
+          printf '%s\n' '{' '  "type": "commonjs"' '}' > packages/npm/node/package.json
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

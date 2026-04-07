@@ -12,8 +12,10 @@
 // Run with: `npm run build` (from packages/npm/).
 //
 // Mirrors the steps in .github/workflows/npm-publish.yml so local
-// builds and CI builds produce identical artifacts. If you change
-// either, change both.
+// builds and CI builds produce **byte-for-byte identical** artifacts
+// (verified for the sub-package.json files: pretty-printed JSON with
+// 2-space indent and a trailing newline). If you change either, change
+// both.
 
 import { spawnSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
