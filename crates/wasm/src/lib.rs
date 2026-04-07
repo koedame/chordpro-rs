@@ -87,21 +87,61 @@ fn do_render_bytes(
     Ok(render_fn(&songs, transpose, config))
 }
 
+/// Decode a JS-supplied `options` value into a `RenderOptions` struct.
+///
+/// Treats `undefined` and `null` as the default options object so the
+/// `*_with_options` entry points can be called without an explicit
+/// options argument from JS callers.
+fn deserialize_options(options: JsValue) -> Result<RenderOptions, JsValue> {
+    if options.is_undefined() || options.is_null() {
+        Ok(RenderOptions::default())
+    } else {
+        serde_wasm_bindgen::from_value(options).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+}
+
+/// Resolve config and dispatch a string-returning render call.
+///
+/// Single source of truth shared by `render_html` / `render_text` and
+/// their `*_with_options` counterparts. Avoids the boilerplate duplication
+/// flagged in #1059. Takes `RenderOptions` directly (not `JsValue`) so
+/// the no-options entry points can call this on native test targets
+/// without touching wasm-bindgen-imported types.
+fn render_string_inner(
+    input: &str,
+    opts: RenderOptions,
+    render_fn: fn(&[chordsketch_core::ast::Song], i8, &chordsketch_core::config::Config) -> String,
+) -> Result<String, JsValue> {
+    let config = resolve_config(&opts)?;
+    do_render_string(input, &config, opts.transpose, render_fn)
+}
+
+/// Resolve config and dispatch a bytes-returning render call.
+///
+/// See [`render_string_inner`].
+fn render_bytes_inner(
+    input: &str,
+    opts: RenderOptions,
+    render_fn: fn(&[chordsketch_core::ast::Song], i8, &chordsketch_core::config::Config) -> Vec<u8>,
+) -> Result<Vec<u8>, JsValue> {
+    let config = resolve_config(&opts)?;
+    do_render_bytes(input, &config, opts.transpose, render_fn)
+}
+
 /// Render ChordPro input as HTML using default configuration.
 ///
 /// Returns the rendered HTML string. Use [`render_html_with_options`]
 /// to pass a config preset or transposition.
 ///
 /// The return type is `Result<String, JsValue>` for consistency with
-/// the `*_with_options` variants — this function itself never errors
-/// because the lenient parser always produces at least one song
-/// (see [`do_render_string`]).
+/// the `*_with_options` variant — this function itself never errors
+/// because the lenient parser always produces at least one song and
+/// the default config never fails to resolve.
 #[wasm_bindgen]
 pub fn render_html(input: &str) -> Result<String, JsValue> {
-    do_render_string(
+    render_string_inner(
         input,
-        &chordsketch_core::config::Config::defaults(),
-        0,
+        RenderOptions::default(),
         chordsketch_render_html::render_songs_with_transpose,
     )
 }
@@ -112,15 +152,14 @@ pub fn render_html(input: &str) -> Result<String, JsValue> {
 /// to pass a config preset or transposition.
 ///
 /// The return type is `Result<String, JsValue>` for consistency with
-/// the `*_with_options` variants — this function itself never errors
-/// because the lenient parser always produces at least one song
-/// (see [`do_render_string`]).
+/// the `*_with_options` variant — this function itself never errors
+/// because the lenient parser always produces at least one song and
+/// the default config never fails to resolve.
 #[wasm_bindgen]
 pub fn render_text(input: &str) -> Result<String, JsValue> {
-    do_render_string(
+    render_string_inner(
         input,
-        &chordsketch_core::config::Config::defaults(),
-        0,
+        RenderOptions::default(),
         chordsketch_render_text::render_songs_with_transpose,
     )
 }
@@ -131,15 +170,14 @@ pub fn render_text(input: &str) -> Result<String, JsValue> {
 /// to pass a config preset or transposition.
 ///
 /// The return type is `Result<Vec<u8>, JsValue>` for consistency with
-/// the `*_with_options` variants — this function itself never errors
-/// because the lenient parser always produces at least one song
-/// (see [`do_render_bytes`]).
+/// the `*_with_options` variant — this function itself never errors
+/// because the lenient parser always produces at least one song and
+/// the default config never fails to resolve.
 #[wasm_bindgen]
 pub fn render_pdf(input: &str) -> Result<Vec<u8>, JsValue> {
-    do_render_bytes(
+    render_bytes_inner(
         input,
-        &chordsketch_core::config::Config::defaults(),
-        0,
+        RenderOptions::default(),
         chordsketch_render_pdf::render_songs_with_transpose,
     )
 }
@@ -151,18 +189,17 @@ pub fn render_pdf(input: &str) -> Result<Vec<u8>, JsValue> {
 ///   reduces modulo 12 internally)
 /// - `config`: preset name ("guitar", "ukulele") or inline RRJSON string
 ///
+/// `undefined` or `null` is accepted and treated as the default options
+/// object.
+///
 /// # Errors
 ///
 /// Returns a `JsValue` error string on parse failure or invalid options.
 #[wasm_bindgen]
 pub fn render_html_with_options(input: &str, options: JsValue) -> Result<String, JsValue> {
-    let opts: RenderOptions =
-        serde_wasm_bindgen::from_value(options).map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let config = resolve_config(&opts)?;
-    do_render_string(
+    render_string_inner(
         input,
-        &config,
-        opts.transpose,
+        deserialize_options(options)?,
         chordsketch_render_html::render_songs_with_transpose,
     )
 }
@@ -176,13 +213,9 @@ pub fn render_html_with_options(input: &str, options: JsValue) -> Result<String,
 /// Returns a `JsValue` error string on parse failure or invalid options.
 #[wasm_bindgen]
 pub fn render_text_with_options(input: &str, options: JsValue) -> Result<String, JsValue> {
-    let opts: RenderOptions =
-        serde_wasm_bindgen::from_value(options).map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let config = resolve_config(&opts)?;
-    do_render_string(
+    render_string_inner(
         input,
-        &config,
-        opts.transpose,
+        deserialize_options(options)?,
         chordsketch_render_text::render_songs_with_transpose,
     )
 }
@@ -198,13 +231,9 @@ pub fn render_text_with_options(input: &str, options: JsValue) -> Result<String,
 /// Returns a `JsValue` error string on parse failure or invalid options.
 #[wasm_bindgen]
 pub fn render_pdf_with_options(input: &str, options: JsValue) -> Result<Vec<u8>, JsValue> {
-    let opts: RenderOptions =
-        serde_wasm_bindgen::from_value(options).map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let config = resolve_config(&opts)?;
-    do_render_bytes(
+    render_bytes_inner(
         input,
-        &config,
-        opts.transpose,
+        deserialize_options(options)?,
         chordsketch_render_pdf::render_songs_with_transpose,
     )
 }
