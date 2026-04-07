@@ -75,11 +75,14 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          git clone "https://github.com/koedame/homebrew-tap.git" tap
+          # Use the URL-form token rather than the base64 extraheader
+          # variant: it never writes credentials to a persistent file
+          # under tap/.git/config, so an accidental upload-artifact of the
+          # working directory cannot leak the token. See #1071.
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/koedame/homebrew-tap.git" tap
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config "http.https://github.com/.extraheader" "AUTHORIZATION: basic $(echo -n "x-access-token:${TAP_TOKEN}" | base64)"
           mkdir -p Formula
           cp ../chordsketch.rb Formula/chordsketch.rb
           git add Formula/chordsketch.rb
@@ -135,11 +138,12 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          git clone "https://github.com/koedame/scoop-bucket.git" bucket
+          # See note on the same step in `update-homebrew` above. URL-form
+          # token avoids persisting credentials in bucket/.git/config. #1071.
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/koedame/scoop-bucket.git" bucket
           cd bucket
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config "http.https://github.com/.extraheader" "AUTHORIZATION: basic $(echo -n "x-access-token:${TAP_TOKEN}" | base64)"
           mkdir -p bucket
           cp ../chordsketch.json bucket/chordsketch.json
           git add bucket/chordsketch.json

@@ -33,6 +33,18 @@ function hideError(): void {
   errorDiv.classList.add('hidden');
 }
 
+/**
+ * Format a thrown value into a readable error message. `String(e)` flattens
+ * structured errors (e.g. JsError objects with line/col info) to "[object
+ * Object]"; preferring `e.message` when available preserves the underlying
+ * Rust error string. See #1060.
+ */
+function formatError(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === 'string') return e;
+  return String(e);
+}
+
 function showPane(pane: 'html' | 'text' | 'pdf'): void {
   preview.classList.toggle('hidden', pane !== 'html');
   textOutput.classList.toggle('hidden', pane !== 'text');
@@ -74,7 +86,7 @@ function render(): void {
       hideError();
     }
   } catch (e) {
-    showError(String(e));
+    showError(formatError(e));
   }
 }
 
@@ -121,7 +133,7 @@ function downloadPdf(): void {
     URL.revokeObjectURL(url);
     hideError();
   } catch (e) {
-    showError(String(e));
+    showError(formatError(e));
   }
 }
 
@@ -136,7 +148,7 @@ async function main(): Promise<void> {
   try {
     await init();
   } catch (e) {
-    showError(`Failed to initialize WASM: ${e}`);
+    showError(`Failed to initialize WASM: ${formatError(e)}`);
     return;
   }
 

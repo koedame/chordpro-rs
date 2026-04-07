@@ -30,7 +30,17 @@
     </div>
     <div class="pane output-pane">
       <div id="error" class="error hidden"></div>
-      <iframe id="preview" sandbox title="Rendered output"></iframe>
+      <!--
+        Sandbox is intentionally restrictive — empty `sandbox` blocks
+        scripts/forms/storage so the rendered HTML can't run JS or steal
+        cookies. We do allow popups so anchor clicks (e.g. from {link}
+        or chord-diagram image maps) can open in a new tab. See #1058.
+      -->
+      <iframe
+        id="preview"
+        sandbox="allow-popups allow-popups-to-escape-sandbox"
+        title="Rendered output"
+      ></iframe>
       <pre id="text-output" class="hidden"></pre>
       <div id="pdf-pane" class="hidden">
         <p>Click the button to generate and download a PDF.</p>

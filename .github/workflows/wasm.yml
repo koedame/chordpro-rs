@@ -37,4 +37,17 @@ jobs:
         run: wasm-pack build crates/wasm --target web
 
       - name: Clippy (wasm32)
-        run: cargo clippy --target wasm32-unknown-unknown -p chordsketch-wasm -- -D warnings
+        # Lint every workspace crate that compiles for wasm32, not just
+        # `chordsketch-wasm`. The renderer crates each have wasm32-specific
+        # code paths (e.g. `chordsketch-render-pdf` switches the flate2
+        # backend, `chordsketch-core` cfg-gates fs/process modules) and
+        # clippy warnings introduced in those paths must fail CI too. See
+        # #1054.
+        run: |
+          cargo clippy --target wasm32-unknown-unknown \
+            -p chordsketch-wasm \
+            -p chordsketch-render-pdf \
+            -p chordsketch-render-html \
+            -p chordsketch-render-text \
+            -p chordsketch-core \
+            -- -D warnings
