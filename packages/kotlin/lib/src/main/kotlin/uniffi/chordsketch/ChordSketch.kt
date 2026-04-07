@@ -4,7 +4,7 @@
 // case difference — on Linux they are two separate files; on macOS they
 // would collide). The generated file is the one that contains the real
 // bindings. This `ChordSketch.kt` file is intentionally empty so that
-// the directory exists in git, but the gem will not work end-to-end
+// the directory exists in git, but the package will not work end-to-end
 // until `uniffi-bindgen generate` has been run.
 //
 // If your `./gradlew test` fails with `cannot load library 'chordsketch_ffi'`

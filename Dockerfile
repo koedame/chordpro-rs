@@ -1,7 +1,12 @@
 # Multi-stage Dockerfile for building ChordSketch from source.
 # For pre-built multi-arch images, see ghcr.io/koedame/chordsketch.
 
-FROM rust:1.85-bookworm AS builder
+# Builder stage pinned to its sha256 manifest list digest for the same
+# reason the runtime stage is below: a tag republish on Docker Hub could
+# otherwise produce a tampered builder that quietly compiles malicious
+# binary into the trusted runtime layer. The tag is kept alongside the
+# digest so Dependabot can correlate the bump. See #1103.
+FROM rust:1.85-bookworm@sha256:e51d0265072d2d9d5d320f6a44dde6b9ef13653b035098febd68cce8fa7c0bc4 AS builder
 
 WORKDIR /build
 COPY . .
