@@ -9,8 +9,14 @@ use napi_derive::napi;
 /// Render options matching the WASM package API.
 #[napi(object)]
 pub struct RenderOptions {
-    /// Semitone transposition offset. Any integer is accepted; the renderer
-    /// reduces modulo 12. Defaults to 0.
+    /// Semitone transposition offset. Defaults to 0.
+    ///
+    /// Any integer is accepted, but values outside `i8` range
+    /// (`-128..=127`) are clamped to that range *before* the renderer
+    /// reduces modulo 12. So `transpose: 200` becomes
+    /// `clamp(200, -128, 127) = 127`, and the effective offset is
+    /// `127 % 12 = 7` — not `200 % 12 = 8`. This only matters for
+    /// transpositions greater than ~10 octaves (see #1080).
     pub transpose: Option<i32>,
     /// Configuration preset name (e.g., "guitar", "ukulele") or inline
     /// RRJSON configuration string.
@@ -46,7 +52,10 @@ fn parse_songs(input: &str) -> Result<Vec<chordsketch_core::ast::Song>> {
     Ok(songs)
 }
 
-/// Render ChordPro input as plain text.
+/// Render ChordPro input as plain text using default configuration.
+///
+/// Use [`render_text_with_options`] to pass a config preset, inline RRJSON,
+/// or transposition.
 #[napi]
 pub fn render_text(input: String) -> Result<String> {
     let songs = parse_songs(&input)?;
@@ -57,7 +66,10 @@ pub fn render_text(input: String) -> Result<String> {
     ))
 }
 
-/// Render ChordPro input as an HTML document.
+/// Render ChordPro input as an HTML document using default configuration.
+///
+/// Use [`render_html_with_options`] to pass a config preset, inline RRJSON,
+/// or transposition.
 #[napi]
 pub fn render_html(input: String) -> Result<String> {
     let songs = parse_songs(&input)?;
@@ -68,7 +80,11 @@ pub fn render_html(input: String) -> Result<String> {
     ))
 }
 
-/// Render ChordPro input as a PDF document (returned as a Buffer).
+/// Render ChordPro input as a PDF document using default configuration
+/// (returned as a Buffer).
+///
+/// Use [`render_pdf_with_options`] to pass a config preset, inline RRJSON,
+/// or transposition.
 #[napi]
 pub fn render_pdf(input: String) -> Result<Buffer> {
     let songs = parse_songs(&input)?;

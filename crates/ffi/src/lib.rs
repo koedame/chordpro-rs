@@ -40,6 +40,10 @@ fn resolve_config(
 }
 
 /// Parse input into songs, returning an error if no songs are found.
+///
+/// "No songs" means literally empty input. Even a single `{title}`
+/// directive without lyrics yields one song, so most non-empty inputs
+/// will succeed (and surface any parser warnings via [`validate`]).
 fn parse_songs(input: &str) -> Result<Vec<chordsketch_core::ast::Song>, ChordSketchError> {
     let result = chordsketch_core::parse_multi_lenient(input);
     let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();
