@@ -6,6 +6,7 @@
   "type": "module",
   "main": "./node/chordsketch_wasm.js",
   "browser": "./web/chordsketch_wasm.js",
+  "module": "./web/chordsketch_wasm.js",
   "types": "./web/chordsketch_wasm.d.ts",
   "exports": {
     ".": {
@@ -51,7 +52,7 @@
     "web/chordsketch_wasm_bg.wasm.d.ts"
   ],
   "scripts": {
-    "build": "wasm-pack build ../../crates/wasm --release --target web --out-dir ../../packages/npm/web && wasm-pack build ../../crates/wasm --release --target nodejs --out-dir ../../packages/npm/node && node -e \"require('fs').writeFileSync('web/package.json', JSON.stringify({type:'module'}, null, 2)+'\\n'); require('fs').writeFileSync('node/package.json', JSON.stringify({type:'commonjs'}, null, 2)+'\\n')\""
+    "build": "node scripts/build.mjs"
   },
   "sideEffects": [
     "./node/chordsketch_wasm.js",
