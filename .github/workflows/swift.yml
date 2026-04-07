@@ -113,7 +113,7 @@ jobs:
               content = f.read()
           # Match .binaryTarget(...) for chordsketchFFI, allowing multi-line content
           pattern = re.compile(
-              r'\.binaryTarget\(\s*name:\s*"chordsketchFFI"[^)]*\)',
+              r'\.binaryTarget\(\s*name:\s*"chordsketchFFI".*?\)',
               re.DOTALL,
           )
           replacement = (
