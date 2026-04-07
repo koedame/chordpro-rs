@@ -1,4 +1,4 @@
-declare module '../../npm/web/chordsketch_wasm.js' {
+declare module '@chordsketch/wasm' {
   export function render_html(input: string): string;
   export function render_text(input: string): string;
   export function render_pdf(input: string): Uint8Array;

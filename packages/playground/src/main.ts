@@ -5,7 +5,7 @@ import init, {
   render_html_with_options,
   render_text_with_options,
   render_pdf_with_options,
-} from '../../npm/web/chordsketch_wasm.js';
+} from '@chordsketch/wasm';
 import { SAMPLE_CHORDPRO } from './sample';
 
 const editor = document.getElementById('editor') as HTMLTextAreaElement;
