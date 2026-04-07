@@ -1,0 +1,204 @@
+name: README Install Smoke Tests
+
+# Verify every install method advertised in README.md works for an
+# unauthenticated end user. Catches breakage like a private GHCR package,
+# yanked crate, broken tap, etc., before users hit it.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily at 06:00 UTC — catches registry-side regressions without coupling
+    # to the release cadence.
+    - cron: "0 6 * * *"
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  docker-ghcr:
+    name: Docker (GHCR)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run unauthenticated docker pull + --version
+        run: |
+          # Make sure we are not authenticated against ghcr.io.
+          docker logout ghcr.io || true
+          docker run --rm ghcr.io/koedame/chordsketch:latest --version
+
+  docker-hub:
+    name: Docker Hub
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run unauthenticated docker pull + --version
+        run: |
+          docker logout docker.io || true
+          docker run --rm docker.io/koedame/chordsketch:latest --version
+
+  npm-wasm:
+    name: npm (@chordsketch/wasm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Install @chordsketch/wasm in scratch directory
+        run: |
+          mkdir -p /tmp/wasm-smoke
+          cd /tmp/wasm-smoke
+          npm init -y
+          npm install @chordsketch/wasm
+
+      - name: Smoke test require
+        run: |
+          cd /tmp/wasm-smoke
+          node -e "const cs = require('@chordsketch/wasm'); console.log(typeof cs);"
+
+  cargo-install:
+    name: cargo install chordsketch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Install from crates.io into scratch CARGO_HOME
+        env:
+          CARGO_HOME: /tmp/cargo-smoke
+        run: |
+          mkdir -p "$CARGO_HOME"
+          cargo install chordsketch
+          "$CARGO_HOME/bin/chordsketch" --version
+
+  source-build:
+    name: From source (git clone + cargo install)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Clone, install, and run
+        env:
+          CARGO_HOME: /tmp/cargo-source
+        run: |
+          mkdir -p "$CARGO_HOME"
+          git clone https://github.com/koedame/chordsketch.git /tmp/chordsketch-src
+          cd /tmp/chordsketch-src
+          cargo install --path crates/cli
+          "$CARGO_HOME/bin/chordsketch" --version
+
+  homebrew:
+    name: Homebrew
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Tap and install
+        run: |
+          brew tap koedame/tap
+          brew install chordsketch
+          chordsketch --version
+
+  scoop:
+    name: Scoop (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Install Scoop
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned -Force
+          iex "& {$(irm get.scoop.sh)} -RunAsAdmin"
+          echo "$env:USERPROFILE\scoop\shims" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Add bucket and install
+        shell: powershell
+        run: |
+          scoop bucket add koedame https://github.com/koedame/scoop-bucket
+          scoop install chordsketch
+          chordsketch --version
+
+  winget:
+    name: winget (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Install via winget
+        shell: powershell
+        run: |
+          winget install --id koedame.chordsketch --exact --accept-source-agreements --accept-package-agreements --silent
+          chordsketch --version
+
+  usage-smoke:
+    name: README Usage examples
+    needs: [source-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Install CLI
+        env:
+          CARGO_HOME: /tmp/cargo-usage
+        run: |
+          mkdir -p "$CARGO_HOME"
+          cargo install --path crates/cli
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Render to plain text
+        run: |
+          chordsketch .github/fixtures/sample.cho > /tmp/out.txt
+          test -s /tmp/out.txt
+          grep -q "Smoke Test" /tmp/out.txt
+
+      - name: Render to HTML
+        run: |
+          chordsketch -f html .github/fixtures/sample.cho -o /tmp/out.html
+          test -s /tmp/out.html
+          grep -q "Smoke Test" /tmp/out.html
+
+      - name: Render to PDF
+        run: |
+          chordsketch -f pdf .github/fixtures/sample.cho -o /tmp/out.pdf
+          test -s /tmp/out.pdf
+          head -c 4 /tmp/out.pdf | grep -q "%PDF"
+
+      - name: Transpose
+        run: |
+          chordsketch --transpose 2 .github/fixtures/sample.cho > /tmp/out-transposed.txt
+          test -s /tmp/out-transposed.txt
+
+  report-failure:
+    name: Open or update tracking issue on failure
+    needs:
+      - docker-ghcr
+      - docker-hub
+      - npm-wasm
+      - cargo-install
+      - source-build
+      - homebrew
+      - scoop
+      - winget
+      - usage-smoke
+    if: failure() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open or update tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="README install smoke tests are failing"
+          # Find existing open tracking issue (if any).
+          EXISTING=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
+          BODY="One or more README install smoke tests failed.
+
+          See run: $RUN_URL
+
+          This issue is auto-managed by .github/workflows/readme-smoke.yml.
+          It will not be re-opened if closed manually."
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY" --label "type:bug,priority:high"
+          fi
