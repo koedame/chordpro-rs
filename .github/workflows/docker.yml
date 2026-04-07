@@ -84,7 +84,11 @@ jobs:
           tags: |
             type=semver,pattern={{version}},value=${{ steps.version.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.tag }}
-            type=raw,value=latest
+            # Only auto-tag :latest on actual release events. workflow_dispatch
+            # reruns (e.g. fixing a broken older release) MUST NOT regress the
+            # :latest tag — they only republish the immutable :X.Y.Z and :X.Y
+            # aliases. See #1064 for the regression scenario.
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
 
       - name: Build and push
         uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6

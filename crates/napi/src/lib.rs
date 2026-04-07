@@ -9,7 +9,8 @@ use napi_derive::napi;
 /// Render options matching the WASM package API.
 #[napi(object)]
 pub struct RenderOptions {
-    /// Semitone transposition offset (-12 to +12). Defaults to 0.
+    /// Semitone transposition offset. Any integer is accepted; the renderer
+    /// reduces modulo 12. Defaults to 0.
     pub transpose: Option<i32>,
     /// Configuration preset name (e.g., "guitar", "ukulele") or inline
     /// RRJSON configuration string.
@@ -79,22 +80,24 @@ pub fn render_pdf(input: String) -> Result<Buffer> {
     Ok(bytes.into())
 }
 
-/// Parse and validate a transpose value, returning an error if out of range.
-fn parse_transpose(raw: i32) -> Result<i8> {
-    if !(-12..=12).contains(&raw) {
-        return Err(Error::new(
-            Status::InvalidArg,
-            format!("transpose must be between -12 and 12, got {raw}"),
-        ));
-    }
-    Ok(raw as i8)
+/// Coerce a JS-supplied transposition value to `i8`.
+///
+/// Matches the CLI / UniFFI / WASM behavior: any integer is accepted, and the
+/// underlying renderer reduces modulo 12 internally (`shift_semitone` uses
+/// `i16 + rem_euclid(12)` so the arithmetic is overflow-safe). Out-of-range
+/// `i32` values are clamped to `i8::MIN..=i8::MAX` rather than rejected,
+/// because rejecting them would make this binding behave differently from
+/// every other binding for the same input. See #1065 for the cross-binding
+/// inconsistency that motivated this change.
+fn parse_transpose(raw: i32) -> i8 {
+    raw.clamp(i8::MIN as i32, i8::MAX as i32) as i8
 }
 
 /// Render ChordPro input as plain text with options.
 #[napi]
 pub fn render_text_with_options(input: String, options: RenderOptions) -> Result<String> {
     let config = resolve_config(options.config)?;
-    let transpose = parse_transpose(options.transpose.unwrap_or(0))?;
+    let transpose = parse_transpose(options.transpose.unwrap_or(0));
     let songs = parse_songs(&input)?;
     Ok(chordsketch_render_text::render_songs_with_transpose(
         &songs, transpose, &config,
@@ -105,7 +108,7 @@ pub fn render_text_with_options(input: String, options: RenderOptions) -> Result
 #[napi]
 pub fn render_html_with_options(input: String, options: RenderOptions) -> Result<String> {
     let config = resolve_config(options.config)?;
-    let transpose = parse_transpose(options.transpose.unwrap_or(0))?;
+    let transpose = parse_transpose(options.transpose.unwrap_or(0));
     let songs = parse_songs(&input)?;
     Ok(chordsketch_render_html::render_songs_with_transpose(
         &songs, transpose, &config,
@@ -116,7 +119,7 @@ pub fn render_html_with_options(input: String, options: RenderOptions) -> Result
 #[napi]
 pub fn render_pdf_with_options(input: String, options: RenderOptions) -> Result<Buffer> {
     let config = resolve_config(options.config)?;
-    let transpose = parse_transpose(options.transpose.unwrap_or(0))?;
+    let transpose = parse_transpose(options.transpose.unwrap_or(0));
     let songs = parse_songs(&input)?;
     let bytes = chordsketch_render_pdf::render_songs_with_transpose(&songs, transpose, &config);
     Ok(bytes.into())
@@ -195,24 +198,24 @@ mod tests {
     }
 
     #[test]
-    fn test_transpose_range_validation() {
-        // parse_transpose returns napi::Result which requires the Node.js
-        // runtime for linking (napi::Error drops call napi_delete_reference).
-        // This test validates the range logic directly as a sanity check.
-        // The actual parse_transpose function is tested via the napi addon
-        // in the build job where Node.js is available.
-        for valid in [-12i32, -1, 0, 1, 12] {
-            assert!(
-                (-12..=12).contains(&valid),
-                "{valid} should be in valid range"
-            );
-        }
-        for invalid in [-13i32, 13, 100, -100] {
-            assert!(
-                !(-12..=12).contains(&invalid),
-                "{invalid} should be out of range"
-            );
-        }
+    fn test_transpose_clamps_to_i8_range() {
+        // After #1065, parse_transpose clamps any i32 to i8 range and never
+        // returns an error, matching the CLI / UniFFI / WASM behavior. The
+        // renderer then reduces modulo 12 internally.
+        use super::parse_transpose;
+        // In-range values pass through unchanged.
+        assert_eq!(parse_transpose(0), 0);
+        assert_eq!(parse_transpose(7), 7);
+        assert_eq!(parse_transpose(-7), -7);
+        assert_eq!(parse_transpose(12), 12);
+        assert_eq!(parse_transpose(-12), -12);
+        // Beyond i8 are clamped, not rejected.
+        assert_eq!(parse_transpose(127), 127);
+        assert_eq!(parse_transpose(128), 127);
+        assert_eq!(parse_transpose(1_000_000), 127);
+        assert_eq!(parse_transpose(-128), -128);
+        assert_eq!(parse_transpose(-129), -128);
+        assert_eq!(parse_transpose(-1_000_000), -128);
     }
 
     #[test]
