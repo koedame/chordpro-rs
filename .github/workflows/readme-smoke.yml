@@ -25,14 +25,58 @@ jobs:
   docker-ghcr:
     name: Docker (GHCR)
     runs-on: ubuntu-latest
+    # DOCKER_CONFIG points at a fresh empty directory so the Docker
+    # client cannot pick up any pre-cached credentials from the runner
+    # image, $HOME/.docker, or a credential helper. This guarantees the
+    # `docker pull` below runs with the exact same authentication state
+    # as an end user on a clean machine — which is the only way to
+    # detect "package was silently flipped to private" regressions like
+    # the one this workflow exists for.
+    env:
+      DOCKER_CONFIG: /tmp/docker-anon-ghcr
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Initialize empty DOCKER_CONFIG and assert no credentials
+        run: |
+          set -euo pipefail
+          rm -rf "$DOCKER_CONFIG"
+          mkdir -p "$DOCKER_CONFIG"
+          # Defensive: also clear any creds the runner image happened
+          # to leave behind in the default location.
+          docker logout ghcr.io || true
+          # Hard assertion: the config we're about to use must contain
+          # zero auth entries. If it doesn't, the test below would be
+          # silently authenticated and stop reflecting end-user reality.
+          if [ -f "$DOCKER_CONFIG/config.json" ] && grep -q '"auths"' "$DOCKER_CONFIG/config.json" 2>/dev/null; then
+            echo "DOCKER_CONFIG contains auth entries; refusing to run anonymous test." >&2
+            cat "$DOCKER_CONFIG/config.json" >&2
+            exit 1
+          fi
+
+      - name: Verify GHCR manifest is anonymously pullable at HTTP layer
+        run: |
+          set -euo pipefail
+          # Cross-check independent of the docker daemon: hit the
+          # registry v2 API directly with a fresh anonymous bearer
+          # token. For a *public* package this returns the manifest;
+          # for a *private* one the manifest fetch returns 401 even
+          # though the token endpoint hands out a token. This catches
+          # the failure mode at the HTTP layer in case some future
+          # docker daemon change masks it.
+          TOKEN=$(curl -fsS \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:koedame/chordsketch:pull" \
+            | python3 -c 'import sys, json; print(json.load(sys.stdin)["token"])')
+          curl -fsS \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.oci.image.index.v1+json" \
+            -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+            "https://ghcr.io/v2/koedame/chordsketch/manifests/latest" \
+            -o /dev/null
 
       - name: Pull image as unauthenticated user and verify --version
         run: |
           set -euo pipefail
-          # Make sure we are not authenticated against ghcr.io.
-          docker logout ghcr.io || true
           docker pull ghcr.io/koedame/chordsketch:latest
           docker run --rm ghcr.io/koedame/chordsketch:latest --version
 
@@ -52,13 +96,41 @@ jobs:
   docker-hub:
     name: Docker Hub
     runs-on: ubuntu-latest
+    # See docker-ghcr for the rationale behind isolating DOCKER_CONFIG.
+    env:
+      DOCKER_CONFIG: /tmp/docker-anon-hub
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Initialize empty DOCKER_CONFIG and assert no credentials
+        run: |
+          set -euo pipefail
+          rm -rf "$DOCKER_CONFIG"
+          mkdir -p "$DOCKER_CONFIG"
+          docker logout docker.io || true
+          if [ -f "$DOCKER_CONFIG/config.json" ] && grep -q '"auths"' "$DOCKER_CONFIG/config.json" 2>/dev/null; then
+            echo "DOCKER_CONFIG contains auth entries; refusing to run anonymous test." >&2
+            cat "$DOCKER_CONFIG/config.json" >&2
+            exit 1
+          fi
+
+      - name: Verify Docker Hub manifest is anonymously pullable at HTTP layer
+        run: |
+          set -euo pipefail
+          # Docker Hub uses a different auth realm than GHCR.
+          TOKEN=$(curl -fsS \
+            "https://auth.docker.io/token?service=registry.docker.io&scope=repository:koedame/chordsketch:pull" \
+            | python3 -c 'import sys, json; print(json.load(sys.stdin)["token"])')
+          curl -fsS \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.oci.image.index.v1+json" \
+            -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+            "https://registry-1.docker.io/v2/koedame/chordsketch/manifests/latest" \
+            -o /dev/null
 
       - name: Pull image as unauthenticated user and verify --version
         run: |
           set -euo pipefail
-          docker logout docker.io || true
           docker pull docker.io/koedame/chordsketch:latest
           docker run --rm docker.io/koedame/chordsketch:latest --version
 
