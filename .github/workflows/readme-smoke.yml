@@ -458,8 +458,16 @@ jobs:
       - name: Open or update tracking issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # GH_REPO is honored by every `gh` invocation below, so we
+          # don't need an actions/checkout to read remote.origin.url
+          # from a local .git/. Without this, every previous run of
+          # this job has died with:
+          #   failed to run git: fatal: not a git repository
+          # …meaning the auto-managed tracking issue was never
+          # actually created. See koedame/chordsketch#1030.
           TITLE="README install smoke tests are failing"
           # Find existing open tracking issue (if any).
           EXISTING=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
