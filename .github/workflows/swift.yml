@@ -106,23 +106,32 @@ jobs:
           # Copy XCFramework into the Swift package directory
           cp -R chordsketchFFI.xcframework packages/swift/
 
-          # Rewrite Package.swift to use local XCFramework path
-          cat > packages/swift/Package.swift << 'EOF'
-          // swift-tools-version: 5.9
-          import PackageDescription
-          let package = Package(
-              name: "ChordSketch",
-              platforms: [.macOS(.v12), .iOS(.v15)],
-              products: [
-                  .library(name: "ChordSketch", targets: ["ChordSketch"]),
-              ],
-              targets: [
-                  .binaryTarget(name: "chordsketchFFI", path: "chordsketchFFI.xcframework"),
-                  .target(name: "ChordSketch", dependencies: ["chordsketchFFI"], path: "Sources/ChordSketch"),
-                  .testTarget(name: "ChordSketchTests", dependencies: ["ChordSketch"], path: "Tests"),
-              ]
+          # Replace only the binaryTarget in Package.swift with a local path,
+          # preserving any other changes to the file (platforms, products, etc.).
+          python3 << 'PYTHON'
+          import re
+          path = "packages/swift/Package.swift"
+          with open(path) as f:
+              content = f.read()
+          # Match .binaryTarget(...) for chordsketchFFI, allowing multi-line content
+          pattern = re.compile(
+              r'\.binaryTarget\(\s*name:\s*"chordsketchFFI"[^)]*\)',
+              re.DOTALL,
           )
-          EOF
+          replacement = (
+              '.binaryTarget(\n'
+              '            name: "chordsketchFFI",\n'
+              '            path: "chordsketchFFI.xcframework"\n'
+              '        )'
+          )
+          new_content, count = pattern.subn(replacement, content, count=1)
+          if count != 1:
+              raise SystemExit(
+                  f"Expected to replace exactly 1 binaryTarget, replaced {count}"
+              )
+          with open(path, "w") as f:
+              f.write(new_content)
+          PYTHON
 
           cd packages/swift
           swift test
