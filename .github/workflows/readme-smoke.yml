@@ -16,6 +16,29 @@ on:
     - cron: "0 6 * * *"
   release:
     types: [published]
+  pull_request:
+    # Run on PRs that touch anything affecting installability or
+    # rendering. The path filter keeps the heavy Windows/Docker jobs
+    # off pure-docs PRs that cannot break end-user state.
+    paths:
+      - "README.md"
+      - ".github/workflows/readme-smoke.yml"
+      - ".github/actions/cli-render-smoke/**"
+      - ".github/fixtures/**"
+      - "scripts/extract-readme-commands.py"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/cli/**"
+      - "crates/core/**"
+      - "crates/render-text/**"
+      - "crates/render-html/**"
+      - "crates/render-pdf/**"
+
+# Cancel previous runs on the same PR when new commits land. Daily cron
+# and release runs use a unique run_id and are never cancelled.
+concurrency:
+  group: readme-smoke-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -240,14 +263,28 @@ jobs:
       - name: Clone, install, and run
         env:
           CARGO_HOME: /tmp/cargo-source
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           mkdir -p "$CARGO_HOME"
-          # On a release trigger, clone the exact released tag.
-          # Otherwise (schedule, dispatch) use the default branch.
+          # The literal `git clone` ritual from README ## Installation
+          # ## From source must work end-to-end. We resolve the ref the
+          # clone should land on based on event:
+          #   - release:      the exact tag being released
+          #   - pull_request: the PR's HEAD commit (so a PR that breaks
+          #                   the from-source build fails the PR check
+          #                   instead of slipping through to schedule)
+          #   - schedule/dispatch: default branch
           if [ "${{ github.event_name }}" = "release" ]; then
             git clone --branch "${{ github.ref_name }}" --depth 1 \
               https://github.com/koedame/chordsketch.git /tmp/chordsketch-src
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            git clone --depth 1 \
+              https://github.com/koedame/chordsketch.git /tmp/chordsketch-src
+            cd /tmp/chordsketch-src
+            git fetch --depth 1 origin "$PR_HEAD_SHA"
+            git checkout "$PR_HEAD_SHA"
+            cd -
           else
             git clone --depth 1 \
               https://github.com/koedame/chordsketch.git /tmp/chordsketch-src
@@ -318,23 +355,39 @@ jobs:
         uses: ./.github/actions/cli-render-smoke
 
   library-smoke:
-    name: Library Usage (crates.io)
+    name: Library Usage
     runs-on: ubuntu-latest
     steps:
+      # Checkout is needed even on non-PR runs because the PR branch
+      # variant uses workspace path-deps. Cheap on shallow clone.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
-      - name: Build and run README Library Usage snippet against published crates
+      - name: Build and run README Library Usage snippet
         run: |
           set -euo pipefail
-          # Build a scratch crate in a tmp directory that depends on the
-          # published chordsketch-core and chordsketch-render-text on
-          # crates.io. The main.rs body is the EXACT snippet from
-          # README.md ## Library Usage, plus an assertion. If the
-          # published API drifts away from what the README documents,
-          # this job fails before users do.
+          # On PR events, we test the README snippet against the PR's
+          # *workspace* crates via path deps so that a PR which changes
+          # the public library API surface is caught immediately. On
+          # all other events (schedule, release, dispatch), we test
+          # against the *published* crates.io versions so that
+          # post-release API drift between README and published crates
+          # is caught daily. Both are necessary; one alone leaves a
+          # window where README and reality can disagree.
           SCRATCH=/tmp/library-smoke
           mkdir -p "$SCRATCH/src"
-          cat > "$SCRATCH/Cargo.toml" << 'EOF'
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            CORE_DEP="chordsketch-core = { path = \"$GITHUB_WORKSPACE/crates/core\" }"
+            RENDER_DEP="chordsketch-render-text = { path = \"$GITHUB_WORKSPACE/crates/render-text\" }"
+            MODE="workspace path deps (PR)"
+          else
+            CORE_DEP='chordsketch-core = ">=0.1, <0.2"'
+            RENDER_DEP='chordsketch-render-text = ">=0.1, <0.2"'
+            MODE="crates.io published"
+          fi
+          echo "library-smoke mode: $MODE"
+          cat > "$SCRATCH/Cargo.toml" << EOF
           [package]
           name = "library-smoke"
           version = "0.0.0"
@@ -342,8 +395,8 @@ jobs:
           publish = false
 
           [dependencies]
-          chordsketch-core = ">=0.1, <0.2"
-          chordsketch-render-text = ">=0.1, <0.2"
+          $CORE_DEP
+          $RENDER_DEP
           EOF
           cat > "$SCRATCH/src/main.rs" << 'EOF'
           use chordsketch_core::parser::parse;
@@ -369,7 +422,6 @@ jobs:
 
   usage-smoke:
     name: README Usage examples (source build)
-    needs: [source-build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
