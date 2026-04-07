@@ -75,15 +75,13 @@ jobs:
             target/x86_64-apple-ios/release/libchordsketch_ffi.a \
             -output universal/ios-sim/libchordsketch_ffi.a
 
-      - name: Create module map
+      - name: Set up module map for XCFramework
         run: |
           mkdir -p generated/include
-          cat > generated/include/module.modulemap << 'MODULEMAP'
-          framework module chordsketchFFI {
-            header "chordsketchFFI.h"
-            export *
-          }
-          MODULEMAP
+          # Use the UniFFI-generated modulemap which correctly declares
+          # `module` (not `framework module`) for the static library and
+          # includes the necessary `use` declarations for the C standard library.
+          cp generated/chordsketchFFI.modulemap generated/include/module.modulemap
           cp generated/chordsketchFFI.h generated/include/
 
       - name: Create XCFramework
