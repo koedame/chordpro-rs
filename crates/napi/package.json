@@ -18,7 +18,10 @@
     "chord",
     "parser",
     "lyrics",
-    "napi-rs"
+    "napi-rs",
+    "node-addon",
+    "n-api",
+    "native"
   ],
   "main": "index.js",
   "types": "index.d.ts",

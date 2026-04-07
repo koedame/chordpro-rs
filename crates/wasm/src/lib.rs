@@ -9,7 +9,9 @@ use wasm_bindgen::prelude::*;
 /// Render options passed from JavaScript.
 #[derive(Deserialize, Default)]
 struct RenderOptions {
-    /// Semitone transposition offset (-12 to +12).
+    /// Semitone transposition offset. Any `i8` value is accepted; the
+    /// renderer reduces modulo 12 internally. (Aligning with the CLI,
+    /// UniFFI bindings, and napi-rs binding behavior — see #1053, #1065.)
     #[serde(default)]
     transpose: i8,
     /// Configuration preset name (e.g., "guitar", "ukulele") or inline
@@ -126,7 +128,8 @@ pub fn render_pdf(input: &str) -> Result<Vec<u8>, JsValue> {
 /// Render ChordPro input as HTML with options.
 ///
 /// `options` is a JavaScript object with optional fields:
-/// - `transpose`: semitone offset (integer, default 0)
+/// - `transpose`: semitone offset (integer in `i8` range; the renderer
+///   reduces modulo 12 internally)
 /// - `config`: preset name ("guitar", "ukulele") or inline RRJSON string
 ///
 /// # Errors
@@ -240,18 +243,19 @@ mod tests {
         assert!(!v.is_empty());
     }
 
-    // resolve_config delegates to Config::preset and Config::parse.
-    // We test the underlying logic here since JsValue is not available
-    // on native targets.
+    // The following tests cover the chordsketch-core APIs that
+    // `resolve_config` delegates to (Config::preset and Config::parse).
+    // They do NOT exercise resolve_config itself or the JsValue boundary —
+    // those need a wasm-bindgen-test integration test (tracked in #1055).
 
     #[test]
-    fn test_invalid_rrjson_config_parse_fails() {
+    fn config_parse_invalid_rrjson_returns_err() {
         let result = chordsketch_core::config::Config::parse("{ invalid rrjson !!!");
         assert!(result.is_err(), "invalid RRJSON should fail to parse");
     }
 
     #[test]
-    fn test_preset_config_resolves() {
+    fn config_preset_known_and_unknown_names() {
         assert!(
             chordsketch_core::config::Config::preset("guitar").is_some(),
             "guitar preset should exist"
@@ -263,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn test_valid_inline_rrjson_config_parses() {
+    fn config_parse_valid_rrjson_returns_ok() {
         let result =
             chordsketch_core::config::Config::parse(r#"{ "settings": { "transpose": 2 } }"#);
         assert!(result.is_ok(), "valid RRJSON should parse successfully");

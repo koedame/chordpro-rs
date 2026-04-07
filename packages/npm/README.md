@@ -83,7 +83,7 @@ await init();
 import { render_html_with_options } from '@chordsketch/wasm';
 
 const html = render_html_with_options(input, {
-  transpose: 2,        // semitone offset (-12 to +12)
+  transpose: 2,        // semitone offset (any integer; renderer reduces mod 12)
   config: 'ukulele',   // preset name or inline RRJSON config
 });
 ```
@@ -110,7 +110,7 @@ const html = render_html_with_options(input, {
 
 ```ts
 interface RenderOptions {
-  transpose?: number;  // Semitone offset (-12 to +12), default 0
+  transpose?: number;  // Semitone offset (any integer in i8 range; renderer reduces mod 12), default 0
   config?: string;     // Preset name ("guitar", "ukulele") or inline RRJSON
 }
 ```
