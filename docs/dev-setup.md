@@ -17,8 +17,11 @@ Required only when working on `crates/wasm` or the `@chordsketch/wasm` npm
 package (`packages/npm`). Not needed for core/CLI/renderer development.
 
 ```bash
-# wasm-pack: builds the WASM package via wasm-bindgen
-cargo install wasm-pack    # version 0.14.x is what CI uses
+# wasm-pack: builds the WASM package via wasm-bindgen.
+# CI pins this exact version via .github/workflows/npm-publish.yml
+# (WASM_PACK_VERSION: "0.14.0"); install the same version locally to
+# avoid build-output drift between local dev and CI:
+cargo install wasm-pack --version 0.14.0
 ```
 
 Node.js ≥ **22** is required to run the npm package smoke tests. This is

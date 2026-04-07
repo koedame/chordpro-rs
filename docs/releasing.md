@@ -131,6 +131,13 @@ After the release workflow completes and the GitHub Release is published:
    ⚠️ **First-time setup**: if the Docker Hub repo `koedame/chordsketch`
    does not exist yet, create it manually (Public visibility) at
    <https://hub.docker.com/repository/create> before triggering the workflow.
+   ⚠️ **Namespace ownership**: the `docker.io/koedame` namespace is owned by
+   the project maintainer. If ownership is ever lost or the namespace is
+   transferred to a different party, anyone running
+   `docker pull docker.io/koedame/chordsketch:latest` would receive whatever
+   the new owner serves. In that scenario, immediately remove the Docker Hub
+   install instructions from `README.md` and stop referencing
+   `docker.io/koedame/chordsketch` in `readme-smoke.yml`.
 
 3. **npm package** — see Step 7 of the Release Checklist above. CI workflow
    only updates existing packages; first publish of any new `@chordsketch/*`
@@ -138,14 +145,24 @@ After the release workflow completes and the GitHub Release is published:
 
 4. **winget submission** — submit a PR to `microsoft/winget-pkgs`:
    1. The 3 manifest files live in `packaging/winget/`. Update
-      `PackageVersion` and `InstallerSha256` to match the new release. The
-      sha256 comes from the Windows zip:
+      `PackageVersion` and `InstallerSha256` to match the new release. Get
+      the Windows zip directly from the GitHub Release (do **not** rely on a
+      local copy that might have been tampered with), then compute the
+      sha256:
       ```bash
-      sha256sum chordsketch-vX.Y.Z-x86_64-pc-windows-msvc.zip | tr a-f A-F
+      gh release download vX.Y.Z -R koedame/chordsketch \
+        -p chordsketch-vX.Y.Z-x86_64-pc-windows-msvc.zip
+      sha256sum chordsketch-vX.Y.Z-x86_64-pc-windows-msvc.zip | awk '{print toupper($1)}'
       ```
-   2. Fork `microsoft/winget-pkgs` (or use the existing fork) and clone with
-      sparse checkout — the repo has 500K+ files and full clone exhausts
-      filesystem inodes:
+      If `release.yml` ever starts publishing a checksums file alongside the
+      archives, cross-check the value above against that file before
+      committing it to the manifest.
+   2. Fork `microsoft/winget-pkgs` (or use the existing fork). **Before
+      branching, sync the fork's `master` with `microsoft/winget-pkgs:master`
+      and skim `git log` for unexpected commits** — winget-pkgs is a
+      high-traffic upstream and a stale or hijacked fork can quietly publish
+      surprising history into your PR. Then clone with sparse checkout — the
+      repo has 500K+ files and full clone exhausts filesystem inodes:
       ```bash
       git clone --filter=blob:none --no-checkout --depth 1 \
         https://github.com/<your-fork>/winget-pkgs.git
@@ -163,6 +180,9 @@ After the release workflow completes and the GitHub Release is published:
       git remote set-url origin https://github.com/<your-fork>/winget-pkgs.git
       gh auth setup-git
       ```
+      Note: `gh auth setup-git` writes credential-helper entries to your
+      global `~/.gitconfig`. On a shared maintainer machine, scope it
+      narrowly with `gh auth setup-git --hostname github.com`.
    5. Open the PR with `gh pr create -R microsoft/winget-pkgs --base master`.
    6. ⚠️ **First-time contributor**: a `microsoft-github-policy-service` bot
       will request CLA agreement via a comment. Reply on the PR with
@@ -176,10 +196,14 @@ After the release workflow completes and the GitHub Release is published:
 
 5. **Manual verification** — confirm every documented install path works for
    end users. Easiest: trigger `readme-smoke.yml` via `workflow_dispatch` and
-   confirm every job is green:
+   confirm every job is green. `gh workflow run` does not print the run id,
+   so resolve it from the workflow's most recent run before passing it to
+   `gh run watch`:
    ```bash
    gh workflow run readme-smoke.yml -R koedame/chordsketch
-   gh run watch <run-id> -R koedame/chordsketch
+   RUN_ID=$(gh run list --workflow=readme-smoke.yml -R koedame/chordsketch \
+     --limit 1 --json databaseId --jq '.[0].databaseId')
+   gh run watch "$RUN_ID" -R koedame/chordsketch
    ```
    Spot-check from a clean machine:
    - `cargo install chordsketch && chordsketch --version`
@@ -198,13 +222,42 @@ After the release workflow completes and the GitHub Release is published:
 | `TAP_GITHUB_TOKEN` | `contents:write` on `koedame/homebrew-tap` and `koedame/scoop-bucket` | Push updated formulae/manifests after release |
 | `DOCKERHUB_USERNAME` | string | Docker Hub username under which images are pushed (currently `koedame`) |
 | `DOCKERHUB_TOKEN` | Docker Hub Personal Access Token, "Read & Write" | Authenticate `docker push` against `docker.io/koedame/chordsketch` from `docker.yml` |
-| `NPM_TOKEN` | npm Granular Access Token, scope `@chordsketch` Read & Write, org `chordsketch` Read & Write | Authenticate `npm publish` against the `@chordsketch/*` scope from `npm-publish.yml`. ⚠️ See "npm publish via CI" quirk below |
+| `NPM_TOKEN` | npm Granular Access Token, scope `@chordsketch` Read & Write, org `chordsketch` Read & Write | Authenticate `npm publish` against the `@chordsketch/*` scope from `npm-publish.yml`. The org-level grant is the **empirically working** configuration, not necessarily the minimal one — see "npm publish via CI" quirk below for what we tried. Narrowing the scope is an open question; if you experiment with it, file a follow-up issue and link results back here. ⚠️ See "npm publish via CI" quirk below |
 | `GITHUB_TOKEN` | provided automatically | Used by `docker.yml` to push to GHCR, by `release.yml` to upload assets, by `npm-publish.yml` checkout |
 
 If any of these secrets are missing or wrong, the corresponding distribution
 channel will silently break. The `report-failure` job in `readme-smoke.yml`
 auto-creates an issue when smoke jobs fail (managed via the rolling tracking
 issue titled "README install smoke tests are failing").
+
+### Secret rotation
+
+None of the tokens above are infinite-lived. A token that silently expires
+mid-release surfaces the breakage at the worst possible time. Treat the
+following as the rotation policy:
+
+| Secret | Target cadence | Rotation UI |
+|--------|----------------|-------------|
+| `NPM_TOKEN` | Every 90 days, or immediately if the value has ever been pasted into chat / shared logs | <https://www.npmjs.com/settings/~/tokens> (sign in as the npm account that owns `@chordsketch`) |
+| `DOCKERHUB_TOKEN` | Every 90 days | <https://hub.docker.com/settings/security> |
+| `TAP_GITHUB_TOKEN` | Every 90 days, or whenever the issuing GitHub account changes 2FA / recovery setup | <https://github.com/settings/tokens> |
+| `DOCKERHUB_USERNAME` | Only if the Docker Hub namespace owner changes | n/a (string, not a credential) |
+| `GITHUB_TOKEN` | Provided automatically per workflow run; no rotation needed | n/a |
+
+Procedure for any rotation:
+
+1. Issue the new token with the **same scope** documented in the Required
+   Secrets table above.
+2. Update the repo secret: `gh secret set <NAME> -R koedame/chordsketch`.
+3. Revoke the old token in the issuing UI.
+4. Trigger a verification run and confirm the affected smoke job is green:
+   ```bash
+   gh workflow run readme-smoke.yml -R koedame/chordsketch
+   ```
+
+If a token must be rotated out-of-band (e.g., suspected leak), do steps 1-3
+in the order listed — do **not** revoke before updating the secret, or the
+next release will fail until you set the new value.
 
 ## Known Operational Quirks
 
@@ -228,12 +281,13 @@ read+write on `@chordsketch`** AND **read+write on the `chordsketch` org**.
 The exact mechanism is unclear (likely a Granular token permission gap not
 exposed in the npm UI).
 
-**Workaround** — manual local publish from the `unchidev` machine:
+**Workaround** — manual local publish from a machine authenticated to npm
+as the account that owns the `@chordsketch` scope:
 
 ```bash
 cd packages/npm
 npm run build           # builds web/ + node/ subdirs (dual package)
-npm whoami              # must print: unchidev
+npm whoami              # must print the npm account that owns @chordsketch
 # if not logged in: npm login (interactive 2FA OTP via browser)
 npm publish
 npm view @chordsketch/wasm version    # verify
@@ -270,7 +324,7 @@ every new package.
 
 ### winget-pkgs PRs need a CLA agreement on first contribution
 
-The first time `unchidev` (or any contributor) opens a PR to
+The first time the submitting GitHub account opens a PR to
 `microsoft/winget-pkgs`, the `microsoft-github-policy-service` bot will post
 a comment requesting Contributor License Agreement signing. The CLA must be
 agreed by replying to the PR with:
