@@ -6,6 +6,14 @@
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
+/// Set up the panic hook on module instantiation so any unexpected panic
+/// in the renderer surfaces in the JavaScript console with a Rust
+/// backtrace instead of an opaque `unreachable executed`. See #1052.
+#[wasm_bindgen(start)]
+pub fn start() {
+    console_error_panic_hook::set_once();
+}
+
 /// Render options passed from JavaScript.
 #[derive(Deserialize, Default)]
 struct RenderOptions {

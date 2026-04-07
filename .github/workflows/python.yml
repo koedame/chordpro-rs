@@ -165,6 +165,15 @@ jobs:
     needs: [build-sdist, build-wheels, test]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    # Uses PyPI Trusted Publishing via OIDC — no API token needed.
+    # `id-token: write` exposes ACTIONS_ID_TOKEN_REQUEST_* env vars to the
+    # job, which `maturin upload` automatically picks up to obtain a short-
+    # lived OIDC token from PyPI. Do NOT add a `MATURIN_PYPI_TOKEN` secret
+    # here — that would silently downgrade us back to long-lived credentials.
+    # The trusted publisher must be pre-registered on
+    #   https://pypi.org/manage/project/chordsketch/settings/publishing/
+    # for this repo + workflow + environment, otherwise the very first
+    # publish fails with 403 Forbidden. See #1068.
     permissions:
       contents: read
       id-token: write
