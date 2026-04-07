@@ -2,20 +2,34 @@
 
 ## Automated Flow (default)
 
-PRs are reviewed and merged automatically via CI:
+PRs are reviewed automatically; **merging is always a human action**.
 
 1. **PR created** — author opens PR with code and tests.
-2. **CI runs** (cargo fmt --check, cargo clippy -- -D warnings, cargo test).
+2. **CI runs** (cargo fmt --check, cargo clippy -- -D warnings, cargo test, plus
+   workflow-specific smoke jobs).
 3. **Auto-review** — on CI success, `claude-review.yml` requests a Claude review
    with severity classification. Claude performs both code review and security review.
 4. **Blocking findings** (High, Medium) — Claude pushes fix commits directly.
    CI re-runs, then a **delta review** examines only the fix commits.
 5. **Non-blocking findings** (Low, Nit) — Claude creates GitHub Issues. These do
    **not** block the PR from merging.
-6. **Auto-merge** — when there are no blocking findings, Claude enables auto-merge
-   (`gh pr merge --squash --auto`). The PR merges once CI passes on the final commit.
+6. **Ready for human merge** — when there are no blocking findings, Claude posts a
+   single summary comment stating "Ready for human merge." Bots **never** run
+   `gh pr merge` in this repo. A human inspects the full check rollup (not just
+   the required checks listed in branch protection) and performs the squash merge.
 7. **Safety cap** — after 3 auto-review iterations, the process stops and waits for
    human intervention.
+
+### Why bots do not merge
+
+A previous iteration of this workflow had bots run `gh pr merge --squash --auto` after
+review. This was removed after a PR was silently merged with two `README Install Smoke
+Tests` jobs in FAILURE state, because those jobs were not in the
+`required_status_checks.contexts` list of branch protection. `gh pr merge --auto` only
+waits for *required* checks, so any check not in the explicit list is ignored. The
+combination of "required-list drift" and "no human gate" produced a silent
+regression in coverage. Removing bot-driven merging closes the second hole and
+turns the first one into "PR sits open with red checks until a human looks."
 
 ## Manual Flow (optional)
 

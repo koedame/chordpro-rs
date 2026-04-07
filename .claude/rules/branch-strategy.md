@@ -10,4 +10,4 @@
 
 - Dependabot branches (`dependabot/...`) are managed by GitHub's Dependabot service.
 - These do NOT follow the `issue-{N}-{slug}` naming convention — this is expected.
-- Claude Code automatically reviews and merges these via `.github/workflows/claude-dependabot.yml`.
+- Claude Code automatically reviews these via `.github/workflows/claude-dependabot.yml` and approves the PR if everything passes. **Merging is always a human action** — see [Pull Request Workflow](pr-workflow.md).

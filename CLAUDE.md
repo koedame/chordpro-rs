@@ -94,16 +94,18 @@ High-level phases:
 
 ## Merge Policy
 
-PRs are automatically reviewed and merged:
+PRs are automatically reviewed; **merging is always a human action**.
 
-1. **PR created** — CI runs (fmt, clippy, test)
+1. **PR created** — CI runs (fmt, clippy, test, plus workflow-specific smoke jobs)
 2. **Auto-review** — Claude reviews with severity classification on CI success
 3. **Blocking findings** (High/Medium) — Claude pushes fix commits, delta review follows
 4. **Non-blocking findings** (Low/Nit) — issues created, merge not blocked
-5. **Auto-merge** — enabled when no blocking findings remain
+5. **Ready for human merge** — when there are no blocking findings, Claude posts a
+   "Ready for human merge" comment. A human inspects the **full check rollup** (not
+   just the required checks listed in branch protection) and performs the squash merge.
 
-All PRs are **squash-merged**. Branch protection requires CI to pass on HEAD.
-See `.claude/rules/pr-workflow.md` for full details.
+All PRs are **squash-merged**. Branch protection requires CI to pass on HEAD. Bots do
+NOT run `gh pr merge` — see `.claude/rules/pr-workflow.md` for the rationale.
 
 ## Parallel Development with tmux
 

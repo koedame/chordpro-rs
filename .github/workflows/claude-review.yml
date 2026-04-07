@@ -113,9 +113,9 @@ jobs:
                 '',
                 '## Actions',
                 '',
-                '- **Blocking findings (High/Medium):** Push fix commits directly to the PR branch. Do NOT enable auto-merge.',
+                '- **Blocking findings (High/Medium):** Push fix commits directly to the PR branch. Do NOT run `gh pr merge` — a human will review the check rollup and merge after the fix lands.',
                 '- **Non-blocking findings (Low/Nit):** Create a GitHub issue for each finding. These do NOT block merge.',
-                '- **No blocking findings:** Enable auto-merge with `gh pr merge --squash --auto`.',
+                '- **No blocking findings:** Post a single summary comment listing what was checked and explicitly state "Ready for human merge." Do NOT run `gh pr merge`. Bots do not merge in this repo — a human inspects the check rollup and performs the squash merge.',
               ].join('\n'),
             });
 

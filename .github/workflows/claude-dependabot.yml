@@ -47,8 +47,8 @@ jobs:
                - If not fixable, leave a comment explaining the issue and request changes
             6. **If everything passes**:
                - Leave a review comment summarizing what you checked
-               - Run `gh pr review ${{ github.event.pull_request.number }} --approve --body "Automated Claude Code review: CI passed, no breaking changes or security issues detected."`
-               - Run `gh pr merge ${{ github.event.pull_request.number }} --squash --auto`
+               - Run `gh pr review ${{ github.event.pull_request.number }} --approve --body "Automated Claude Code review: CI passed, no breaking changes or security issues detected. Ready for human merge."`
+               - Do NOT run `gh pr merge`. Bots do not merge in this repo — a human inspects the check rollup and performs the squash merge.
 
             ## Important
             - Follow all rules in CLAUDE.md and .claude/rules/
