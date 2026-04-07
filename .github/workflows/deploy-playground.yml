@@ -38,16 +38,20 @@ jobs:
         with:
           tool: wasm-pack@${{ env.WASM_PACK_VERSION }}
 
-      - name: Build WASM
-        run: wasm-pack build crates/wasm --release --target web
-
-      - name: Copy WASM artifacts to npm package
-        run: cp crates/wasm/pkg/chordsketch_wasm* packages/npm/
-
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+
+      - name: Build @chordsketch/wasm (dual-package layout)
+        # Use the canonical build script (`packages/npm/scripts/build.mjs`,
+        # invoked via `npm run build`). It produces the dual-package layout
+        # (web/ ESM + node/ CommonJS, each with its own `package.json`) that
+        # the playground imports from at `packages/playground/src/main.ts`.
+        # This is the same script that local development uses, and its
+        # output is mirrored byte-for-byte by `npm-publish.yml`.
+        run: npm run build
+        working-directory: packages/npm
 
       - name: Install playground dependencies
         run: npm ci
