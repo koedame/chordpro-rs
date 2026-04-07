@@ -76,6 +76,61 @@ jobs:
         run: |
           napi build --release --manifest-path Cargo.toml --target ${{ matrix.target }}
 
+      - name: Smoke test the built addon (host target only)
+        # Load the just-built .node file into the runner's Node.js and call
+        # every public API surface end-to-end. The unit tests in
+        # `crates/napi/src/lib.rs` only exercise the underlying chordsketch
+        # crates, not the napi wrapper functions, because napi::Error /
+        # Buffer need the Node.js runtime for linking. CI is the only place
+        # we can exercise the actual #[napi] -> JsValue boundary, so do it
+        # here against the freshly-built artifact. See #1066.
+        #
+        # Cross-compiled targets (aarch64-linux from x86_64 runner) cannot
+        # `require()` their `.node` file on the build host, so this step is
+        # gated to host-native targets only. The published gem still gets
+        # exercised end-to-end on every supported platform via readme-smoke.
+        if: |
+          (matrix.os == 'ubuntu-latest' && matrix.target == 'x86_64-unknown-linux-gnu') ||
+          (matrix.os == 'macos-latest' && matrix.target == 'aarch64-apple-darwin') ||
+          (matrix.os == 'windows-latest' && matrix.target == 'x86_64-pc-windows-msvc')
+        working-directory: crates/napi
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            const files = fs.readdirSync(".").filter(f => f.endsWith(".node"));
+            if (files.length !== 1) {
+              throw new Error("expected exactly 1 .node file, found " + files.length + ": " + files.join(","));
+            }
+            const m = require("./" + files[0]);
+            const v = m.version();
+            if (!v || typeof v !== "string") throw new Error("version() returned: " + JSON.stringify(v));
+            console.log("version:", v);
+            const text = m.renderText("{title:Test}\n[C]Hello");
+            if (!text.includes("Test")) throw new Error("renderText output missing title");
+            console.log("renderText: OK");
+            const html = m.renderHtml("{title:Test}\n[C]Hello");
+            if (!html.includes("Test")) throw new Error("renderHtml output missing title");
+            console.log("renderHtml: OK");
+            const pdf = m.renderPdf("{title:Test}\n[C]Hello");
+            if (!Buffer.isBuffer(pdf)) throw new Error("renderPdf did not return a Buffer");
+            if (!pdf.toString("utf8", 0, 4).startsWith("%PDF")) throw new Error("renderPdf output missing PDF header");
+            console.log("renderPdf: OK");
+            const optsText = m.renderTextWithOptions("{title:Test}\n[C]Hello", { transpose: 2 });
+            if (!optsText.includes("Test")) throw new Error("renderTextWithOptions output missing title");
+            console.log("renderTextWithOptions: OK");
+            const optsHtml = m.renderHtmlWithOptions("{title:Test}\n[C]Hello", { config: "guitar" });
+            if (!optsHtml.includes("Test")) throw new Error("renderHtmlWithOptions output missing title");
+            console.log("renderHtmlWithOptions: OK");
+            const errs = m.validate("{title:T}\n[C]X");
+            if (!Array.isArray(errs) || errs.length !== 0) throw new Error("validate(valid) returned " + JSON.stringify(errs));
+            console.log("validate (valid): OK");
+            const errs2 = m.validate("{title:T}\n[G");
+            if (!Array.isArray(errs2) || errs2.length === 0) throw new Error("validate(broken) returned " + JSON.stringify(errs2));
+            console.log("validate (broken): OK");
+            console.log("All smoke tests passed!");
+          '
+
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

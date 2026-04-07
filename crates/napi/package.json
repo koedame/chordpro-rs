@@ -45,6 +45,8 @@
   },
   "scripts": {
     "build": "napi build --release --manifest-path Cargo.toml",
-    "build:debug": "napi build --manifest-path Cargo.toml"
+    "build:debug": "napi build --manifest-path Cargo.toml",
+    "prepack": "napi build --release --manifest-path Cargo.toml",
+    "prepublishOnly": "napi build --release --manifest-path Cargo.toml"
   }
 }
