@@ -201,6 +201,10 @@ After the release workflow completes and the GitHub Release is published:
    `gh run watch`:
    ```bash
    gh workflow run readme-smoke.yml -R koedame/chordsketch
+   # The freshly triggered run can take 2-5 seconds to appear in the list
+   # API. Without this pause, `gh run list --limit 1` can return the
+   # *previous* run's id and you'd watch an already-completed run.
+   sleep 5
    RUN_ID=$(gh run list --workflow=readme-smoke.yml -R koedame/chordsketch \
      --limit 1 --json databaseId --jq '.[0].databaseId')
    gh run watch "$RUN_ID" -R koedame/chordsketch
@@ -222,7 +226,7 @@ After the release workflow completes and the GitHub Release is published:
 | `TAP_GITHUB_TOKEN` | `contents:write` on `koedame/homebrew-tap` and `koedame/scoop-bucket` | Push updated formulae/manifests after release |
 | `DOCKERHUB_USERNAME` | string | Docker Hub username under which images are pushed (currently `koedame`) |
 | `DOCKERHUB_TOKEN` | Docker Hub Personal Access Token, "Read & Write" | Authenticate `docker push` against `docker.io/koedame/chordsketch` from `docker.yml` |
-| `NPM_TOKEN` | npm Granular Access Token, scope `@chordsketch` Read & Write, org `chordsketch` Read & Write | Authenticate `npm publish` against the `@chordsketch/*` scope from `npm-publish.yml`. The org-level grant is the **empirically working** configuration, not necessarily the minimal one — see "npm publish via CI" quirk below for what we tried. Narrowing the scope is an open question; if you experiment with it, file a follow-up issue and link results back here. ⚠️ See "npm publish via CI" quirk below |
+| `NPM_TOKEN` | npm Granular Access Token, scope `@chordsketch` Read & Write, org `chordsketch` Read & Write | ⚠️ Authenticate `npm publish` against the `@chordsketch/*` scope from `npm-publish.yml`. The org-level grant is the **empirically working** configuration, not necessarily the minimal one — see "npm publish via CI" quirk below for what we tried. Narrowing the scope is an open question; if you experiment with it, file a follow-up issue and link results back here. |
 | `GITHUB_TOKEN` | provided automatically | Used by `docker.yml` to push to GHCR, by `release.yml` to upload assets, by `npm-publish.yml` checkout |
 
 If any of these secrets are missing or wrong, the corresponding distribution
