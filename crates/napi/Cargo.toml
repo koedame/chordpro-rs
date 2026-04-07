@@ -19,8 +19,13 @@ chordsketch-core = { version = "0.1.0", path = "../core" }
 chordsketch-render-text = { version = "0.1.0", path = "../render-text" }
 chordsketch-render-html = { version = "0.1.0", path = "../render-html" }
 chordsketch-render-pdf = { version = "0.1.0", path = "../render-pdf" }
-napi = { version = "3", features = ["napi9"] }
-napi-derive = "3"
+# `napi` and `napi-derive` are pinned to exact patch versions because the
+# `#[napi]` macro emits ABI-sensitive C glue against the Node-API ABI.
+# Caret ranges (`"3"`) would let a 3.5 release land via a casual `cargo
+# update` with potentially incompatible glue. Bump intentionally via
+# Dependabot or a tracked PR. See #1078.
+napi = { version = "=3.4.0", features = ["napi9"] }
+napi-derive = "=3.3.0"
 
 [build-dependencies]
-napi-build = "2"
+napi-build = "=2.2.4"

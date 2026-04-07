@@ -19,8 +19,14 @@ chordsketch-core = { version = "0.1.0", path = "../core" }
 chordsketch-render-text = { version = "0.1.0", path = "../render-text" }
 chordsketch-render-html = { version = "0.1.0", path = "../render-html" }
 chordsketch-render-pdf = { version = "0.1.0", path = "../render-pdf" }
-uniffi = { version = "0.31", features = ["cli"] }
+# `uniffi` is pinned to an exact patch version because the .udl + scaffolding
+# generated layout is part of the FFI surface — Python/Swift/Kotlin/Ruby
+# bindings depend on the binary being byte-compatible with the bindgen output.
+# Caret ranges (`"0.31"`) would let a patch with a layout change land via a
+# casual `cargo update` and silently break consumers. Bump intentionally via
+# Dependabot or a tracked PR. See #1078.
+uniffi = { version = "=0.31.0", features = ["cli"] }
 thiserror = "2"
 
 [build-dependencies]
-uniffi = { version = "0.31", features = ["build"] }
+uniffi = { version = "=0.31.0", features = ["build"] }

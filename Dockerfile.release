@@ -2,7 +2,10 @@
 # Expects a pre-built musl binary at ./chordsketch-${TARGETARCH}.
 # Used by .github/workflows/docker.yml.
 
-FROM alpine:3
+# Pinned to a specific Alpine point release (was floating `alpine:3`) so a
+# future Alpine 3.x change to `adduser` flags or musl ABI cannot silently
+# break the docker pipeline. Bump intentionally via Dependabot. See #1070.
+FROM alpine:3.23.3
 
 RUN adduser -D -u 1000 chordsketch
 

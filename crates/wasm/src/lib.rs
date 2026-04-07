@@ -87,13 +87,15 @@ fn do_render_bytes(
     Ok(render_fn(&songs, transpose, config))
 }
 
-/// Render ChordPro input as HTML.
+/// Render ChordPro input as HTML using default configuration.
 ///
-/// Returns the rendered HTML string.
+/// Returns the rendered HTML string. Use [`render_html_with_options`]
+/// to pass a config preset or transposition.
 ///
-/// # Errors
-///
-/// Returns a `JsValue` error string if the input contains no songs.
+/// The return type is `Result<String, JsValue>` for consistency with
+/// the `*_with_options` variants — this function itself never errors
+/// because the lenient parser always produces at least one song
+/// (see [`do_render_string`]).
 #[wasm_bindgen]
 pub fn render_html(input: &str) -> Result<String, JsValue> {
     do_render_string(
@@ -104,13 +106,15 @@ pub fn render_html(input: &str) -> Result<String, JsValue> {
     )
 }
 
-/// Render ChordPro input as plain text.
+/// Render ChordPro input as plain text using default configuration.
 ///
-/// Returns the rendered text string.
+/// Returns the rendered text string. Use [`render_text_with_options`]
+/// to pass a config preset or transposition.
 ///
-/// # Errors
-///
-/// Returns a `JsValue` error string if the input contains no songs.
+/// The return type is `Result<String, JsValue>` for consistency with
+/// the `*_with_options` variants — this function itself never errors
+/// because the lenient parser always produces at least one song
+/// (see [`do_render_string`]).
 #[wasm_bindgen]
 pub fn render_text(input: &str) -> Result<String, JsValue> {
     do_render_string(
@@ -121,13 +125,15 @@ pub fn render_text(input: &str) -> Result<String, JsValue> {
     )
 }
 
-/// Render ChordPro input as a PDF document.
+/// Render ChordPro input as a PDF document using default configuration.
 ///
-/// Returns the PDF as a `Uint8Array`.
+/// Returns the PDF as a `Uint8Array`. Use [`render_pdf_with_options`]
+/// to pass a config preset or transposition.
 ///
-/// # Errors
-///
-/// Returns a `JsValue` error string if the input contains no songs.
+/// The return type is `Result<Vec<u8>, JsValue>` for consistency with
+/// the `*_with_options` variants — this function itself never errors
+/// because the lenient parser always produces at least one song
+/// (see [`do_render_bytes`]).
 #[wasm_bindgen]
 pub fn render_pdf(input: &str) -> Result<Vec<u8>, JsValue> {
     do_render_bytes(
