@@ -37,7 +37,16 @@ module Chordsketch
             "ChordSketch supports x86_64/aarch64 Linux, macOS, and x86_64 Windows."
     end
 
-    # Pre-load the native library so UniFFI-generated ffi_lib calls find it.
+    # Resolve and validate the absolute path to the platform-specific
+    # native library, then expose it as `Chordsketch::NATIVE_LIB_PATH`
+    # so the UniFFI-generated bindings can pass it to `ffi_lib`.
+    #
+    # The previous approach of pre-loading via `FFI::DynamicLibrary.open`
+    # with `RTLD_GLOBAL` was unreliable: ffi gem 1.17+ explicitly opens
+    # its own handle by name in `ffi_lib` and ignores already-loaded
+    # global handles, so the bindings would fail with "Could not open
+    # library 'chordsketch_ffi'" even after a successful pre-load. See
+    # #1082.
     def self.load!
       platform_dir = detect_platform_dir
       lib_dir = File.join(File.dirname(__FILE__), platform_dir)
@@ -53,15 +62,14 @@ module Chordsketch
               "    --language ruby --out-dir packages/ruby/lib/"
       end
 
-      FFI::DynamicLibrary.open(
-        lib_path,
-        FFI::DynamicLibrary::RTLD_LAZY | FFI::DynamicLibrary::RTLD_GLOBAL
-      )
+      Chordsketch.const_set(:NATIVE_LIB_PATH, lib_path)
     end
   end
 end
 
 Chordsketch::NativeLoader.load!
 
-# Load the UniFFI-generated bindings (the pre-loaded library will be found).
+# Load the UniFFI-generated bindings. Their `ffi_lib` line is rewritten
+# to reference `Chordsketch::NATIVE_LIB_PATH` (set above) by a sed step
+# in the gem build pipeline. See `.github/workflows/ruby.yml` and #1082.
 require_relative "chordsketch_uniffi"

@@ -96,12 +96,62 @@ jobs:
         run: cargo build -p chordsketch-ffi
 
       - name: Generate Ruby bindings
+        # Generating directly into `packages/ruby/lib/` overwrites the
+        # committed platform-aware loader at `packages/ruby/lib/chordsketch.rb`
+        # because UniFFI names the file after the .udl namespace
+        # (also `chordsketch`). Generate into a temporary directory and
+        # move only the binding file out as `chordsketch_uniffi.rb`.
+        #
+        # Then rewrite the `ffi_lib 'chordsketch_ffi'` line to use the
+        # absolute path exposed by the loader as `Chordsketch::NATIVE_LIB_PATH`.
+        # ffi gem 1.17+ ignores RTLD_GLOBAL pre-loaded handles when looking
+        # up libraries by bare name, so the previous loader's
+        # `FFI::DynamicLibrary.open(..., RTLD_GLOBAL)` approach didn't work.
+        # See #1082 for the full root-cause analysis.
         run: |
+          mkdir -p .uniffi-tmp
           cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
             --library target/debug/libchordsketch_ffi.so \
             --language ruby \
-            --out-dir packages/ruby/lib/
-          mv packages/ruby/lib/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
+            --out-dir .uniffi-tmp/
+          # Use Python to do the rewrite (more robust than sed across
+          # subtle UniFFI output-format changes — handles whitespace and
+          # quote-style variation, and prints the matched line for clarity).
+          python3 - <<'PYTHON'
+          import re, sys
+          path = ".uniffi-tmp/chordsketch.rb"
+          with open(path) as f:
+              content = f.read()
+          # Match a line whose first non-whitespace token is `ffi_lib`
+          # followed by something containing `chordsketch_ffi`. Tolerant
+          # of single/double quotes, optional `.so`/etc suffix, and any
+          # indentation.
+          pat = re.compile(
+              r'^([ \t]*)ffi_lib[ \t]+[\'"][^\'"]*chordsketch_ffi[^\'"]*[\'"][ \t]*$',
+              re.MULTILINE,
+          )
+          m = pat.search(content)
+          if not m:
+              # Print the surrounding lines so we can update the regex
+              # if UniFFI's output format ever changes.
+              sys.stderr.write(
+                  "ERROR: could not find ffi_lib line for chordsketch_ffi.\n"
+                  "Lines mentioning ffi_lib in the generated file:\n"
+              )
+              for i, line in enumerate(content.splitlines(), 1):
+                  if "ffi_lib" in line:
+                      sys.stderr.write(f"  {i}: {line!r}\n")
+              sys.exit(1)
+          new_content, n = pat.subn(r"\1ffi_lib Chordsketch::NATIVE_LIB_PATH", content)
+          if n != 1:
+              sys.stderr.write(f"ERROR: expected exactly 1 ffi_lib substitution, got {n}\n")
+              sys.exit(1)
+          with open(path, "w") as f:
+              f.write(new_content)
+          print(f"OK: rewrote 1 ffi_lib line in {path} (matched line was: {m.group(0)!r})")
+          PYTHON
+          mv .uniffi-tmp/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
+          rm -rf .uniffi-tmp/
 
       - name: Download native library (linux-x86-64)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -137,12 +187,41 @@ jobs:
         run: cargo build -p chordsketch-ffi
 
       - name: Generate Ruby bindings
+        # See note on the same step in the generate-and-test job above —
+        # generate into a temp dir and rewrite the ffi_lib line to use
+        # the absolute path resolved by the loader. #1082.
         run: |
+          mkdir -p .uniffi-tmp
           cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
             --library target/debug/libchordsketch_ffi.so \
             --language ruby \
-            --out-dir packages/ruby/lib/
-          mv packages/ruby/lib/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
+            --out-dir .uniffi-tmp/
+          python3 - <<'PYTHON'
+          import re, sys
+          path = ".uniffi-tmp/chordsketch.rb"
+          with open(path) as f:
+              content = f.read()
+          pat = re.compile(
+              r'^([ \t]*)ffi_lib[ \t]+[\'"][^\'"]*chordsketch_ffi[^\'"]*[\'"][ \t]*$',
+              re.MULTILINE,
+          )
+          m = pat.search(content)
+          if not m:
+              sys.stderr.write("ERROR: could not find ffi_lib line for chordsketch_ffi.\n")
+              for i, line in enumerate(content.splitlines(), 1):
+                  if "ffi_lib" in line:
+                      sys.stderr.write(f"  {i}: {line!r}\n")
+              sys.exit(1)
+          new_content, n = pat.subn(r"\1ffi_lib Chordsketch::NATIVE_LIB_PATH", content)
+          if n != 1:
+              sys.stderr.write(f"ERROR: expected exactly 1 ffi_lib substitution, got {n}\n")
+              sys.exit(1)
+          with open(path, "w") as f:
+              f.write(new_content)
+          print(f"OK: rewrote 1 ffi_lib line in {path}")
+          PYTHON
+          mv .uniffi-tmp/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
+          rm -rf .uniffi-tmp/
 
       - name: Download all native libraries
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
