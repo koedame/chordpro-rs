@@ -96,12 +96,19 @@ jobs:
         run: cargo build -p chordsketch-ffi
 
       - name: Generate Ruby bindings
+        # Generate to a temporary directory and move only the UniFFI-produced
+        # `chordsketch.rb` out as `chordsketch_uniffi.rb`. Generating directly
+        # into `packages/ruby/lib/` overwrites the committed platform-aware
+        # loader at `packages/ruby/lib/chordsketch.rb` (UniFFI names the file
+        # after the .udl namespace, which is also `chordsketch`). See #1082.
         run: |
+          mkdir -p .uniffi-tmp
           cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
             --library target/debug/libchordsketch_ffi.so \
             --language ruby \
-            --out-dir packages/ruby/lib/
-          mv packages/ruby/lib/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
+            --out-dir .uniffi-tmp/
+          mv .uniffi-tmp/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
+          rm -rf .uniffi-tmp/
 
       - name: Download native library (linux-x86-64)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -137,12 +144,17 @@ jobs:
         run: cargo build -p chordsketch-ffi
 
       - name: Generate Ruby bindings
+        # See note on the same step in the generate-and-test job above —
+        # generating into packages/ruby/lib/ would overwrite the committed
+        # loader at chordsketch.rb. Use a temp dir instead. See #1082.
         run: |
+          mkdir -p .uniffi-tmp
           cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
             --library target/debug/libchordsketch_ffi.so \
             --language ruby \
-            --out-dir packages/ruby/lib/
-          mv packages/ruby/lib/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
+            --out-dir .uniffi-tmp/
+          mv .uniffi-tmp/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
+          rm -rf .uniffi-tmp/
 
       - name: Download all native libraries
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
