@@ -1,15 +1,26 @@
 {
   "name": "@chordsketch/wasm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "ChordPro parser and renderer compiled to WebAssembly",
   "license": "MIT",
   "type": "module",
-  "main": "chordsketch_wasm.js",
-  "types": "chordsketch_wasm.d.ts",
+  "main": "./node/chordsketch_wasm.js",
+  "browser": "./web/chordsketch_wasm.js",
+  "types": "./web/chordsketch_wasm.d.ts",
   "exports": {
     ".": {
-      "import": "./chordsketch_wasm.js",
-      "types": "./chordsketch_wasm.d.ts"
+      "node": {
+        "types": "./node/chordsketch_wasm.d.ts",
+        "default": "./node/chordsketch_wasm.js"
+      },
+      "browser": {
+        "types": "./web/chordsketch_wasm.d.ts",
+        "default": "./web/chordsketch_wasm.js"
+      },
+      "default": {
+        "types": "./web/chordsketch_wasm.d.ts",
+        "default": "./web/chordsketch_wasm.js"
+      }
     }
   },
   "repository": {
@@ -28,17 +39,23 @@
     "webassembly"
   ],
   "files": [
-    "chordsketch_wasm.js",
-    "chordsketch_wasm.d.ts",
-    "chordsketch_wasm_bg.wasm",
-    "chordsketch_wasm_bg.wasm.d.ts",
-    "snippets/"
+    "node/package.json",
+    "node/chordsketch_wasm.js",
+    "node/chordsketch_wasm.d.ts",
+    "node/chordsketch_wasm_bg.wasm",
+    "node/chordsketch_wasm_bg.wasm.d.ts",
+    "web/package.json",
+    "web/chordsketch_wasm.js",
+    "web/chordsketch_wasm.d.ts",
+    "web/chordsketch_wasm_bg.wasm",
+    "web/chordsketch_wasm_bg.wasm.d.ts"
   ],
   "scripts": {
-    "build": "wasm-pack build ../../crates/wasm --target web && cp ../../crates/wasm/pkg/chordsketch_wasm* . && cp -r ../../crates/wasm/pkg/snippets . 2>/dev/null || true"
+    "build": "wasm-pack build ../../crates/wasm --release --target web --out-dir ../../packages/npm/web && wasm-pack build ../../crates/wasm --release --target nodejs --out-dir ../../packages/npm/node && node -e \"require('fs').writeFileSync('web/package.json', JSON.stringify({type:'module'}, null, 2)+'\\n'); require('fs').writeFileSync('node/package.json', JSON.stringify({type:'commonjs'}, null, 2)+'\\n')\""
   },
   "sideEffects": [
-    "./chordsketch_wasm.js"
+    "./node/chordsketch_wasm.js",
+    "./web/chordsketch_wasm.js"
   ],
   "publishConfig": {
     "access": "public"

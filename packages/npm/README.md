@@ -2,17 +2,30 @@
 
 [ChordSketch](https://github.com/koedame/chordsketch) compiled to
 WebAssembly — parse and render [ChordPro](https://www.chordpro.org/) files
-in the browser or any JavaScript runtime with WASM support.
+in the browser **or** in Node.js with the same package.
+
+> Requires `>=0.1.1`. Version `0.1.0` is published but does not work in
+> Node.js (it tries to `fetch()` the wasm file via `file://`, which Node's
+> undici does not support). `0.1.1` introduced a dual-package layout that
+> resolves to a Node-compatible build automatically.
 
 ## Installation
 
 ```bash
-npm install @chordsketch/wasm
+npm install '@chordsketch/wasm@>=0.1.1'
 ```
 
 ## Usage
 
-### Browser (ES module)
+The package ships **two builds** under one name and uses Node's
+conditional `exports` to pick the right one for the runtime:
+
+| Runtime | Build | Init required? |
+|---|---|---|
+| Browser (Vite, webpack, native ESM) | `wasm-pack --target web` | Yes — `await init()` |
+| Node.js (≥ 20) | `wasm-pack --target nodejs` | No — auto-loaded synchronously |
+
+### Browser
 
 ```js
 import init, {
@@ -22,7 +35,7 @@ import init, {
   version,
 } from '@chordsketch/wasm';
 
-// Initialize the WASM module first
+// Browsers must initialize the WASM module first.
 await init();
 
 const chordpro = `{title: Amazing Grace}
@@ -30,25 +43,44 @@ const chordpro = `{title: Amazing Grace}
 
 [G]Amazing [G7]grace, how [C]sweet the [G]sound`;
 
-// Render to HTML
 const html = render_html(chordpro);
-
-// Render to plain text
 const text = render_text(chordpro);
-
-// Render to PDF (returns Uint8Array)
-const pdfBytes = render_pdf(chordpro);
-
-// Check version
-console.log(version()); // "0.1.0"
+const pdfBytes = render_pdf(chordpro); // Uint8Array
+console.log(version());
 ```
 
-### Rendering with options
+### Node.js
 
 ```js
-import init, { render_html_with_options } from '@chordsketch/wasm';
+// No init() — the wasm-pack nodejs build auto-loads the .wasm file
+// synchronously when the module is imported.
+import {
+  render_html,
+  render_text,
+  render_pdf,
+  version,
+} from '@chordsketch/wasm';
 
+const chordpro = `{title: Amazing Grace}
+{key: G}
+
+[G]Amazing [G7]grace, how [C]sweet the [G]sound`;
+
+const html = render_html(chordpro);
+const text = render_text(chordpro);
+const pdfBytes = render_pdf(chordpro); // Uint8Array
+console.log(version());
+```
+
+### Rendering with options (both runtimes)
+
+```js
+// Browser
+import init, { render_html_with_options } from '@chordsketch/wasm';
 await init();
+
+// Node.js
+import { render_html_with_options } from '@chordsketch/wasm';
 
 const html = render_html_with_options(input, {
   transpose: 2,        // semitone offset (-12 to +12)

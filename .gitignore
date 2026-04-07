@@ -15,8 +15,8 @@ Thumbs.db
 
 # WASM build output
 crates/wasm/pkg/
-packages/npm/chordsketch_wasm*
-packages/npm/snippets/
+packages/npm/web/
+packages/npm/node/
 
 # Node.js
 node_modules/

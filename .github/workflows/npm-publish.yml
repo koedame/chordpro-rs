@@ -34,11 +34,23 @@ jobs:
         with:
           tool: wasm-pack@${{ env.WASM_PACK_VERSION }}
 
-      - name: Build WASM
-        run: wasm-pack build crates/wasm --release --target web
+      - name: Build WASM (web target)
+        run: wasm-pack build crates/wasm --release --target web --out-dir ../../packages/npm/web
 
-      - name: Copy WASM artifacts to npm package
-        run: cp crates/wasm/pkg/chordsketch_wasm* packages/npm/
+      - name: Build WASM (nodejs target)
+        run: wasm-pack build crates/wasm --release --target nodejs --out-dir ../../packages/npm/node
+
+      - name: Write sub-package.json files to scope module type
+        # The dual-package layout requires each subdirectory to declare
+        # its own module type so Node resolves them correctly:
+        #   - web/  is wasm-pack --target web   → ESM
+        #   - node/ is wasm-pack --target nodejs → CommonJS
+        # The root package.json declares "type": "module" (for the web
+        # entry), so the node subdir must override it back to commonjs.
+        run: |
+          set -euo pipefail
+          printf '%s\n' '{"type":"module"}' > packages/npm/web/package.json
+          printf '%s\n' '{"type":"commonjs"}' > packages/npm/node/package.json
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

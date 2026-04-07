@@ -177,22 +177,28 @@ jobs:
           mkdir -p /tmp/wasm-smoke
           cd /tmp/wasm-smoke
           npm init -y
-          npm install @chordsketch/wasm
+          # Pin to >=0.1.1 because 0.1.0 is published-but-broken on
+          # Node.js (the --target web init tries to fetch via file://
+          # which Node's undici does not implement). 0.1.1 ships the
+          # dual-package layout where Node resolves to a wasm-pack
+          # --target nodejs build that auto-loads synchronously.
+          npm install '@chordsketch/wasm@>=0.1.1'
 
       - name: Smoke test text + HTML + PDF render
         run: |
           set -euo pipefail
           cd /tmp/wasm-smoke
-          # Use ESM since the package ships ES modules. The script
-          # initializes the WASM module, exercises every renderer the
-          # package exposes, and asserts the output for each. This
-          # mirrors the CLI smoke step shape so all distribution channels
-          # are validated to the same depth — a binary that loads but
-          # whose PDF or HTML renderer is broken would slip past a
-          # text-only check.
+          # Node.js consumes the package via the "node" condition in
+          # the package.json `exports` field. That entry resolves to a
+          # wasm-pack --target nodejs build (CommonJS) which auto-loads
+          # the .wasm file synchronously on require. There is therefore
+          # no `init()` to await on the Node side — direct named
+          # imports work. The browser-side `await init()` flow is
+          # exercised by the playground manually; CI focuses on Node
+          # correctness because that is where automated testing lives.
           cat > smoke.mjs << 'EOF'
-          import init, { render_text, render_html, render_pdf, version } from '@chordsketch/wasm';
-          await init();
+          import { render_text, render_html, render_pdf, version } from '@chordsketch/wasm';
+
           const v = version();
           if (!v) throw new Error('version() returned empty');
           console.log('version:', v);
