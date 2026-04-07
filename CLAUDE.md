@@ -40,8 +40,8 @@ Additionally, these non-Rust packages exist:
 
 | Package | Path | Description |
 |---|---|---|
-| `@chordsketch/wasm` | `packages/npm` | npm package with TypeScript types |
-| `@chordsketch/node` | `crates/napi` | Native Node.js addon via napi-rs |
+| `@chordsketch/wasm` | `packages/npm` | npm package, **dual build** (browser ESM + Node.js CJS) with TypeScript types |
+| `@chordsketch/node` | `crates/napi` | Native Node.js addon via napi-rs (not yet published) |
 | Playground | `packages/playground` | Vite-based browser playground (Vanilla TS) |
 | Python (`chordsketch`) | `crates/ffi` | Python package via UniFFI + maturin |
 | Swift (`ChordSketch`) | `packages/swift` | Swift package with XCFramework |

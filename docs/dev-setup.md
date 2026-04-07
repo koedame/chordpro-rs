@@ -11,6 +11,30 @@ cargo clippy         # Lint (CI uses -D warnings)
 cargo fmt --check    # Check formatting (CI enforced)
 ```
 
+## WASM and npm Package Development
+
+Required only when working on `crates/wasm` or the `@chordsketch/wasm` npm
+package (`packages/npm`). Not needed for core/CLI/renderer development.
+
+```bash
+# wasm-pack: builds the WASM package via wasm-bindgen
+cargo install wasm-pack    # version 0.14.x is what CI uses
+```
+
+Node.js ≥ **22** is required to run the npm package smoke tests. This is
+what `.github/workflows/readme-smoke.yml` uses on the `npm-wasm` job.
+
+```bash
+# Build both browser and Node targets locally:
+cd packages/npm
+npm run build              # produces packages/npm/{web,node}/* (gitignored)
+
+# Pack the package for local install testing:
+npm pack --dry-run
+```
+
+See `docs/releasing.md` "npm publish via CI" for the publish-side quirks.
+
 ## External Tools (Optional)
 
 These tools are **not required** for normal development or CI. They are only
