@@ -38,10 +38,13 @@ function hideError(): void {
  * structured errors (e.g. JsError objects with line/col info) to "[object
  * Object]"; preferring `e.message` when available preserves the underlying
  * Rust error string. See #1060.
+ *
+ * `String(s)` is the identity function for strings, so a separate
+ * `typeof e === 'string'` branch is unnecessary — `String(e)` already
+ * returns it unchanged. See #1087.
  */
 function formatError(e: unknown): string {
   if (e instanceof Error) return e.message;
-  if (typeof e === 'string') return e;
   return String(e);
 }
 

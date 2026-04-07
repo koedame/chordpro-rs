@@ -18,6 +18,13 @@ crates/wasm/pkg/
 packages/npm/web/
 packages/npm/node/
 
+# UniFFI binding generation scratch dir
+# Created by `ruby.yml` (and any local invocation of the same generate
+# step) when generating Ruby bindings. Files are immediately moved out
+# and the directory removed; this entry only catches a stray dir from
+# a failed mid-step run. See #1090.
+.uniffi-tmp/
+
 # Node.js
 node_modules/
 packages/playground/dist/

@@ -75,10 +75,18 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          # Use the URL-form token rather than the base64 extraheader
-          # variant: it never writes credentials to a persistent file
-          # under tap/.git/config, so an accidental upload-artifact of the
-          # working directory cannot leak the token. See #1071.
+          # Note on credential persistence: both this URL-form approach
+          # AND the previous `git config http.<url>.extraheader "..."`
+          # approach persist the token to `tap/.git/config` — the URL
+          # form embeds it in `[remote "origin"].url`, the extraheader
+          # form embeds it in `[http "https://github.com/"].extraheader`.
+          # Neither approach avoids on-disk credential persistence; the
+          # working directory itself is the trust boundary. Do NOT
+          # `actions/upload-artifact` the `tap/` directory — that is the
+          # only way the token would leak from this step. See #1086 for
+          # the prior comment that overstated the URL-form's security.
+          # Use a credential helper or SSH deploy key if true zero-disk
+          # credential persistence is required.
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/koedame/homebrew-tap.git" tap
           cd tap
           git config user.name "github-actions[bot]"
@@ -138,8 +146,9 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          # See note on the same step in `update-homebrew` above. URL-form
-          # token avoids persisting credentials in bucket/.git/config. #1071.
+          # See the credential-persistence note on `update-homebrew` above.
+          # The token IS written to `bucket/.git/config`; do not artifact
+          # this directory. #1086.
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/koedame/scoop-bucket.git" bucket
           cd bucket
           git config user.name "github-actions[bot]"
