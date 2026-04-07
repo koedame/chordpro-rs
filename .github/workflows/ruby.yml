@@ -96,12 +96,36 @@ jobs:
         run: cargo build -p chordsketch-ffi
 
       - name: Generate Ruby bindings
+        # Generating directly into `packages/ruby/lib/` overwrites the
+        # committed platform-aware loader at `packages/ruby/lib/chordsketch.rb`
+        # because UniFFI names the file after the .udl namespace
+        # (also `chordsketch`). Generate into a temporary directory and
+        # move only the binding file out as `chordsketch_uniffi.rb`.
+        #
+        # Then rewrite the `ffi_lib 'chordsketch_ffi'` line to use the
+        # absolute path exposed by the loader as `Chordsketch::NATIVE_LIB_PATH`.
+        # ffi gem 1.17+ ignores RTLD_GLOBAL pre-loaded handles when looking
+        # up libraries by bare name, so the previous loader's
+        # `FFI::DynamicLibrary.open(..., RTLD_GLOBAL)` approach didn't work.
+        # See #1082 for the full root-cause analysis.
         run: |
+          mkdir -p .uniffi-tmp
           cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
             --library target/debug/libchordsketch_ffi.so \
             --language ruby \
-            --out-dir packages/ruby/lib/
-          mv packages/ruby/lib/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
+            --out-dir .uniffi-tmp/
+          # Anchor the substitution on the leading 4-space indent and the
+          # exact UniFFI-generated string literal so we don't match anything
+          # else in the file.
+          sed -i \
+            "s|^    ffi_lib 'chordsketch_ffi'\$|    ffi_lib Chordsketch::NATIVE_LIB_PATH|" \
+            .uniffi-tmp/chordsketch.rb
+          # Verify the substitution actually happened — fail loud if UniFFI's
+          # output format ever changes and the regex stops matching.
+          grep -q "ffi_lib Chordsketch::NATIVE_LIB_PATH" .uniffi-tmp/chordsketch.rb \
+            || { echo "ERROR: ffi_lib substitution failed; UniFFI output format may have changed" >&2; exit 1; }
+          mv .uniffi-tmp/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
+          rm -rf .uniffi-tmp/
 
       - name: Download native library (linux-x86-64)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -137,12 +161,22 @@ jobs:
         run: cargo build -p chordsketch-ffi
 
       - name: Generate Ruby bindings
+        # See note on the same step in the generate-and-test job above —
+        # generate into a temp dir and sed-rewrite ffi_lib to use the
+        # absolute path resolved by the loader. #1082.
         run: |
+          mkdir -p .uniffi-tmp
           cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
             --library target/debug/libchordsketch_ffi.so \
             --language ruby \
-            --out-dir packages/ruby/lib/
-          mv packages/ruby/lib/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
+            --out-dir .uniffi-tmp/
+          sed -i \
+            "s|^    ffi_lib 'chordsketch_ffi'\$|    ffi_lib Chordsketch::NATIVE_LIB_PATH|" \
+            .uniffi-tmp/chordsketch.rb
+          grep -q "ffi_lib Chordsketch::NATIVE_LIB_PATH" .uniffi-tmp/chordsketch.rb \
+            || { echo "ERROR: ffi_lib substitution failed; UniFFI output format may have changed" >&2; exit 1; }
+          mv .uniffi-tmp/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
+          rm -rf .uniffi-tmp/
 
       - name: Download all native libraries
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
