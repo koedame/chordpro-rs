@@ -205,7 +205,6 @@ jobs:
                 --json assets --jq '.assets[].name' \
                 | grep -Fxq "$ASSET"; then
               echo "Asset found on attempt ${attempt}"
-              echo "found=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             echo "Attempt ${attempt}: ${ASSET} not yet on release ${TAG}, waiting 30s..."
