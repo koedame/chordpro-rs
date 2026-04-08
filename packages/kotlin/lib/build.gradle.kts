@@ -17,7 +17,11 @@ plugins {
     id("com.vanniktech.maven.publish") version "0.30.0"
 }
 
-group = "com.koedame"
+// Maven Central namespace verified for the koeda.me domain (DNS TXT
+// proof). The GitHub org name `koedame` does not match a domain we
+// own; `me.koeda` is the reverse-DNS of `koeda.me` and is the
+// namespace registered on the Sonatype Central Portal.
+group = "me.koeda"
 // Read version from crates/ffi/Cargo.toml to keep in sync with Rust crate.
 version = Regex("""^version\s*=\s*"([^"]+)"""", RegexOption.MULTILINE)
     .find(file("${rootDir}/../../crates/ffi/Cargo.toml").readText())
@@ -49,7 +53,7 @@ tasks.test {
 mavenPublishing {
     // Override coordinates so the published artifactId is `chordsketch`
     // rather than the Gradle module name (`lib`).
-    coordinates("com.koedame", "chordsketch", project.version.toString())
+    coordinates("me.koeda", "chordsketch", project.version.toString())
 
     // Maven Central requires every published artifact to ship a sources
     // jar and a (possibly empty) javadoc jar. KotlinJvm() configures the
