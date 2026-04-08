@@ -423,8 +423,10 @@ mod wasm_tests {
         assert!(result.contains("Test"));
     }
 
-    /// Out-of-i8 transpose values fail deserialization with a JS error,
-    /// matching the `RenderOptions::transpose: i8` declaration.
+    /// A non-numeric `transpose` (string) fails deserialization with a JS
+    /// error, matching the `RenderOptions::transpose: i8` declaration.
+    /// `serde_wasm_bindgen` rejects the type mismatch before the value
+    /// ever reaches `parse_transpose`.
     #[wasm_bindgen_test]
     fn render_html_with_options_invalid_transpose_type() {
         let opts = js_sys::Object::new();
@@ -491,15 +493,26 @@ mod wasm_tests {
         start();
     }
 
-    /// Build a sentinel input that triggers a renderer warning, render
-    /// it, and assert that `console.warn` was called with the expected
-    /// prefix. This is the regression test for #1051 (warnings going to
-    /// `eprintln!` and silently disappearing in WASM contexts).
+    /// Build a sentinel input that GUARANTEES the renderer emits at
+    /// least one warning, render it, and assert that `console.warn`
+    /// was called with the expected prefix at least once. This is the
+    /// regression test for #1051 (warnings going to `eprintln!` and
+    /// silently disappearing in WASM contexts).
+    ///
+    /// Sentinel: a `{transpose: 100}` directive in the source combined
+    /// with a CLI `transpose: 100` exceeds the `i8` range (200 > 127),
+    /// so `chordsketch_core::transpose::combine_transpose` saturates
+    /// and the renderer pushes a `transpose offset ... clamped to ...`
+    /// warning. See `crates/render-text/src/lib.rs` line 124-131.
+    /// (The HTML and PDF renderers have identical saturation paths;
+    /// we exercise text here because it has the smallest output.)
     ///
     /// Implementation note: we monkey-patch `console.warn` for the
-    /// duration of the test, capture the call into a JS array, then
-    /// restore. The sentinel input uses an out-of-range `transpose`
-    /// that the renderer logs as a saturation warning.
+    /// duration of the test, capture each call into a JS array, then
+    /// restore the original. We assert BOTH `captured.length() >= 1`
+    /// (so a future regression that drops warnings on the floor would
+    /// fail loudly — see #1111) AND that every captured entry starts
+    /// with the `chordsketch:` prefix.
     #[wasm_bindgen_test]
     fn render_forwards_warnings_to_console_warn() {
         // Save the original `console.warn`.
@@ -521,26 +534,23 @@ mod wasm_tests {
         )
         .unwrap();
 
-        // Render with a transpose value that the renderer will note in
-        // its warnings (any non-zero transpose with a chord that
-        // saturates against the renderer's chord cache will produce a
-        // warning; if the input below stops emitting warnings after a
-        // future renderer change, swap it for one that does).
+        // Sentinel: in-file {transpose: 100} + CLI transpose: 100 = 200,
+        // which exceeds i8 range and produces a saturation warning.
         let opts = js_sys::Object::new();
-        Reflect::set(&opts, &"transpose".into(), &JsValue::from(7)).unwrap();
-        let _ = render_text_with_options("{title: T}\n[C]Hello", opts.into()).unwrap();
+        Reflect::set(&opts, &"transpose".into(), &JsValue::from(100)).unwrap();
+        let _ = render_text_with_options("{title: T}\n{transpose: 100}\n[C]Hello", opts.into())
+            .unwrap();
 
         // Restore the original `console.warn`.
         Reflect::set(&console, &"warn".into(), &original_warn).unwrap();
         // Drop the closure to free the wasm-bindgen reference.
         drop(capture_fn);
 
-        // The renderer for this minimal input may or may not emit a
-        // warning, so we don't assert that captured.length() > 0. The
-        // important assertion is that IF the renderer emits warnings,
-        // they go through `console.warn` with the `chordsketch:` prefix
-        // — verified by checking that every captured entry starts with
-        // the expected prefix.
+        assert!(
+            captured.length() >= 1,
+            "expected at least one console.warn call from the saturation-triggering input, got {}",
+            captured.length()
+        );
         for i in 0..captured.length() {
             let entry = captured.get(i).as_string().unwrap_or_default();
             assert!(
