@@ -1,5 +1,6 @@
 import com.vanniktech.maven.publish.JavadocJar
 import com.vanniktech.maven.publish.KotlinJvm
+import com.vanniktech.maven.publish.SonatypeHost
 
 plugins {
     id("org.jetbrains.kotlin.jvm") version "1.9.25"
@@ -70,7 +71,7 @@ mavenPublishing {
     // Publish to the Central Portal (https://central.sonatype.com/), and
     // automatically progress the deployment from VALIDATED to RELEASED
     // so a successful CI run leaves the artifact actually consumable.
-    publishToMavenCentral(automaticRelease = true)
+    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
 
     // Maven Central requires every artifact to be GPG-signed. The key
     // material is supplied via Gradle properties (see kotlin.yml's
