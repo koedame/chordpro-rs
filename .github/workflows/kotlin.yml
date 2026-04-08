@@ -21,6 +21,12 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/kotlin.yml"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish (e.g., v0.1.0). Leave empty to build from the workflow's ref without publishing."
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -51,6 +57,11 @@ jobs:
             jni-dir: win32-x86-64
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # Allow workflow_dispatch to build a historical tag (e.g., v0.1.0)
+          # for one-shot remediation. For other triggers fall through to
+          # github.ref via the OR fallback.
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Install Rust target
         run: rustup target add ${{ matrix.target }}
@@ -85,6 +96,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
@@ -127,9 +140,13 @@ jobs:
     name: Publish to Maven Central
     needs: [generate-and-test]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: |
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && inputs.tag != '')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Download generated Kotlin bindings
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -153,9 +170,22 @@ jobs:
       - name: Publish
         working-directory: packages/kotlin
         env:
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
-          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
-          GPG_SIGNING_PASSWORD: ${{ secrets.GPG_SIGNING_PASSWORD }}
+          # Vanniktech maven-publish reads credentials from Gradle
+          # properties; setting them via ORG_GRADLE_PROJECT_<name> env
+          # vars is the standard CI pattern. The Central Portal user
+          # token (NOT the legacy OSSRH user token) must be generated at
+          # https://central.sonatype.com/account and added to repo
+          # secrets as CENTRAL_PORTAL_USERNAME / CENTRAL_PORTAL_PASSWORD.
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.CENTRAL_PORTAL_PASSWORD }}
+          # ASCII-armored secret GPG key from `gpg --export-secret-keys --armor <key id>`.
+          # The signing key is unchanged from the previous OSSRH setup.
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.GPG_SIGNING_PASSWORD }}
         run: |
-          ./gradlew publish
+          # `publishAllPublicationsToMavenCentralRepository` is the
+          # repository task registered by the vanniktech plugin. With
+          # `automaticRelease = true` set in build.gradle.kts, the
+          # deployment will be promoted from VALIDATED to RELEASED
+          # automatically after the upload completes.
+          ./gradlew publishAllPublicationsToMavenCentralRepository --no-configuration-cache

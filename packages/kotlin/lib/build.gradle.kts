@@ -1,8 +1,20 @@
+import com.vanniktech.maven.publish.JavadocJar
+import com.vanniktech.maven.publish.KotlinJvm
+
 plugins {
     id("org.jetbrains.kotlin.jvm") version "1.9.25"
     id("java-library")
-    id("maven-publish")
-    id("signing")
+    // The Vanniktech maven-publish plugin auto-applies `maven-publish`
+    // and `signing`, configures the Central Portal upload endpoint, and
+    // wraps the close+release steps into a single Gradle task. This
+    // replaces the legacy raw `maven-publish` + `signing` setup that
+    // targeted the (sunset) `s01.oss.sonatype.org` OSSRH endpoint.
+    // See: https://vanniktech.github.io/gradle-maven-publish-plugin/central
+    //
+    // Pinned to 0.30.0: 0.34.0+ requires Kotlin 2.2.0, but the JVM
+    // target above is on Kotlin 1.9.25. 0.30.0 is the last release that
+    // supports Kotlin 1.9.x while also supporting the Central Portal.
+    id("com.vanniktech.maven.publish") version "0.30.0"
 }
 
 group = "com.koedame"
@@ -25,8 +37,6 @@ dependencies {
 }
 
 java {
-    withSourcesJar()
-    withJavadocJar()
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(17))
     }
@@ -36,59 +46,59 @@ tasks.test {
     useJUnitPlatform()
 }
 
-publishing {
-    publications {
-        create<MavenPublication>("maven") {
-            artifactId = "chordsketch"
-            from(components["java"])
+mavenPublishing {
+    // Override coordinates so the published artifactId is `chordsketch`
+    // rather than the Gradle module name (`lib`).
+    coordinates("com.koedame", "chordsketch", project.version.toString())
 
-            pom {
-                name.set("ChordSketch")
-                description.set("ChordPro file format parser and renderer")
-                url.set("https://github.com/koedame/chordsketch")
+    // Maven Central requires every published artifact to ship a sources
+    // jar and a (possibly empty) javadoc jar. KotlinJvm() configures the
+    // plugin to build both. JavadocJar.Empty() ships a stub since we do
+    // not run a Dokka task, while still satisfying Central's metadata
+    // validation.
+    configure(
+        KotlinJvm(
+            javadocJar = JavadocJar.Empty(),
+            sourcesJar = true,
+        ),
+    )
 
-                licenses {
-                    license {
-                        name.set("MIT")
-                        url.set("https://github.com/koedame/chordsketch/blob/main/LICENSE")
-                    }
-                }
+    // Publish to the Central Portal (https://central.sonatype.com/), and
+    // automatically progress the deployment from VALIDATED to RELEASED
+    // so a successful CI run leaves the artifact actually consumable.
+    publishToMavenCentral(automaticRelease = true)
 
-                developers {
-                    developer {
-                        id.set("koedame")
-                        name.set("koedame")
-                    }
-                }
+    // Maven Central requires every artifact to be GPG-signed. The key
+    // material is supplied via Gradle properties (see kotlin.yml's
+    // ORG_GRADLE_PROJECT_signingInMemoryKey* env vars).
+    signAllPublications()
 
-                scm {
-                    connection.set("scm:git:git://github.com/koedame/chordsketch.git")
-                    developerConnection.set("scm:git:ssh://github.com/koedame/chordsketch.git")
-                    url.set("https://github.com/koedame/chordsketch")
-                }
+    pom {
+        name.set("ChordSketch")
+        description.set("ChordPro file format parser and renderer")
+        inceptionYear.set("2025")
+        url.set("https://github.com/koedame/chordsketch")
+
+        licenses {
+            license {
+                name.set("MIT")
+                url.set("https://github.com/koedame/chordsketch/blob/main/LICENSE")
+                distribution.set("https://github.com/koedame/chordsketch/blob/main/LICENSE")
             }
         }
-    }
 
-    repositories {
-        maven {
-            name = "OSSRH"
-            val releasesRepoUrl = uri("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
-            val snapshotsRepoUrl = uri("https://s01.oss.sonatype.org/content/repositories/snapshots/")
-            url = if (version.toString().endsWith("SNAPSHOT")) snapshotsRepoUrl else releasesRepoUrl
-            credentials {
-                username = System.getenv("MAVEN_USERNAME") ?: ""
-                password = System.getenv("MAVEN_PASSWORD") ?: ""
+        developers {
+            developer {
+                id.set("koedame")
+                name.set("koedame")
+                url.set("https://github.com/koedame")
             }
         }
-    }
-}
 
-signing {
-    val signingKey = System.getenv("GPG_SIGNING_KEY") ?: ""
-    val signingPassword = System.getenv("GPG_SIGNING_PASSWORD") ?: ""
-    if (signingKey.isNotEmpty()) {
-        useInMemoryPgpKeys(signingKey, signingPassword)
-        sign(publishing.publications["maven"])
+        scm {
+            url.set("https://github.com/koedame/chordsketch")
+            connection.set("scm:git:git://github.com/koedame/chordsketch.git")
+            developerConnection.set("scm:git:ssh://git@github.com/koedame/chordsketch.git")
+        }
     }
 }
