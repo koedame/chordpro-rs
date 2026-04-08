@@ -5,6 +5,11 @@ import com.vanniktech.maven.publish.SonatypeHost
 plugins {
     id("org.jetbrains.kotlin.jvm") version "1.9.25"
     id("java-library")
+    // Dokka generates HTML API documentation from KDoc comments.
+    // Pinned to 1.9.20: the last release that supports Kotlin 1.9.x.
+    // JavadocJar.Dokka("dokkaHtml") below packs the HTML output into
+    // the *-javadoc.jar artifact required by Maven Central.
+    id("org.jetbrains.dokka") version "1.9.20"
     // The Vanniktech maven-publish plugin auto-applies `maven-publish`
     // and `signing`, configures the Central Portal upload endpoint, and
     // wraps the close+release steps into a single Gradle task. This
@@ -57,13 +62,13 @@ mavenPublishing {
     coordinates("me.koeda", "chordsketch", project.version.toString())
 
     // Maven Central requires every published artifact to ship a sources
-    // jar and a (possibly empty) javadoc jar. KotlinJvm() configures the
-    // plugin to build both. JavadocJar.Empty() ships a stub since we do
-    // not run a Dokka task, while still satisfying Central's metadata
-    // validation.
+    // jar and a javadoc jar. KotlinJvm() configures the plugin to build
+    // both. JavadocJar.Dokka("dokkaHtml") runs the dokkaHtml task and
+    // packs its output into the *-javadoc.jar, making the API docs
+    // browsable at javadoc.io and central.sonatype.com.
     configure(
         KotlinJvm(
-            javadocJar = JavadocJar.Empty(),
+            javadocJar = JavadocJar.Dokka("dokkaHtml"),
             sourcesJar = true,
         ),
     )
