@@ -3,6 +3,7 @@
 //! Exposes ChordPro parsing and rendering (HTML, plain text, PDF) to
 //! JavaScript/TypeScript via `wasm-bindgen`.
 
+use chordsketch_core::render_result::RenderResult;
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
@@ -13,6 +14,29 @@ use wasm_bindgen::prelude::*;
 pub fn start() {
     console_error_panic_hook::set_once();
 }
+
+/// JS `console.warn` binding, used to surface render warnings (transpose
+/// saturation, chorus recall limits, deny-listed metadata overrides) to
+/// developers in the browser console.
+///
+/// On wasm32 this resolves to the global `console.warn`. On native test
+/// targets it's a no-op so the unit tests in this file (which run with
+/// `cargo test`, not `wasm-pack test`) still compile and run.
+///
+/// See #1051 — the previous code path called `render_songs_with_transpose`,
+/// which forwards warnings to `eprintln!`. In a browser WASM context
+/// stderr is dropped; in Node.js it goes to a console nobody reads.
+/// Routing warnings through `console.warn` makes them observable in dev
+/// tools without changing the public API surface.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console, js_name = warn)]
+    fn console_warn(s: &str);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn console_warn(_s: &str) {}
 
 /// Render options passed from JavaScript.
 #[derive(Deserialize, Default)]
@@ -54,37 +78,57 @@ fn resolve_config(opts: &RenderOptions) -> Result<chordsketch_core::config::Conf
 
 /// Parse input and render songs.
 ///
+/// Calls the renderer's `*_with_warnings` variant and forwards each
+/// captured warning to `console.warn` (#1051) before returning the
+/// rendered string.
+///
 /// `parse_multi_lenient` always returns at least one `ParseResult`
 /// (`split_at_new_song` unconditionally pushes the trailing segment, even
 /// for empty input — see `chordsketch_core::parser`), so the resulting
 /// `Vec<Song>` is never empty and the previous `is_empty()` guard was
-/// dead code. See #1083. The return type stays `Result` because
+/// dead code (#1083). The return type stays `Result` because
 /// `render_html_with_options` and friends use the same `JsValue` error
 /// channel for their config-parse failures.
 fn do_render_string(
     input: &str,
     config: &chordsketch_core::config::Config,
     transpose: i8,
-    render_fn: fn(&[chordsketch_core::ast::Song], i8, &chordsketch_core::config::Config) -> String,
+    render_fn: fn(
+        &[chordsketch_core::ast::Song],
+        i8,
+        &chordsketch_core::config::Config,
+    ) -> RenderResult<String>,
 ) -> Result<String, JsValue> {
-    let result = chordsketch_core::parse_multi_lenient(input);
-    let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();
-    Ok(render_fn(&songs, transpose, config))
+    let parse_result = chordsketch_core::parse_multi_lenient(input);
+    let songs: Vec<_> = parse_result.results.into_iter().map(|r| r.song).collect();
+    let render_result = render_fn(&songs, transpose, config);
+    for w in &render_result.warnings {
+        console_warn(&format!("chordsketch: {w}"));
+    }
+    Ok(render_result.output)
 }
 
 /// Parse input and render songs, returning a `Vec<u8>` result.
 ///
-/// See [`do_render_string`] for the note on the lenient parser always
-/// producing at least one song.
+/// See [`do_render_string`] for the note on console-routed warnings and
+/// the lenient parser always producing at least one song.
 fn do_render_bytes(
     input: &str,
     config: &chordsketch_core::config::Config,
     transpose: i8,
-    render_fn: fn(&[chordsketch_core::ast::Song], i8, &chordsketch_core::config::Config) -> Vec<u8>,
+    render_fn: fn(
+        &[chordsketch_core::ast::Song],
+        i8,
+        &chordsketch_core::config::Config,
+    ) -> RenderResult<Vec<u8>>,
 ) -> Result<Vec<u8>, JsValue> {
-    let result = chordsketch_core::parse_multi_lenient(input);
-    let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();
-    Ok(render_fn(&songs, transpose, config))
+    let parse_result = chordsketch_core::parse_multi_lenient(input);
+    let songs: Vec<_> = parse_result.results.into_iter().map(|r| r.song).collect();
+    let render_result = render_fn(&songs, transpose, config);
+    for w in &render_result.warnings {
+        console_warn(&format!("chordsketch: {w}"));
+    }
+    Ok(render_result.output)
 }
 
 /// Decode a JS-supplied `options` value into a `RenderOptions` struct.
@@ -110,7 +154,11 @@ fn deserialize_options(options: JsValue) -> Result<RenderOptions, JsValue> {
 fn render_string_inner(
     input: &str,
     opts: RenderOptions,
-    render_fn: fn(&[chordsketch_core::ast::Song], i8, &chordsketch_core::config::Config) -> String,
+    render_fn: fn(
+        &[chordsketch_core::ast::Song],
+        i8,
+        &chordsketch_core::config::Config,
+    ) -> RenderResult<String>,
 ) -> Result<String, JsValue> {
     let config = resolve_config(&opts)?;
     do_render_string(input, &config, opts.transpose, render_fn)
@@ -122,7 +170,11 @@ fn render_string_inner(
 fn render_bytes_inner(
     input: &str,
     opts: RenderOptions,
-    render_fn: fn(&[chordsketch_core::ast::Song], i8, &chordsketch_core::config::Config) -> Vec<u8>,
+    render_fn: fn(
+        &[chordsketch_core::ast::Song],
+        i8,
+        &chordsketch_core::config::Config,
+    ) -> RenderResult<Vec<u8>>,
 ) -> Result<Vec<u8>, JsValue> {
     let config = resolve_config(&opts)?;
     do_render_bytes(input, &config, opts.transpose, render_fn)
@@ -142,7 +194,7 @@ pub fn render_html(input: &str) -> Result<String, JsValue> {
     render_string_inner(
         input,
         RenderOptions::default(),
-        chordsketch_render_html::render_songs_with_transpose,
+        chordsketch_render_html::render_songs_with_warnings,
     )
 }
 
@@ -160,7 +212,7 @@ pub fn render_text(input: &str) -> Result<String, JsValue> {
     render_string_inner(
         input,
         RenderOptions::default(),
-        chordsketch_render_text::render_songs_with_transpose,
+        chordsketch_render_text::render_songs_with_warnings,
     )
 }
 
@@ -178,7 +230,7 @@ pub fn render_pdf(input: &str) -> Result<Vec<u8>, JsValue> {
     render_bytes_inner(
         input,
         RenderOptions::default(),
-        chordsketch_render_pdf::render_songs_with_transpose,
+        chordsketch_render_pdf::render_songs_with_warnings,
     )
 }
 
@@ -200,7 +252,7 @@ pub fn render_html_with_options(input: &str, options: JsValue) -> Result<String,
     render_string_inner(
         input,
         deserialize_options(options)?,
-        chordsketch_render_html::render_songs_with_transpose,
+        chordsketch_render_html::render_songs_with_warnings,
     )
 }
 
@@ -216,7 +268,7 @@ pub fn render_text_with_options(input: &str, options: JsValue) -> Result<String,
     render_string_inner(
         input,
         deserialize_options(options)?,
-        chordsketch_render_text::render_songs_with_transpose,
+        chordsketch_render_text::render_songs_with_warnings,
     )
 }
 
@@ -234,7 +286,7 @@ pub fn render_pdf_with_options(input: &str, options: JsValue) -> Result<Vec<u8>,
     render_bytes_inner(
         input,
         deserialize_options(options)?,
-        chordsketch_render_pdf::render_songs_with_transpose,
+        chordsketch_render_pdf::render_songs_with_warnings,
     )
 }
 
