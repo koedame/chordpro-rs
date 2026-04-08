@@ -97,13 +97,24 @@ jobs:
         # Build the metadata-action `images:` value dynamically so we
         # only push to Docker Hub when its credentials are available.
         # See #1072.
+        #
+        # Step outputs and env values are passed to the shell via the
+        # `env:` block (rather than `${{ ... }}` interpolation inside
+        # the `run:` body) per GitHub's expression-injection hardening
+        # guidance — see #1115. The current values are always
+        # workflow-controlled, but the `env:` form is the safe pattern
+        # to keep using as the inputs evolve.
         id: images
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          DOCKERHUB_AVAILABLE: ${{ steps.dockerhub.outputs.available }}
         run: |
           {
             echo "list<<EOF"
-            echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
-            if [ "${{ steps.dockerhub.outputs.available }}" = "true" ]; then
-              echo "docker.io/${{ env.IMAGE_NAME }}"
+            echo "${REGISTRY}/${IMAGE_NAME}"
+            if [ "${DOCKERHUB_AVAILABLE}" = "true" ]; then
+              echo "docker.io/${IMAGE_NAME}"
             fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
