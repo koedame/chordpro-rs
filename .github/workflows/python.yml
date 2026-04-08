@@ -90,16 +90,14 @@ jobs:
           #   artifact: wheels-ubuntu-latest-aarch64
           - os: macos-latest
             artifact: wheels-macos-latest-aarch64
-          # macos-13 (Intel) entry was added in #990 to test the macOS
-          # x86_64 wheel, but its job has been failing on every push to
-          # main since 2026-04-06 18:00 UTC: the runner is cancelled
-          # immediately at allocation (0 steps run) — a runner-availability
-          # rejection, not a test failure. Disabled here until either the
-          # repository's macos-13 runner allocation is restored, or this
-          # entry is replaced with a macos-latest run that exercises the
-          # x86_64 wheel via Rosetta. See #1084.
-          # - os: macos-13
-          #   artifact: wheels-macos-latest-x86_64
+          # macOS x86_64 wheels are still built and published to PyPI for
+          # Intel Mac users, but are intentionally not smoke-tested in CI.
+          # GitHub-hosted macos-13 (Intel) runners are being phased out and
+          # cannot be reliably allocated for this repository, and exercising
+          # the x86_64 wheel through Rosetta on the arm64 macos-latest
+          # runner adds non-trivial CI machinery for diminishing-return
+          # coverage as the macOS ecosystem moves to Apple Silicon. We
+          # accept this CI gap. See #1084.
           - os: windows-latest
             artifact: wheels-windows-latest-x64
     steps:
