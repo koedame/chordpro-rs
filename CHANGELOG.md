@@ -5,6 +5,100 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.2.0] - Unreleased
+
+### Added
+
+#### WASM / npm (`@chordsketch/wasm`)
+
+- New crate `chordsketch-wasm` exposing the full parse-and-render API to
+  JavaScript via `wasm-bindgen`
+- npm package `@chordsketch/wasm` published to npmjs.com — dual package
+  layout (browser ESM + Node.js CJS) so the same package works in both
+  environments without configuration
+- Render functions: `renderHtml`, `renderText`, `renderPdf`,
+  `renderHtmlWithOptions`, `renderTextWithOptions`, `renderPdfWithOptions`,
+  `validate`, `version`
+- Render warnings (transpose saturation, chorus recall limits, etc.) routed
+  to `console.warn` instead of being silently dropped
+- Panic hook via `console_error_panic_hook` — unexpected panics now surface
+  as readable messages in the browser console instead of opaque wasm traps
+
+#### Web Playground
+
+- Interactive browser playground deployed to GitHub Pages at
+  `https://koedame.github.io/chordsketch/`
+- Editor pane with live ChordPro input and three output modes: HTML preview,
+  plain text, and PDF download
+- Imports `@chordsketch/wasm` via npm for the rendering backend
+
+#### Native Node.js addon (`chordsketch-napi`)
+
+- New crate `chordsketch-napi` providing a native Node.js addon via napi-rs
+- Same API surface as the WASM package but as a compiled `.node` binary —
+  no WASM runtime overhead
+- Transpose parameter accepts any integer (same as CLI and UniFFI bindings);
+  values outside `i8` range are clamped before the renderer reduces modulo 12
+
+#### Python (`chordsketch` on PyPI)
+
+- Python package published to PyPI via maturin + UniFFI
+- Supports CPython 3.8+ on Linux x86_64/aarch64, macOS aarch64, and
+  Windows x86_64
+- Uses PyPI Trusted Publishing (OIDC) — no long-lived API token
+
+#### Swift (`ChordSketch` via Swift Package Manager)
+
+- Swift package published via Swift Package Manager pointing to a pre-built
+  XCFramework uploaded to each GitHub Release
+- Supports macOS 12+, iOS 15+, with both arm64 and x86_64 slices
+- Automated checksum update in `Package.swift` after each release via CI
+
+#### Kotlin (`me.koeda:chordsketch` on Maven Central)
+
+- Kotlin/JVM package published to Maven Central under the `me.koeda`
+  namespace (reverse-DNS of `koeda.me`)
+- Built via Gradle with the Vanniktech maven-publish plugin targeting the
+  Sonatype Central Portal
+- GPG-signed; sources jar included
+
+#### Ruby (`chordsketch` on RubyGems)
+
+- Ruby gem published to RubyGems.org via UniFFI
+- Supports Linux x86_64/aarch64, macOS aarch64, and Windows x86_64
+- Uses RubyGems Trusted Publishing (OIDC) — no long-lived API key
+
+#### Docker images
+
+- Multi-arch Docker images (linux/amd64, linux/arm64) published to:
+  - `ghcr.io/koedame/chordsketch` (GitHub Container Registry)
+  - `docker.io/koedame/chordsketch` (Docker Hub)
+- Image tags: `latest` (most recent release), `X.Y.Z`, `X.Y`
+- Based on Alpine 3 (release image) and Debian bookworm (build stage)
+
+#### Package managers
+
+- **Homebrew**: `brew tap koedame/tap && brew install chordsketch`
+- **Scoop**: `scoop bucket add koedame https://github.com/koedame/scoop-bucket && scoop install chordsketch`
+- **winget**: `winget install koedame.chordsketch` (pending Microsoft review)
+- Homebrew formula and Scoop manifest auto-updated by CI on each release
+
+### Changed
+
+- `@chordsketch/wasm`: upgraded from broken single-target `0.1.0` (browser
+  only, broken on Node.js) to dual-package `0.1.1+`; the Rust crate version
+  (returned by `version()`) remains at `0.2.0`
+
+### Fixed
+
+- WASM render warnings were silently dropped via `eprintln!` in browser
+  context; they now surface through `console.warn`
+- napi binding previously rejected `transpose` values outside `[-12, 12]`
+  while all other bindings (CLI, WASM, UniFFI) accept the full `i8` range;
+  napi now matches the other bindings by clamping to `i8` range
+
 ## [0.1.0] - 2026-04-04
 
 Initial release of ChordSketch.
@@ -76,4 +170,6 @@ Initial release of ChordSketch.
 - Tested against the Perl ChordPro reference implementation
 - See [docs/known-deviations.md](docs/known-deviations.md) for known differences
 
+[Unreleased]: https://github.com/koedame/chordsketch/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/koedame/chordsketch/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/koedame/chordsketch/releases/tag/v0.1.0

@@ -1,6 +1,6 @@
 [package]
 name = "chordsketch-wasm"
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -16,10 +16,10 @@ readme = "README.md"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-chordsketch-core = { version = "0.1.0", path = "../core" }
-chordsketch-render-text = { version = "0.1.0", path = "../render-text" }
-chordsketch-render-html = { version = "0.1.0", path = "../render-html" }
-chordsketch-render-pdf = { version = "0.1.0", path = "../render-pdf" }
+chordsketch-core = { version = "0.2.0", path = "../core" }
+chordsketch-render-text = { version = "0.2.0", path = "../render-text" }
+chordsketch-render-html = { version = "0.2.0", path = "../render-html" }
+chordsketch-render-pdf = { version = "0.2.0", path = "../render-pdf" }
 wasm-bindgen = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"

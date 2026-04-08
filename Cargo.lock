@@ -241,7 +241,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "chordsketch"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "assert_cmd",
  "chordsketch-core",
@@ -256,14 +256,14 @@ dependencies = [
 
 [[package]]
 name = "chordsketch-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "chordsketch-ffi"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chordsketch-core",
  "chordsketch-render-html",
@@ -275,7 +275,7 @@ dependencies = [
 
 [[package]]
 name = "chordsketch-napi"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chordsketch-core",
  "chordsketch-render-html",
@@ -288,14 +288,14 @@ dependencies = [
 
 [[package]]
 name = "chordsketch-render-html"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chordsketch-core",
 ]
 
 [[package]]
 name = "chordsketch-render-pdf"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chordsketch-core",
  "flate2",
@@ -304,7 +304,7 @@ dependencies = [
 
 [[package]]
 name = "chordsketch-render-text"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chordsketch-core",
  "unicode-width",
@@ -312,7 +312,7 @@ dependencies = [
 
 [[package]]
 name = "chordsketch-wasm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chordsketch-core",
  "chordsketch-render-html",

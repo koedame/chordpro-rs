@@ -89,8 +89,8 @@ High-level phases:
 17. **Phase 17** — Multi-song files and `{new_song}` directive ✅
 18. **Phase 18** — Perl reference implementation compatibility testing ✅
 19. **Phase 19** — Production readiness and publishing ✅
-20. **Phase 20** — WASM build & web playground
-21. **Phase 21** — Multi-language bindings & expanded distribution
+20. **Phase 20** — WASM build & web playground ✅
+21. **Phase 21** — Multi-language bindings & expanded distribution ✅
 
 ## Merge Policy
 

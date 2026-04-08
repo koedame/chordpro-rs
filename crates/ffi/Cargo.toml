@@ -1,6 +1,6 @@
 [package]
 name = "chordsketch-ffi"
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -15,10 +15,10 @@ description = "UniFFI bindings for ChordPro parsing and rendering"
 crate-type = ["cdylib", "staticlib", "lib"]
 
 [dependencies]
-chordsketch-core = { version = "0.1.0", path = "../core" }
-chordsketch-render-text = { version = "0.1.0", path = "../render-text" }
-chordsketch-render-html = { version = "0.1.0", path = "../render-html" }
-chordsketch-render-pdf = { version = "0.1.0", path = "../render-pdf" }
+chordsketch-core = { version = "0.2.0", path = "../core" }
+chordsketch-render-text = { version = "0.2.0", path = "../render-text" }
+chordsketch-render-html = { version = "0.2.0", path = "../render-html" }
+chordsketch-render-pdf = { version = "0.2.0", path = "../render-pdf" }
 # `uniffi` is pinned to an exact patch version because the .udl + scaffolding
 # generated layout is part of the FFI surface — Python/Swift/Kotlin/Ruby
 # bindings depend on the binary being byte-compatible with the bindgen output.
