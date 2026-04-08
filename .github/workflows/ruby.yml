@@ -199,6 +199,9 @@ jobs:
     # credentials. The trusted publisher must be pre-registered at
     #   https://rubygems.org/profile/oidc/pending_trusted_publishers
     # for this repo + workflow, otherwise the very first publish fails.
+    environment:
+      name: rubygems
+      url: https://rubygems.org/gems/chordsketch
     permissions:
       contents: read
       id-token: write
