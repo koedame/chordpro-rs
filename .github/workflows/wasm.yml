@@ -36,6 +36,20 @@ jobs:
       - name: Build with wasm-pack
         run: wasm-pack build crates/wasm --target web
 
+      - name: Setup Node.js for wasm-pack test
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: wasm-pack test (Node)
+        # Exercise the actual `#[wasm_bindgen]` -> `JsValue` boundary that
+        # native `cargo test` cannot reach (`JsValue::UNDEFINED`,
+        # `serde_wasm_bindgen::from_value`, `console_warn`, etc.). Tests
+        # live in the `wasm_tests` module of `crates/wasm/src/lib.rs`,
+        # gated to `target_arch = "wasm32"` so they don't break native
+        # `cargo test -p chordsketch-wasm`. See #1055, #1108.
+        run: wasm-pack test --node crates/wasm
+
       - name: Clippy (wasm32)
         # Lint every workspace crate that compiles for wasm32, not just
         # `chordsketch-wasm`. The renderer crates each have wasm32-specific
