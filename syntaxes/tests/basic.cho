@@ -1,0 +1,28 @@
+# This is a comment
+# ^ comment.line.chordpro
+# ^ punctuation.definition.comment.chordpro
+
+{title: Amazing Grace}
+# ^ punctuation.definition.directive.begin.chordpro
+#  ^^^^^ keyword.control.directive.chordpro
+#        ^ punctuation.separator.directive.chordpro
+#          ^^^^^^^^^^^^^ string.unquoted.directive-value.chordpro
+#                       ^ punctuation.definition.directive.end.chordpro
+
+{start_of_verse}
+# ^ punctuation.definition.directive.begin.chordpro
+#  ^^^^^^^^^^^^^ keyword.control.directive.chordpro
+
+[G]Amazing [G7]grace, how [C]sweet the [G]sound
+# ^ punctuation.definition.chord.begin.chordpro
+#  ^ entity.name.chord.chordpro
+#   ^ punctuation.definition.chord.end.chordpro
+
+{end_of_verse}
+
+{start_of_abc}
+X:1
+T:Example
+K:G
+|:GABc|d2d2:|
+{end_of_abc}
