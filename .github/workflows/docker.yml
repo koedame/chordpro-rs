@@ -68,19 +68,51 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Detect Docker Hub credentials
+        # Decouple Docker Hub from GHCR: if `DOCKERHUB_TOKEN` is unset
+        # (fork PRs, manual recovery runs, an org-side credential rotation),
+        # the GHCR push should still succeed instead of taking the entire
+        # workflow down with it. Secrets aren't available in step `if:`
+        # expressions directly, so we surface the boolean via a step output.
+        # See #1072.
+        id: dockerhub
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::DOCKERHUB_TOKEN is not set; skipping Docker Hub push (GHCR will still publish). See #1072."
+          fi
+
       - name: Log in to Docker Hub
+        if: steps.dockerhub.outputs.available == 'true'
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Compute image list
+        # Build the metadata-action `images:` value dynamically so we
+        # only push to Docker Hub when its credentials are available.
+        # See #1072.
+        id: images
+        run: |
+          {
+            echo "list<<EOF"
+            echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+            if [ "${{ steps.dockerhub.outputs.available }}" = "true" ]; then
+              echo "docker.io/${{ env.IMAGE_NAME }}"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5
         with:
-          images: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-            docker.io/${{ env.IMAGE_NAME }}
+          images: ${{ steps.images.outputs.list }}
           tags: |
             type=semver,pattern={{version}},value=${{ steps.version.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.tag }}
