@@ -24,3 +24,10 @@ wasm-bindgen = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
 console_error_panic_hook = "0.1"
+
+[dev-dependencies]
+# Used by tests gated `#[cfg(target_arch = "wasm32")]` to exercise the
+# actual `#[wasm_bindgen]` -> `JsValue` boundary that native `cargo test`
+# cannot reach. Run via `wasm-pack test --node` (see `.github/workflows/wasm.yml`).
+wasm-bindgen-test = "0.3"
+js-sys = "0.3"
