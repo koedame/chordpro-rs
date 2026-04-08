@@ -19,13 +19,13 @@
             }
         },
         "delegate-block": {
-            "begin": "(?i)({)(start_of_(?:abc|ly|lilypond|svg|textblock))(})",
+            "begin": "(?i)({)(start_of_(?!(?:verse|chorus|bridge|grid|tab)\\b)[a-z][a-z0-9_]*)(})",
             "beginCaptures": {
                 "1": {"name": "punctuation.definition.directive.begin.chordpro"},
                 "2": {"name": "keyword.control.directive.chordpro"},
                 "3": {"name": "punctuation.definition.directive.end.chordpro"}
             },
-            "end": "(?i)({)(end_of_(?:abc|ly|lilypond|svg|textblock))(})",
+            "end": "(?i)({)(end_of_(?!(?:verse|chorus|bridge|grid|tab)\\b)[a-z][a-z0-9_]*)(})",
             "endCaptures": {
                 "1": {"name": "punctuation.definition.directive.begin.chordpro"},
                 "2": {"name": "keyword.control.directive.chordpro"},

@@ -1,6 +1,6 @@
 # This is a comment
-# ^ comment.line.chordpro
 # ^ punctuation.definition.comment.chordpro
+#  ^ comment.line.chordpro
 
 {title: Amazing Grace}
 # ^ punctuation.definition.directive.begin.chordpro
@@ -26,3 +26,7 @@ T:Example
 K:G
 |:GABc|d2d2:|
 {end_of_abc}
+
+{start_of_custom}
+raw content: [not a chord] and {not_a_directive}
+{end_of_custom}
