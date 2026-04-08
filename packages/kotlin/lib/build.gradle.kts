@@ -88,7 +88,7 @@ mavenPublishing {
             license {
                 name.set("MIT")
                 url.set("https://github.com/koedame/chordsketch/blob/main/LICENSE")
-                distribution.set("https://github.com/koedame/chordsketch/blob/main/LICENSE")
+                distribution.set("repo")
             }
         }
 
