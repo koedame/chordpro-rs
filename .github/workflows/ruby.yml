@@ -198,7 +198,9 @@ jobs:
     # back here — that would silently downgrade us to long-lived
     # credentials. The trusted publisher must be pre-registered at
     #   https://rubygems.org/profile/oidc/pending_trusted_publishers
-    # for this repo + workflow, otherwise the very first publish fails.
+    # for this repo + workflow + environment, otherwise the very first
+    # publish fails with 403 Forbidden. The environment name ("rubygems")
+    # must match the environment gate set below.
     environment:
       name: rubygems
       url: https://rubygems.org/gems/chordsketch
