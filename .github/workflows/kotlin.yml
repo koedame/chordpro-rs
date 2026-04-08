@@ -83,9 +83,11 @@ jobs:
           shared-key: kotlin-${{ matrix.target }}
 
       - name: Build
-        run: |
-          ${{ matrix.cross && 'cross' || 'cargo' }} build \
-            -p chordsketch-ffi --release --target ${{ matrix.target }}
+        # `cross` is used for the aarch64-linux target (matrix.cross == true);
+        # all other targets build with plain `cargo`.
+        # The command is on one line so it works on all runner shells
+        # (bash, PowerShell, cmd) — backslash line continuation is bash-only.
+        run: ${{ matrix.cross && 'cross' || 'cargo' }} build -p chordsketch-ffi --release --target ${{ matrix.target }}
 
       - name: Upload JNI library
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
