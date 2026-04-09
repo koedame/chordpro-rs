@@ -16,6 +16,7 @@ pub mod rrjson;
 pub mod selector;
 pub mod token;
 pub mod transpose;
+pub mod voicings;
 
 // Re-export key types for convenience.
 pub use chord::{Accidental, ChordDetail, ChordQuality, Note, parse_chord};
@@ -27,6 +28,7 @@ pub use parser::{
 };
 pub use render_result::RenderResult;
 pub use token::{Position, Span, Token, TokenKind};
+pub use voicings::{guitar_voicing, ukulele_voicing};
 
 /// Returns the library version.
 #[must_use]
