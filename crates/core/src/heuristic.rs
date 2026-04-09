@@ -333,8 +333,9 @@ where
 ///
 /// Accepted patterns:
 /// - Root `A–G` with optional `#` / `b`
-/// - Optional quality: `m`, `maj`, `min`, `dim`, `aug`, `sus`, `add`, `+`, `°`
-/// - Optional numeric extension: digits optionally prefixed by `#` or `b`
+/// - Zero or more quality+extension atoms: a quality keyword (`m`, `maj`,
+///   `min`, `dim`, `aug`, `sus`, `add`, `+`, `°`) optionally followed by a
+///   numeric extension (e.g. `m7add11`, `maj7sus4`, `7b5`)
 /// - Optional bass note: `/A–G[#b]`
 fn is_chord_token(token: &str) -> bool {
     // Chord names are short; reject anything suspiciously long.
@@ -384,43 +385,65 @@ fn is_chord_token(token: &str) -> bool {
     is_valid_quality_ext(quality_ext)
 }
 
+/// Consumes an optional accidental (`#` or `b`, only when immediately
+/// followed by a digit) and then any run of ASCII digits.  Returns the
+/// unconsumed suffix.
+fn consume_numeric(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    // Accidental only counts when a digit follows it.
+    if bytes.len() >= 2 && (bytes[0] == b'#' || bytes[0] == b'b') && bytes[1].is_ascii_digit() {
+        i = 1;
+    }
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    &s[i..]
+}
+
 /// Returns `true` if `s` is a valid chord quality+extension suffix.
 ///
-/// Acceptable patterns (all after the root + optional accidental):
-/// - Empty string (plain major chord)
-/// - Starts with a recognized quality keyword or symbol
-/// - Any trailing content must consist of digits, `#`, or `b` only
+/// The suffix is consumed iteratively: each step strips one quality keyword
+/// (`maj`, `min`, `dim`, `aug`, `sus`, `add`, `m`, `+`, `°`) optionally
+/// followed by a numeric extension (optional `#`/`b` accidental then digits).
+/// This allows compound forms such as `m7add11`, `maj7sus4`, or `7b5`.
+///
+/// Acceptable atoms (zero or more, in any order):
+/// - Quality keyword: `maj`, `min`, `dim`, `aug`, `sus`, `add`, `m`, `+`, `°`
+/// - Numeric extension: optional accidental (`#`/`b`, only if a digit follows)
+///   then one or more digits
 fn is_valid_quality_ext(s: &str) -> bool {
-    if s.is_empty() {
-        return true;
+    let mut rest = s;
+    loop {
+        if rest.is_empty() {
+            return true;
+        }
+
+        // Try to strip a quality keyword.
+        let after_kw: Option<&str> = None
+            .or_else(|| rest.strip_prefix("maj"))
+            .or_else(|| rest.strip_prefix("min"))
+            .or_else(|| rest.strip_prefix("dim"))
+            .or_else(|| rest.strip_prefix("aug"))
+            .or_else(|| rest.strip_prefix("sus"))
+            .or_else(|| rest.strip_prefix("add"))
+            .or_else(|| rest.strip_prefix('m'))
+            .or_else(|| rest.strip_prefix('+'))
+            .or_else(|| rest.strip_prefix('°'));
+
+        if let Some(after) = after_kw {
+            // Keyword consumed; optionally consume a following numeric part.
+            rest = consume_numeric(after);
+        } else {
+            // No keyword — try a bare numeric extension.
+            let next = consume_numeric(rest);
+            if next.len() == rest.len() {
+                // Nothing consumed: unrecognized character.
+                return false;
+            }
+            rest = next;
+        }
     }
-
-    let remainder: &str = if let Some(r) = s.strip_prefix("maj") {
-        r
-    } else if let Some(r) = s.strip_prefix("min") {
-        r
-    } else if let Some(r) = s.strip_prefix("dim") {
-        r
-    } else if let Some(r) = s.strip_prefix("aug") {
-        r
-    } else if let Some(r) = s.strip_prefix("sus") {
-        r
-    } else if let Some(r) = s.strip_prefix("add") {
-        r
-    } else if let Some(r) = s.strip_prefix('m') {
-        r
-    } else if let Some(r) = s.strip_prefix('+') {
-        r
-    } else if let Some(r) = s.strip_prefix('°') {
-        r
-    } else {
-        s // No recognized quality prefix — must be all digits/accidentals
-    };
-
-    // The remainder after the quality keyword must be digits, '#', or 'b' only.
-    remainder
-        .chars()
-        .all(|c| c.is_ascii_digit() || c == '#' || c == 'b')
 }
 
 /// Extracts `(byte_offset, chord_name)` pairs from a chord line, preserving
@@ -776,6 +799,22 @@ mod tests {
         assert!(is_chord_token("F#m7"));
         assert!(is_chord_token("Gsus4"));
         assert!(is_chord_token("Em"));
+    }
+
+    #[test]
+    fn chord_token_accepts_multicomponent_extensions() {
+        // Compound quality+extension sequences (issue #1279).
+        assert!(is_chord_token("Am7add11"));
+        assert!(is_chord_token("Cmaj7sus4"));
+        assert!(is_chord_token("G7b5"));
+        assert!(is_chord_token("Fmaj7add9"));
+        assert!(is_chord_token("Dm7add11"));
+        assert!(is_chord_token("G7#9"));
+        assert!(is_chord_token("Cmaj9"));
+        // Words that happen to start with A-G must still be rejected.
+        assert!(!is_chord_token("Chorus"));
+        assert!(!is_chord_token("Bridge"));
+        assert!(!is_chord_token("Cmaj7extended")); // 'e' after digits is not a keyword
     }
 
     // --- is_chord_line ---
