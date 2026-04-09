@@ -45,12 +45,10 @@ fn formatter_golden_tests() {
             continue;
         }
 
-        let input = fs::read_to_string(&input_path).unwrap_or_else(|e| {
-            panic!("failed to read {}: {e}", input_path.display())
-        });
-        let expected = fs::read_to_string(&expected_path).unwrap_or_else(|e| {
-            panic!("failed to read {}: {e}", expected_path.display())
-        });
+        let input_msg = format!("failed to read {}", input_path.display());
+        let expected_msg = format!("failed to read {}", expected_path.display());
+        let input = fs::read_to_string(&input_path).expect(&input_msg);
+        let expected = fs::read_to_string(&expected_path).expect(&expected_msg);
 
         let actual = chordsketch_core::formatter::format(
             &input,
@@ -67,9 +65,8 @@ fn formatter_golden_tests() {
         }
     }
 
-    assert_eq!(
-        failed,
-        0,
+    assert!(
+        failed == 0,
         "{failed} formatter golden test(s) failed (see above)"
     );
     assert!(tested > 0, "no formatter golden tests were found");
