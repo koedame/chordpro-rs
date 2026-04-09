@@ -31,15 +31,40 @@ use tower_lsp::{LspService, Server};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    // Accept --stdio for editor compatibility; stdio is always the transport.
     let args: Vec<String> = std::env::args().collect();
-    if args.iter().any(|a| a == "--help" || a == "-h") {
-        eprintln!("Usage: chordsketch-lsp [--stdio]");
-        eprintln!();
-        eprintln!("Language Server Protocol server for ChordPro files.");
-        eprintln!("Communicates over stdio (--stdio is accepted but is the default).");
-        return;
+
+    // argv[0] is the binary name; iterate over the rest.
+    for arg in args.iter().skip(1) {
+        match arg.as_str() {
+            "--stdio" => {
+                // Expected: stdio is always the transport; accepted as a no-op.
+            }
+            "--help" | "-h" => {
+                // Help text goes to stdout per POSIX convention.
+                println!("Usage: chordsketch-lsp [--stdio]");
+                println!();
+                println!("Language Server Protocol server for ChordPro files.");
+                println!("Communicates over stdio (--stdio is accepted but is the default).");
+                return;
+            }
+            unknown => {
+                eprintln!("error: unrecognized argument '{unknown}'");
+                eprintln!("Usage: chordsketch-lsp [--stdio]");
+                std::process::exit(1);
+            }
+        }
     }
+
+    // Write structured logs to stderr so they don't interfere with the
+    // LSP JSON-RPC stream on stdout. RUST_LOG controls the log level
+    // (defaults to "info" if not set).
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .with_writer(std::io::stderr)
+        .init();
 
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
