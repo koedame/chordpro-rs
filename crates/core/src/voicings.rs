@@ -1,6 +1,6 @@
 //! Built-in chord voicing database for guitar and ukulele.
 //!
-//! Provides ~200 pre-defined chord voicings stored as compile-time static
+//! Provides 96 pre-defined chord voicings (60 guitar + 36 ukulele) stored as compile-time static
 //! data — no external files, no runtime I/O. The lookup priority is:
 //!
 //! 1. `{define}` in the song file (handled by the parser/AST)
@@ -32,8 +32,6 @@ struct StaticVoicing {
     name: &'static str,
     base_fret: u32,
     frets: &'static [i32],
-    /// Number of strings for this instrument (6 = guitar, 4 = ukulele).
-    strings: usize,
 }
 
 impl StaticVoicing {
@@ -41,7 +39,7 @@ impl StaticVoicing {
         DiagramData {
             name: self.name.to_string(),
             display_name: None,
-            strings: self.strings,
+            strings: self.frets.len(),
             frets_shown: DEFAULT_FRETS_SHOWN,
             base_fret: self.base_fret,
             frets: self.frets.to_vec(),
@@ -66,75 +64,63 @@ const GUITAR_MAJOR: &[StaticVoicing] = &[
         name: "E",
         base_fret: 1,
         frets: &[0, 2, 2, 1, 0, 0],
-        strings: 6,
     },
     StaticVoicing {
         name: "A",
         base_fret: 1,
         frets: &[-1, 0, 2, 2, 2, 0],
-        strings: 6,
     },
     StaticVoicing {
         name: "G",
         base_fret: 1,
         frets: &[3, 2, 0, 0, 0, 3],
-        strings: 6,
     },
     StaticVoicing {
         name: "C",
         base_fret: 1,
         frets: &[-1, 3, 2, 0, 1, 0],
-        strings: 6,
     },
     StaticVoicing {
         name: "D",
         base_fret: 1,
         frets: &[-1, -1, 0, 2, 3, 2],
-        strings: 6,
     },
     // E-shape barre voicings
     StaticVoicing {
         name: "F",
         base_fret: 1,
         frets: &[1, 3, 3, 2, 1, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "F#",
         base_fret: 2,
         frets: &[1, 3, 3, 2, 1, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "G#",
         base_fret: 4,
         frets: &[1, 3, 3, 2, 1, 1],
-        strings: 6,
     },
     // A-shape barre voicings
     StaticVoicing {
         name: "A#",
         base_fret: 1,
         frets: &[-1, 1, 3, 3, 3, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "B",
         base_fret: 2,
         frets: &[-1, 1, 3, 3, 3, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "C#",
         base_fret: 4,
         frets: &[-1, 1, 3, 3, 3, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "D#",
         base_fret: 6,
         frets: &[-1, 1, 3, 3, 3, 1],
-        strings: 6,
     },
 ];
 
@@ -148,75 +134,63 @@ const GUITAR_MINOR: &[StaticVoicing] = &[
         name: "Em",
         base_fret: 1,
         frets: &[0, 2, 2, 0, 0, 0],
-        strings: 6,
     },
     StaticVoicing {
         name: "Am",
         base_fret: 1,
         frets: &[-1, 0, 2, 2, 1, 0],
-        strings: 6,
     },
     StaticVoicing {
         name: "Dm",
         base_fret: 1,
         frets: &[-1, -1, 0, 2, 3, 1],
-        strings: 6,
     },
     // Em-shape barre voicings
     StaticVoicing {
         name: "Fm",
         base_fret: 1,
         frets: &[1, 3, 3, 1, 1, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "F#m",
         base_fret: 2,
         frets: &[1, 3, 3, 1, 1, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "Gm",
         base_fret: 3,
         frets: &[1, 3, 3, 1, 1, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "G#m",
         base_fret: 4,
         frets: &[1, 3, 3, 1, 1, 1],
-        strings: 6,
     },
     // Am-shape barre voicings
     StaticVoicing {
         name: "A#m",
         base_fret: 1,
         frets: &[-1, 1, 3, 3, 2, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "Bm",
         base_fret: 2,
         frets: &[-1, 1, 3, 3, 2, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "Cm",
         base_fret: 3,
         frets: &[-1, 1, 3, 3, 2, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "C#m",
         base_fret: 4,
         frets: &[-1, 1, 3, 3, 2, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "D#m",
         base_fret: 6,
         frets: &[-1, 1, 3, 3, 2, 1],
-        strings: 6,
     },
 ];
 
@@ -230,75 +204,63 @@ const GUITAR_DOM7: &[StaticVoicing] = &[
         name: "E7",
         base_fret: 1,
         frets: &[0, 2, 0, 1, 0, 0],
-        strings: 6,
     },
     StaticVoicing {
         name: "A7",
         base_fret: 1,
         frets: &[-1, 0, 2, 0, 2, 0],
-        strings: 6,
     },
     StaticVoicing {
         name: "G7",
         base_fret: 1,
         frets: &[3, 2, 0, 0, 0, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "C7",
         base_fret: 1,
         frets: &[-1, 3, 2, 3, 1, 0],
-        strings: 6,
     },
     StaticVoicing {
         name: "D7",
         base_fret: 1,
         frets: &[-1, -1, 0, 2, 1, 2],
-        strings: 6,
     },
     StaticVoicing {
         name: "B7",
         base_fret: 1,
         frets: &[-1, 2, 1, 2, 0, 2],
-        strings: 6,
     },
     // E7-shape barre voicings
     StaticVoicing {
         name: "F7",
         base_fret: 1,
         frets: &[1, 3, 1, 2, 1, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "F#7",
         base_fret: 2,
         frets: &[1, 3, 1, 2, 1, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "G#7",
         base_fret: 4,
         frets: &[1, 3, 1, 2, 1, 1],
-        strings: 6,
     },
     // A7-shape barre voicings
     StaticVoicing {
         name: "A#7",
         base_fret: 1,
         frets: &[-1, 1, 3, 1, 3, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "C#7",
         base_fret: 4,
         frets: &[-1, 1, 3, 1, 3, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "D#7",
         base_fret: 6,
         frets: &[-1, 1, 3, 1, 3, 1],
-        strings: 6,
     },
 ];
 
@@ -312,75 +274,63 @@ const GUITAR_MAJ7: &[StaticVoicing] = &[
         name: "Emaj7",
         base_fret: 1,
         frets: &[0, 2, 1, 1, 0, 0],
-        strings: 6,
     },
     StaticVoicing {
         name: "Amaj7",
         base_fret: 1,
         frets: &[-1, 0, 2, 1, 2, 0],
-        strings: 6,
     },
     StaticVoicing {
         name: "Gmaj7",
         base_fret: 1,
         frets: &[3, 2, 0, 0, 0, 2],
-        strings: 6,
     },
     StaticVoicing {
         name: "Cmaj7",
         base_fret: 1,
         frets: &[-1, 3, 2, 0, 0, 0],
-        strings: 6,
     },
     StaticVoicing {
         name: "Dmaj7",
         base_fret: 1,
         frets: &[-1, -1, 0, 2, 2, 2],
-        strings: 6,
     },
     // Emaj7-shape barre voicings
     StaticVoicing {
         name: "Fmaj7",
         base_fret: 1,
         frets: &[1, 3, 2, 2, 1, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "F#maj7",
         base_fret: 2,
         frets: &[1, 3, 2, 2, 1, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "G#maj7",
         base_fret: 4,
         frets: &[1, 3, 2, 2, 1, 1],
-        strings: 6,
     },
     // Amaj7-shape barre voicings
     StaticVoicing {
         name: "A#maj7",
         base_fret: 1,
         frets: &[-1, 1, 3, 2, 2, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "Bmaj7",
         base_fret: 2,
         frets: &[-1, 1, 3, 2, 2, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "C#maj7",
         base_fret: 4,
         frets: &[-1, 1, 3, 2, 2, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "D#maj7",
         base_fret: 6,
         frets: &[-1, 1, 3, 2, 2, 1],
-        strings: 6,
     },
 ];
 
@@ -394,75 +344,63 @@ const GUITAR_MIN7: &[StaticVoicing] = &[
         name: "Em7",
         base_fret: 1,
         frets: &[0, 2, 0, 0, 0, 0],
-        strings: 6,
     },
     StaticVoicing {
         name: "Am7",
         base_fret: 1,
         frets: &[-1, 0, 2, 0, 1, 0],
-        strings: 6,
     },
     StaticVoicing {
         name: "Dm7",
         base_fret: 1,
         frets: &[-1, -1, 0, 2, 1, 1],
-        strings: 6,
     },
     // Em7-shape barre voicings
     StaticVoicing {
         name: "Fm7",
         base_fret: 1,
         frets: &[1, 3, 1, 1, 1, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "F#m7",
         base_fret: 2,
         frets: &[1, 3, 1, 1, 1, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "Gm7",
         base_fret: 3,
         frets: &[1, 3, 1, 1, 1, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "G#m7",
         base_fret: 4,
         frets: &[1, 3, 1, 1, 1, 1],
-        strings: 6,
     },
     // Am7-shape barre voicings
     StaticVoicing {
         name: "A#m7",
         base_fret: 1,
         frets: &[-1, 1, 3, 1, 2, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "Bm7",
         base_fret: 2,
         frets: &[-1, 1, 3, 1, 2, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "Cm7",
         base_fret: 3,
         frets: &[-1, 1, 3, 1, 2, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "C#m7",
         base_fret: 4,
         frets: &[-1, 1, 3, 1, 2, 1],
-        strings: 6,
     },
     StaticVoicing {
         name: "D#m7",
         base_fret: 6,
         frets: &[-1, 1, 3, 1, 2, 1],
-        strings: 6,
     },
 ];
 
@@ -481,73 +419,61 @@ const UKULELE_MAJOR: &[StaticVoicing] = &[
         name: "A",
         base_fret: 1,
         frets: &[2, 1, 0, 0],
-        strings: 4,
     },
     StaticVoicing {
         name: "A#",
         base_fret: 1,
         frets: &[3, 2, 1, 1],
-        strings: 4,
     },
     StaticVoicing {
         name: "B",
         base_fret: 1,
         frets: &[4, 3, 2, 2],
-        strings: 4,
     },
     StaticVoicing {
         name: "C",
         base_fret: 1,
         frets: &[0, 0, 0, 3],
-        strings: 4,
     },
     StaticVoicing {
         name: "C#",
         base_fret: 1,
         frets: &[1, 1, 1, 4],
-        strings: 4,
     },
     StaticVoicing {
         name: "D",
         base_fret: 1,
         frets: &[2, 2, 2, 0],
-        strings: 4,
     },
     StaticVoicing {
         name: "D#",
         base_fret: 1,
         frets: &[3, 3, 3, 1],
-        strings: 4,
     },
     StaticVoicing {
         name: "E",
         base_fret: 1,
         frets: &[4, 4, 4, 2],
-        strings: 4,
     },
     StaticVoicing {
         name: "F",
         base_fret: 1,
         frets: &[2, 0, 1, 0],
-        strings: 4,
     },
     StaticVoicing {
         name: "F#",
         base_fret: 1,
         frets: &[3, 1, 2, 1],
-        strings: 4,
     },
     StaticVoicing {
         name: "G",
         base_fret: 1,
         frets: &[0, 2, 3, 2],
-        strings: 4,
     },
     StaticVoicing {
         name: "G#",
         base_fret: 1,
         frets: &[1, 3, 4, 3],
-        strings: 4,
     },
 ];
 
@@ -557,73 +483,61 @@ const UKULELE_MINOR: &[StaticVoicing] = &[
         name: "Am",
         base_fret: 1,
         frets: &[2, 0, 0, 0],
-        strings: 4,
     },
     StaticVoicing {
         name: "A#m",
         base_fret: 1,
         frets: &[3, 1, 1, 1],
-        strings: 4,
     },
     StaticVoicing {
         name: "Bm",
         base_fret: 1,
         frets: &[4, 2, 2, 2],
-        strings: 4,
     },
     StaticVoicing {
         name: "Cm",
         base_fret: 1,
         frets: &[0, 3, 3, 3],
-        strings: 4,
     },
     StaticVoicing {
         name: "C#m",
         base_fret: 1,
         frets: &[1, 1, 0, 4],
-        strings: 4,
     },
     StaticVoicing {
         name: "Dm",
         base_fret: 1,
         frets: &[2, 2, 1, 0],
-        strings: 4,
     },
     StaticVoicing {
         name: "D#m",
         base_fret: 1,
         frets: &[3, 3, 2, 1],
-        strings: 4,
     },
     StaticVoicing {
         name: "Em",
         base_fret: 1,
         frets: &[0, 4, 3, 2],
-        strings: 4,
     },
     StaticVoicing {
         name: "Fm",
         base_fret: 1,
         frets: &[1, 0, 1, 3],
-        strings: 4,
     },
     StaticVoicing {
         name: "F#m",
         base_fret: 1,
         frets: &[2, 1, 2, 0],
-        strings: 4,
     },
     StaticVoicing {
         name: "Gm",
         base_fret: 1,
         frets: &[0, 2, 3, 1],
-        strings: 4,
     },
     StaticVoicing {
         name: "G#m",
         base_fret: 1,
         frets: &[1, 3, 4, 2],
-        strings: 4,
     },
 ];
 
@@ -633,127 +547,96 @@ const UKULELE_DOM7: &[StaticVoicing] = &[
         name: "A7",
         base_fret: 1,
         frets: &[0, 1, 0, 0],
-        strings: 4,
     },
     StaticVoicing {
         name: "A#7",
         base_fret: 1,
         frets: &[1, 2, 1, 1],
-        strings: 4,
     },
     StaticVoicing {
         name: "B7",
         base_fret: 1,
         frets: &[2, 3, 2, 2],
-        strings: 4,
     },
     StaticVoicing {
         name: "C7",
         base_fret: 1,
         frets: &[0, 0, 0, 1],
-        strings: 4,
     },
     StaticVoicing {
         name: "C#7",
         base_fret: 1,
         frets: &[1, 1, 1, 2],
-        strings: 4,
     },
     StaticVoicing {
         name: "D7",
         base_fret: 1,
         frets: &[2, 2, 2, 3],
-        strings: 4,
     },
     StaticVoicing {
         name: "D#7",
         base_fret: 1,
         frets: &[3, 3, 3, 4],
-        strings: 4,
     },
     StaticVoicing {
         name: "E7",
         base_fret: 1,
         frets: &[1, 2, 0, 2],
-        strings: 4,
     },
     StaticVoicing {
         name: "F7",
         base_fret: 1,
         frets: &[2, 3, 1, 0],
-        strings: 4,
     },
     StaticVoicing {
         name: "F#7",
         base_fret: 1,
         frets: &[3, 4, 2, 4],
-        strings: 4,
     },
     StaticVoicing {
         name: "G7",
         base_fret: 1,
         frets: &[0, 2, 1, 2],
-        strings: 4,
     },
     StaticVoicing {
         name: "G#7",
         base_fret: 1,
         frets: &[1, 3, 2, 3],
-        strings: 4,
     },
 ];
 
 // ---------------------------------------------------------------------------
-// Enharmonic alias table
+// Enharmonic root normalisation
 //
-// Maps flat-spelled root+suffix → sharp-spelled equivalent stored above.
-// Only the root changes; the suffix is passed through unchanged.
+// Splits the chord name into a flat root + suffix, normalises the root to
+// its sharp equivalent, and reassembles.  Only the root changes; the suffix
+// is passed through unchanged, so this works for any chord family without
+// manual expansion.
 // ---------------------------------------------------------------------------
 
 /// Converts a flat-spelled chord name to its sharp-spelled canonical form.
 ///
-/// Returns `None` if no alias applies (the name is already in canonical form
-/// or is unrecognised).
-fn flat_to_sharp(name: &str) -> Option<&'static str> {
-    // Map of complete chord name: flat → sharp equivalent.
-    // Covers the most common flat-root spellings.
-    const ALIASES: &[(&str, &str)] = &[
-        // Major
+/// Splits `name` into a flat root (Bb, Db, Eb, Gb, Ab) and an arbitrary
+/// suffix, normalises the root to its sharp equivalent, and returns the
+/// reassembled string.  Returns `None` when the root is not a recognised
+/// flat enharmonic (already in canonical form or unrecognised).
+///
+/// Because only the root is mapped, this handles any chord suffix — dom9,
+/// sus4, add9, dim7, etc. — without requiring additions to this function.
+fn flat_to_sharp(name: &str) -> Option<String> {
+    const ROOTS: &[(&str, &str)] = &[
         ("Bb", "A#"),
         ("Db", "C#"),
         ("Eb", "D#"),
         ("Gb", "F#"),
         ("Ab", "G#"),
-        // Minor
-        ("Bbm", "A#m"),
-        ("Dbm", "C#m"),
-        ("Ebm", "D#m"),
-        ("Gbm", "F#m"),
-        ("Abm", "G#m"),
-        // Dominant 7th
-        ("Bb7", "A#7"),
-        ("Db7", "C#7"),
-        ("Eb7", "D#7"),
-        ("Gb7", "F#7"),
-        ("Ab7", "G#7"),
-        // Major 7th
-        ("Bbmaj7", "A#maj7"),
-        ("Dbmaj7", "C#maj7"),
-        ("Ebmaj7", "D#maj7"),
-        ("Gbmaj7", "F#maj7"),
-        ("Abmaj7", "G#maj7"),
-        // Minor 7th
-        ("Bbm7", "A#m7"),
-        ("Dbm7", "C#m7"),
-        ("Ebm7", "D#m7"),
-        ("Gbm7", "F#m7"),
-        ("Abm7", "G#m7"),
-        // Ukulele minor (same roots, but listed for completeness — covered above)
     ];
-    ALIASES
-        .iter()
-        .find(|(flat, _)| *flat == name)
-        .map(|(_, sharp)| *sharp)
+    for (flat, sharp) in ROOTS {
+        if let Some(suffix) = name.strip_prefix(flat) {
+            return Some(format!("{sharp}{suffix}"));
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -766,7 +649,8 @@ fn flat_to_sharp(name: &str) -> Option<&'static str> {
 /// Accepts both sharp and flat spellings (e.g., `"Bb"` → same as `"A#"`).
 #[must_use]
 pub fn guitar_voicing(chord_name: &str) -> Option<DiagramData> {
-    let name = flat_to_sharp(chord_name).unwrap_or(chord_name);
+    let canonical = flat_to_sharp(chord_name);
+    let name = canonical.as_deref().unwrap_or(chord_name);
     let tables: &[&[StaticVoicing]] = &[
         GUITAR_MAJOR,
         GUITAR_MINOR,
@@ -788,7 +672,8 @@ pub fn guitar_voicing(chord_name: &str) -> Option<DiagramData> {
 /// Accepts both sharp and flat spellings.
 #[must_use]
 pub fn ukulele_voicing(chord_name: &str) -> Option<DiagramData> {
-    let name = flat_to_sharp(chord_name).unwrap_or(chord_name);
+    let canonical = flat_to_sharp(chord_name);
+    let name = canonical.as_deref().unwrap_or(chord_name);
     let tables: &[&[StaticVoicing]] = &[UKULELE_MAJOR, UKULELE_MINOR, UKULELE_DOM7];
     for table in tables {
         if let Some(v) = table.iter().find(|v| v.name == name) {
@@ -828,9 +713,11 @@ pub fn lookup_diagram(
     // Normalize both the lookup key and the define names to their canonical sharp
     // form so that e.g. a {define: A# …} entry is found when looking up "Bb",
     // and vice-versa.
-    let canonical_chord = flat_to_sharp(chord_name).unwrap_or(chord_name);
+    let canonical_chord_owned = flat_to_sharp(chord_name);
+    let canonical_chord = canonical_chord_owned.as_deref().unwrap_or(chord_name);
     if let Some((_, raw)) = defines.iter().find(|(n, _)| {
-        let canonical_n = flat_to_sharp(n.as_str()).unwrap_or(n.as_str());
+        let canonical_n_owned = flat_to_sharp(n.as_str());
+        let canonical_n = canonical_n_owned.as_deref().unwrap_or(n.as_str());
         canonical_n == canonical_chord
     }) {
         return crate::chord_diagram::DiagramData::from_raw_infer_frets(
@@ -969,6 +856,55 @@ mod tests {
     }
 
     #[test]
+    fn flat_to_sharp_extended_chord_types() {
+        // Root-based normalisation handles any suffix without manual expansion.
+        assert_eq!(flat_to_sharp("Bb9").as_deref(), Some("A#9"));
+        assert_eq!(flat_to_sharp("Bbsus4").as_deref(), Some("A#sus4"));
+        assert_eq!(flat_to_sharp("Bbadd9").as_deref(), Some("A#add9"));
+        assert_eq!(flat_to_sharp("Bbdim").as_deref(), Some("A#dim"));
+        assert_eq!(flat_to_sharp("Bbdim7").as_deref(), Some("A#dim7"));
+        assert_eq!(flat_to_sharp("Bbaug").as_deref(), Some("A#aug"));
+        assert_eq!(flat_to_sharp("Bb6").as_deref(), Some("A#6"));
+        assert_eq!(flat_to_sharp("Bbm6").as_deref(), Some("A#m6"));
+        assert_eq!(flat_to_sharp("Bb11").as_deref(), Some("A#11"));
+        assert_eq!(flat_to_sharp("Bb13").as_deref(), Some("A#13"));
+
+        // Other flat roots
+        assert_eq!(flat_to_sharp("Dbsus2").as_deref(), Some("C#sus2"));
+        assert_eq!(flat_to_sharp("Ebadd9").as_deref(), Some("D#add9"));
+
+        // Sharp spellings must not be altered.
+        assert_eq!(flat_to_sharp("A#9").as_deref(), None);
+        assert_eq!(flat_to_sharp("C#sus4").as_deref(), None);
+
+        // Unknown root returns None.
+        assert_eq!(flat_to_sharp("Xyzzy").as_deref(), None);
+        assert_eq!(flat_to_sharp("").as_deref(), None);
+    }
+
+    #[test]
+    fn lookup_diagram_define_extended_chord_flat_sharp() {
+        // {define: Bb9 …} in the song, [A#9] in the lyrics → define must be found.
+        let defines = vec![(
+            "Bb9".to_string(),
+            "base-fret 1 frets 1 2 3 4 5 1".to_string(),
+        )];
+        let d = lookup_diagram("A#9", &defines, "guitar", 5).unwrap();
+        assert_eq!(d.frets, vec![1, 2, 3, 4, 5, 1]);
+    }
+
+    #[test]
+    fn lookup_diagram_define_extended_chord_sharp_flat() {
+        // {define: A#sus4 …} in the song, [Bbsus4] in the lyrics → define must be found.
+        let defines = vec![(
+            "A#sus4".to_string(),
+            "base-fret 1 frets 1 2 3 4 5 1".to_string(),
+        )];
+        let d = lookup_diagram("Bbsus4", &defines, "guitar", 5).unwrap();
+        assert_eq!(d.frets, vec![1, 2, 3, 4, 5, 1]);
+    }
+
+    #[test]
     fn guitar_unknown_chord_returns_none() {
         assert!(guitar_voicing("Xmaj13").is_none());
         assert!(guitar_voicing("").is_none());
@@ -1031,7 +967,6 @@ mod tests {
                     v.name,
                     v.frets.len()
                 );
-                assert_eq!(v.strings, 6, "voicing '{}' strings mismatch", v.name);
             }
         }
     }
@@ -1048,7 +983,6 @@ mod tests {
                     v.name,
                     v.frets.len()
                 );
-                assert_eq!(v.strings, 4, "voicing '{}' strings mismatch", v.name);
             }
         }
     }
