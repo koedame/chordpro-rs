@@ -29,7 +29,7 @@ mod server;
 use server::Backend;
 use tower_lsp::{LspService, Server};
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     // Accept --stdio for editor compatibility; stdio is always the transport.
     let args: Vec<String> = std::env::args().collect();
@@ -38,7 +38,7 @@ async fn main() {
         eprintln!();
         eprintln!("Language Server Protocol server for ChordPro files.");
         eprintln!("Communicates over stdio (--stdio is accepted but is the default).");
-        std::process::exit(0);
+        return;
     }
 
     let stdin = tokio::io::stdin();

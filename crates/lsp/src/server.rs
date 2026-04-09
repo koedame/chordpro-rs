@@ -5,11 +5,7 @@
 //! requests are left to their default (not-implemented) response so that
 //! editors degrade gracefully.
 
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use chordsketch_core::parse_multi_lenient;
-use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     Diagnostic, DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
@@ -21,22 +17,15 @@ use tower_lsp::{Client, LanguageServer};
 use crate::convert::parse_error_to_diagnostic;
 
 /// The LSP server backend.
-///
-/// Holds the active editor documents (URI → source text) and the `tower-lsp`
-/// client handle used to push diagnostics back to the editor.
 pub struct Backend {
     client: Client,
-    documents: Arc<Mutex<HashMap<tower_lsp::lsp_types::Url, String>>>,
 }
 
 impl Backend {
     /// Creates a new `Backend` with the given `tower-lsp` client.
     #[must_use]
     pub fn new(client: Client) -> Self {
-        Self {
-            client,
-            documents: Arc::new(Mutex::new(HashMap::new())),
-        }
+        Self { client }
     }
 
     /// Re-parses `text` and publishes diagnostics for `uri`.
@@ -83,30 +72,29 @@ impl LanguageServer for Backend {
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let uri = params.text_document.uri;
         let text = params.text_document.text;
-        self.documents
-            .lock()
-            .await
-            .insert(uri.clone(), text.clone());
         self.publish_diagnostics(uri, &text).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         let uri = params.text_document.uri;
-        // Full sync: take the last content change (there should be exactly one).
-        if let Some(change) = params.content_changes.into_iter().last() {
-            let text = change.text;
-            self.documents
-                .lock()
-                .await
-                .insert(uri.clone(), text.clone());
-            self.publish_diagnostics(uri, &text).await;
-        }
+        // Full sync: exactly one TextDocumentContentChangeEvent per notification.
+        // Use `next()` per spec; log a warning if the client sends an empty list.
+        let Some(change) = params.content_changes.into_iter().next() else {
+            self.client
+                .log_message(
+                    tower_lsp::lsp_types::MessageType::WARNING,
+                    "didChange received with no content changes",
+                )
+                .await;
+            return;
+        };
+        self.publish_diagnostics(uri, &change.text).await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
-        let uri = params.text_document.uri;
-        self.documents.lock().await.remove(&uri);
         // Clear diagnostics when the document is closed.
-        self.client.publish_diagnostics(uri, vec![], None).await;
+        self.client
+            .publish_diagnostics(params.text_document.uri, vec![], None)
+            .await;
     }
 }

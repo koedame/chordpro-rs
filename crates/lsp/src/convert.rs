@@ -19,15 +19,19 @@ pub fn parse_error_to_diagnostic(e: &ParseError) -> Diagnostic {
 }
 
 /// Converts a parser [`Span`] (1-based, half-open) to an LSP [`Range`] (0-based).
+///
+/// The parser enforces an input-size cap (see [`chordsketch_core::ParseOptions`])
+/// so line/column values fit comfortably within `u32`. `try_from` is used
+/// defensively; any value that somehow overflows is clamped to `u32::MAX`.
 fn span_to_range(span: &Span) -> Range {
     Range {
         start: Position {
-            line: span.start.line.saturating_sub(1) as u32,
-            character: span.start.column.saturating_sub(1) as u32,
+            line: u32::try_from(span.start.line.saturating_sub(1)).unwrap_or(u32::MAX),
+            character: u32::try_from(span.start.column.saturating_sub(1)).unwrap_or(u32::MAX),
         },
         end: Position {
-            line: span.end.line.saturating_sub(1) as u32,
-            character: span.end.column.saturating_sub(1) as u32,
+            line: u32::try_from(span.end.line.saturating_sub(1)).unwrap_or(u32::MAX),
+            character: u32::try_from(span.end.column.saturating_sub(1)).unwrap_or(u32::MAX),
         },
     }
 }
