@@ -480,37 +480,7 @@ impl Parser {
     /// with no chord bracket interpretation. The result is a lyrics line
     /// with a single text-only segment.
     fn parse_verbatim_line(&mut self) -> Result<Line, ParseError> {
-        let mut text = String::new();
-
-        loop {
-            match self.peek_kind() {
-                TokenKind::Newline | TokenKind::Eof => break,
-                TokenKind::ChordOpen => {
-                    text.push('[');
-                    self.advance();
-                }
-                TokenKind::ChordClose => {
-                    text.push(']');
-                    self.advance();
-                }
-                TokenKind::DirectiveOpen => {
-                    text.push('{');
-                    self.advance();
-                }
-                TokenKind::DirectiveClose => {
-                    text.push('}');
-                    self.advance();
-                }
-                TokenKind::Colon => {
-                    text.push(':');
-                    self.advance();
-                }
-                TokenKind::Text(t) => {
-                    text.push_str(t);
-                    self.advance();
-                }
-            }
-        }
+        let text = self.collect_raw_line();
 
         // Consume the newline.
         if self.peek_kind() == &TokenKind::Newline {
@@ -535,8 +505,31 @@ impl Parser {
     /// consumed as literal characters (they lose their structural meaning inside
     /// a source comment).
     fn parse_hash_comment_line(&mut self) -> Result<Line, ParseError> {
-        let mut raw = String::new();
+        let raw = self.collect_raw_line();
 
+        // Consume the trailing newline.
+        if self.peek_kind() == &TokenKind::Newline {
+            self.advance();
+        }
+
+        // The dispatch guard guarantees `raw` starts with `#` (no leading
+        // whitespace). Strip the `#` and one optional space.
+        let after_hash = raw
+            .strip_prefix('#')
+            .expect("dispatch guard guarantees raw starts with '#'");
+        let text = after_hash.strip_prefix(' ').unwrap_or(after_hash);
+
+        Ok(Line::Comment(CommentStyle::Normal, text.to_string()))
+    }
+
+    /// Collects all tokens on the current line (up to but not including the
+    /// trailing `Newline` or `Eof`) into a `String`, mapping structural tokens
+    /// (`[`, `]`, `{`, `}`, `:`) back to their literal characters.
+    ///
+    /// Does **not** consume the trailing `Newline`; the caller is responsible
+    /// for advancing past it.
+    fn collect_raw_line(&mut self) -> String {
+        let mut raw = String::new();
         loop {
             match self.peek_kind() {
                 TokenKind::Newline | TokenKind::Eof => break,
@@ -566,18 +559,7 @@ impl Parser {
                 }
             }
         }
-
-        // Consume the trailing newline.
-        if self.peek_kind() == &TokenKind::Newline {
-            self.advance();
-        }
-
-        // The dispatch guard guarantees `raw` starts with `#` (no leading
-        // whitespace). Strip the `#` and one optional space.
-        let after_hash = raw.strip_prefix('#').unwrap_or_default();
-        let text = after_hash.strip_prefix(' ').unwrap_or(after_hash);
-
-        Ok(Line::Comment(CommentStyle::Normal, text.to_string()))
+        raw
     }
 
     // -- Directive parsing --------------------------------------------------
