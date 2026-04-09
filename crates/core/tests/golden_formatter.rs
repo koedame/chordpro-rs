@@ -47,8 +47,14 @@ fn formatter_golden_tests() {
 
         let input_msg = format!("failed to read {}", input_path.display());
         let expected_msg = format!("failed to read {}", expected_path.display());
-        let input = fs::read_to_string(&input_path).expect(&input_msg);
-        let expected = fs::read_to_string(&expected_path).expect(&expected_msg);
+        // Normalize line endings so the test passes on Windows (where git
+        // checkout may convert LF to CRLF, and Rust reads files in binary mode).
+        let input = fs::read_to_string(&input_path)
+            .expect(&input_msg)
+            .replace("\r\n", "\n");
+        let expected = fs::read_to_string(&expected_path)
+            .expect(&expected_msg)
+            .replace("\r\n", "\n");
 
         let actual = chordsketch_core::formatter::format(
             &input,
