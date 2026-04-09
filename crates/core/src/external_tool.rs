@@ -965,15 +965,29 @@ mod tests {
 
     // -- collect_musescore_pages tests (#1262) --------------------------------
 
-    #[test]
-    fn collect_musescore_pages_single_page() {
+    /// RAII guard that removes a temp directory when dropped, even if a test panics.
+    struct TempDirGuard(std::path::PathBuf);
+    impl Drop for TempDirGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Create a unique temp dir for a test and return both the path and its guard.
+    fn make_test_temp_dir(label: &str) -> (std::path::PathBuf, TempDirGuard) {
         let dir = std::env::temp_dir().join(format!(
-            "test_ms_single_{}_{}_{}",
+            "test_ms_{label}_{}_{}_collect",
             std::process::id(),
             super::TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            "collect",
         ));
-        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(&dir).expect("failed to create test temp dir");
+        let guard = TempDirGuard(dir.clone());
+        (dir, guard)
+    }
+
+    #[test]
+    fn collect_musescore_pages_single_page() {
+        let (dir, _guard) = make_test_temp_dir("single");
         std::fs::write(dir.join("output-1.svg"), "<svg>page1</svg>").unwrap();
         let result = super::collect_musescore_pages(&dir).unwrap();
         assert!(
@@ -984,18 +998,11 @@ mod tests {
             result.contains("<svg>page1</svg>"),
             "SVG content should be present"
         );
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn collect_musescore_pages_multi_page() {
-        let dir = std::env::temp_dir().join(format!(
-            "test_ms_multi_{}_{}_{}",
-            std::process::id(),
-            super::TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            "collect",
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
+        let (dir, _guard) = make_test_temp_dir("multi");
         std::fs::write(dir.join("output-1.svg"), "<svg>page1</svg>").unwrap();
         std::fs::write(dir.join("output-2.svg"), "<svg>page2</svg>").unwrap();
         let result = super::collect_musescore_pages(&dir).unwrap();
@@ -1016,21 +1023,13 @@ mod tests {
         let p1 = result.find("<svg>page1</svg>").unwrap();
         let p2 = result.find("<svg>page2</svg>").unwrap();
         assert!(p1 < p2, "page 1 should appear before page 2");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn collect_musescore_pages_empty_dir_returns_empty_string() {
-        let dir = std::env::temp_dir().join(format!(
-            "test_ms_empty_{}_{}_{}",
-            std::process::id(),
-            super::TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            "collect",
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
+        let (dir, _guard) = make_test_temp_dir("empty");
         let result = super::collect_musescore_pages(&dir).unwrap();
         assert!(result.is_empty(), "no page files → empty string");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     // -- musescore integration tests (#1258) ----------------------------------
