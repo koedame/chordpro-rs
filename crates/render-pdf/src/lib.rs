@@ -3863,6 +3863,34 @@ mod chord_diagram_pdf_tests {
         render_chord_diagram_pdf(&data, &mut doc);
         // No panic = pass. The guard returned early.
     }
+
+    #[test]
+    fn test_define_chord_not_duplicated_in_auto_inject_grid() {
+        // Regression test for #1211/#1247: a chord with a {define} entry rendered
+        // inline must NOT appear a second time in the auto-inject grid.
+        //
+        // Strategy: render with {define: Am} + {diagrams} + [Am] lyrics and a
+        // non-defined chord [G].  Count occurrences of "Am" in the PDF content
+        // stream:
+        //  - chord-over-lyrics text: 1 occurrence
+        //  - inline diagram title at {define}: 1 occurrence
+        //  - auto-inject grid (should be absent due to dedup): 0
+        // Without the fix there would be 3 occurrences.
+        let input = "{define: Am base-fret 1 frets x 0 2 2 1 0}\n{diagrams}\n[Am]Hello [G]world\n";
+        let song = chordsketch_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF-1.4"), "must produce a valid PDF");
+        let content = String::from_utf8_lossy(&bytes);
+        // G has no {define} and should appear in the auto-inject grid.
+        assert!(content.contains("G"), "G should appear (auto-inject grid)");
+        // Am should appear at most twice (chord label + inline diagram).
+        // A third occurrence would mean it was also added to the auto-inject grid.
+        let am_count = content.matches("Am").count();
+        assert!(
+            am_count <= 2,
+            "Am should appear at most twice (chord label + inline diagram), got {am_count}"
+        );
+    }
 }
 
 #[cfg(test)]
