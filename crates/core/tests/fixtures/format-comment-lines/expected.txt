@@ -22,16 +22,9 @@ Song {
         custom: [],
     },
     lines: [
-        Lyrics(
-            LyricsLine {
-                segments: [
-                    LyricsSegment {
-                        chord: None,
-                        text: "# This is a comment",
-                        spans: [],
-                    },
-                ],
-            },
+        Comment(
+            Normal,
+            "This is a comment",
         ),
         Directive(
             Directive {
@@ -43,16 +36,9 @@ Song {
                 selector: None,
             },
         ),
-        Lyrics(
-            LyricsLine {
-                segments: [
-                    LyricsSegment {
-                        chord: None,
-                        text: "# Another comment",
-                        spans: [],
-                    },
-                ],
-            },
+        Comment(
+            Normal,
+            "Another comment",
         ),
         Lyrics(
             LyricsLine {
