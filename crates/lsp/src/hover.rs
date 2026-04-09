@@ -31,14 +31,14 @@ pub enum HoverContext {
         name: String,
     },
     /// Not inside a recognized hover context.
-    None,
+    NoContext,
 }
 
 /// Detects the hover context for `line` at 0-based character column `col`.
 ///
 /// Scans the line to find the innermost open bracket or brace that contains
 /// `col`, then extracts the relevant token (chord name or directive name).
-/// Returns [`HoverContext::None`] when the cursor is outside any recognized
+/// Returns [`HoverContext::NoContext`] when the cursor is outside any recognized
 /// region.
 #[must_use]
 pub fn detect_hover_context(line: &str, col: usize) -> HoverContext {
@@ -88,7 +88,7 @@ pub fn detect_hover_context(line: &str, col: usize) -> HoverContext {
 
         if colon_pos.is_some() {
             // Cursor is past the colon — not in the directive name segment.
-            return HoverContext::None;
+            return HoverContext::NoContext;
         }
 
         // Extract directive name: text from bstart+1 to the first `:` or `}` or col.
@@ -100,7 +100,7 @@ pub fn detect_hover_context(line: &str, col: usize) -> HoverContext {
 
         // Only hover if the cursor is actually within the directive name span.
         if col > name_end {
-            return HoverContext::None;
+            return HoverContext::NoContext;
         }
 
         let name: String = chars[bstart + 1..name_end]
@@ -110,7 +110,7 @@ pub fn detect_hover_context(line: &str, col: usize) -> HoverContext {
             .to_ascii_lowercase();
 
         if name.is_empty() {
-            return HoverContext::None;
+            return HoverContext::NoContext;
         }
         return HoverContext::DirectiveName { name };
     }
@@ -126,18 +126,18 @@ pub fn detect_hover_context(line: &str, col: usize) -> HoverContext {
         // col >= end means the cursor sits on or after the closing `]`.
         let end = close.unwrap_or(chars.len());
         if col >= end {
-            return HoverContext::None;
+            return HoverContext::NoContext;
         }
 
         let name: String = chars[bstart + 1..end].iter().collect();
         let name = name.trim().to_string();
         if name.is_empty() {
-            return HoverContext::None;
+            return HoverContext::NoContext;
         }
         return HoverContext::ChordName { name };
     }
 
-    HoverContext::None
+    HoverContext::NoContext
 }
 
 // ---------------------------------------------------------------------------
@@ -746,14 +746,14 @@ mod tests {
     fn hover_chord_cursor_at_bracket_open() {
         // Cursor sits on the `[` itself — considered outside.
         let ctx = detect_hover_context("[Am]", 0);
-        assert_eq!(ctx, HoverContext::None);
+        assert_eq!(ctx, HoverContext::NoContext);
     }
 
     #[test]
     fn hover_chord_cursor_at_bracket_close() {
         // Cursor sits on the `]` — considered outside.
         let ctx = detect_hover_context("[Am]", 3);
-        assert_eq!(ctx, HoverContext::None);
+        assert_eq!(ctx, HoverContext::NoContext);
     }
 
     #[test]
@@ -784,14 +784,14 @@ mod tests {
     fn hover_directive_value_returns_none() {
         // Cursor is past the colon — no hover for the value part.
         let ctx = detect_hover_context("{title: My Song}", 10);
-        assert_eq!(ctx, HoverContext::None);
+        assert_eq!(ctx, HoverContext::NoContext);
     }
 
     #[test]
     fn hover_outside_any_delimiter_returns_none() {
         // Plain lyrics line — no hover target.
         let ctx = detect_hover_context("Hello world", 3);
-        assert_eq!(ctx, HoverContext::None);
+        assert_eq!(ctx, HoverContext::NoContext);
     }
 
     #[test]

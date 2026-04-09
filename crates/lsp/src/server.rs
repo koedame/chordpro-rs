@@ -225,7 +225,7 @@ impl LanguageServer for Backend {
         let markdown = match detect_hover_context(&line_owned, col) {
             HoverContext::ChordName { name } => chord_hover_markdown(&name),
             HoverContext::DirectiveName { name } => directive_hover_markdown(&name),
-            HoverContext::None => None,
+            HoverContext::NoContext => None,
         };
 
         let range = hover_token_span(&line_owned, col).map(|(start_char, end_char)| {
@@ -294,12 +294,6 @@ impl LanguageServer for Backend {
     }
 }
 
-/// Compute the end position (UTF-8 byte offset) of `text`.
-///
-/// Used to build a full-document `TextEdit` range. Supports LF (`\n`),
-/// CRLF (`\r\n`), and CR-only (`\r`) line endings. Each line break advances
-/// the line counter; the character offset is the byte distance from the last
-/// line-break byte to the end of the string.
 /// Convert a 0-based character index within `line` to a UTF-8 byte offset.
 ///
 /// Returns `line.len()` (cast to `u32`) when `char_idx` is beyond the last
@@ -311,6 +305,12 @@ fn char_to_byte_offset(line: &str, char_idx: usize) -> u32 {
         .unwrap_or(line.len() as u32)
 }
 
+/// Compute the end position (UTF-8 byte offset) of `text`.
+///
+/// Used to build a full-document `TextEdit` range. Supports LF (`\n`),
+/// CRLF (`\r\n`), and CR-only (`\r`) line endings. Each line break advances
+/// the line counter; the character offset is the byte distance from the last
+/// line-break byte to the end of the string.
 fn document_end_position(text: &str) -> Position {
     let mut line: u32 = 0;
     let mut last_newline_byte: usize = 0;
