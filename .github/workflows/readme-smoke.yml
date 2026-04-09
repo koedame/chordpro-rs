@@ -381,6 +381,11 @@ jobs:
         shell: powershell
         run: |
           winget install --id koedame.chordsketch --exact --accept-source-agreements --accept-package-agreements --silent
+          # winget modifies the registry PATH but not the current session's
+          # $env:Path. Refresh it manually so chordsketch is found immediately
+          # without requiring a new shell.
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+                      [System.Environment]::GetEnvironmentVariable("Path", "User")
           chordsketch --version
 
       - name: Render smoke
