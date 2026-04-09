@@ -47,6 +47,7 @@ Additionally, these non-Rust packages exist:
 | Swift (`ChordSketch`) | `packages/swift` | Swift package with XCFramework |
 | Kotlin (`chordsketch`) | `packages/kotlin` | Kotlin/JVM package via JNI |
 | Ruby (`chordsketch`) | `packages/ruby` | Ruby gem via UniFFI |
+| `@chordsketch/syntaxes` | `syntaxes/` | TextMate grammar and language configuration for ChordPro files (private, not published) |
 
 ### Dependency Policy
 
