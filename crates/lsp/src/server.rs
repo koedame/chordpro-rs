@@ -137,7 +137,8 @@ mod tests {
 
     #[test]
     fn diagnostics_for_unclosed_chord_returns_error_at_correct_line() {
-        // "[C" on line 2 — the closing `]` is missing.
+        // Line 2 contains `[C Hello world` — the chord bracket is opened with
+        // `[` but never closed with `]`, producing a structural parse error.
         let text = "{title: Test}\n[C Hello world\n";
         let diags = diagnostics_for(text);
         assert!(

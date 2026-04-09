@@ -38,6 +38,7 @@ async fn main() {
         match arg.as_str() {
             "--stdio" => {
                 // Expected: stdio is always the transport; accepted as a no-op.
+                // Flags are processed independently — order does not matter.
             }
             "--version" | "-V" => {
                 println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
