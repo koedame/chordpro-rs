@@ -18,6 +18,7 @@
 use std::fmt::Write;
 
 use chordsketch_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
+use chordsketch_core::canonical_chord_name;
 use chordsketch_core::config::Config;
 use chordsketch_core::escape::escape_xml as escape;
 use chordsketch_core::inline_markup::{SpanAttributes, TextSpan};
@@ -243,6 +244,10 @@ fn render_song_body(
         .map(str::to_ascii_lowercase)
         .unwrap_or_else(|| "guitar".to_string());
     let mut auto_diagrams_instrument: Option<String> = None;
+    // Canonical chord names (sharp form) that were actually rendered inline via
+    // {define} while show_diagrams was true.  Used to exclude them from the
+    // auto-inject grid and avoid duplicates.
+    let mut inline_defined: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // Stores the AST lines of the most recently defined chorus body.
     // Re-rendered at recall time so the current transpose offset is applied.
@@ -458,6 +463,17 @@ fn render_song_body(
                         if let Some(buf) = chorus_buf.as_mut() {
                             buf.push(line.clone());
                         }
+                        // Track {define} chords that are rendered inline so the
+                        // auto-inject grid can skip them (dedup for #1211/#1245/#1246).
+                        if directive.kind == DirectiveKind::Define && show_diagrams {
+                            if let Some(ref val) = directive.value {
+                                let name =
+                                    chordsketch_core::ast::ChordDefinition::parse_value(val).name;
+                                if !name.is_empty() {
+                                    inline_defined.insert(canonical_chord_name(&name));
+                                }
+                            }
+                        }
                         render_directive_inner(directive, show_diagrams, diagram_frets, html);
                     }
                 }
@@ -485,14 +501,13 @@ fn render_song_body(
     // Auto-inject diagram grid when {diagrams} (or {diagrams: guitar/ukulele/on}) was seen.
     if let Some(ref instrument) = auto_diagrams_instrument {
         let defines = song.fretted_defines();
-        // Chords with a {define} entry were already rendered inline; skip them in the
-        // auto-inject grid to avoid showing the same diagram twice.
-        let inline_chords: std::collections::HashSet<&str> =
-            defines.iter().map(|(name, _)| name.as_str()).collect();
+        // Skip chords that were actually rendered inline via {define} (i.e., show_diagrams
+        // was true at the time).  Compare in canonical sharp form to catch enharmonic
+        // pairs like {define: Bb …} vs [A#] in lyrics.
         let diagrams: Vec<_> = song
             .used_chord_names()
             .into_iter()
-            .filter(|name| !inline_chords.contains(name.as_str()))
+            .filter(|name| !inline_defined.contains(&canonical_chord_name(name)))
             .filter_map(|name| {
                 chordsketch_core::lookup_diagram(&name, &defines, instrument, diagram_frets)
             })
@@ -2716,6 +2731,42 @@ Verse text\n\
         assert!(
             html.contains("font-weight=\"bold\">G</text>"),
             "G diagram should appear in the auto-inject grid"
+        );
+    }
+
+    #[test]
+    fn test_define_after_nodiagrams_appears_in_grid() {
+        // {define} encountered while show_diagrams=false must NOT be tracked as
+        // inline-rendered; the chord should appear in the auto-inject grid.
+        // Regression test for #1245.
+        let html = render(
+            "{no_diagrams}\n{define: Am base-fret 1 frets x 0 2 2 1 0}\n{diagrams}\n[Am]Hello\n",
+        );
+        // Am was NOT rendered inline ({no_diagrams} was active at {define} time).
+        // It should appear in the auto-inject grid.
+        assert!(
+            html.contains("class=\"chord-diagrams\""),
+            "auto-inject grid should appear since Am was not rendered inline"
+        );
+        assert!(
+            html.contains("font-weight=\"bold\">Am</text>"),
+            "Am should appear in the auto-inject grid"
+        );
+    }
+
+    #[test]
+    fn test_enharmonic_define_dedup() {
+        // {define: Bb …} + [A#] in lyrics: the flat/sharp pair must be treated as
+        // the same chord so A# is excluded from the auto-inject grid.
+        // Regression test for #1246.
+        let html = render("{define: Bb base-fret 1 frets x 1 3 3 3 1}\n{diagrams}\n[A#]Hello\n");
+        // Bb was rendered inline (as Bb); A# is the same chord enharmonically.
+        let bb_count = html.match_indices("font-weight=\"bold\">Bb</text>").count();
+        let as_count = html.match_indices("font-weight=\"bold\">A#</text>").count();
+        assert_eq!(bb_count, 1, "Bb should appear once (inline)");
+        assert_eq!(
+            as_count, 0,
+            "A# should NOT appear in the auto-inject grid (same chord as Bb)"
         );
     }
 
