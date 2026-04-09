@@ -325,14 +325,30 @@ pub fn invoke_lilypond(ly_content: &str) -> Result<String, String> {
     Ok(svg)
 }
 
+/// Returns the name of the MuseScore executable available on this system.
+///
+/// Checks for `mscore` first (common on Debian/Ubuntu), then `musescore`.
+/// The result is cached at the process level via `OnceLock`, so the subprocess
+/// checks run at most once per process. Returns `None` if neither is in `PATH`.
+fn musescore_cmd() -> Option<&'static str> {
+    static CACHE: OnceLock<Option<&'static str>> = OnceLock::new();
+    *CACHE.get_or_init(|| {
+        if is_available("mscore") {
+            Some("mscore")
+        } else if is_available("musescore") {
+            Some("musescore")
+        } else {
+            None
+        }
+    })
+}
+
 /// Returns `true` if MuseScore (`mscore` or `musescore`) is available.
 ///
-/// Checks for `mscore` first, then `musescore`. The result is cached at the
-/// process level via `OnceLock`, so the subprocess check runs at most once.
+/// The result is cached at the process level; see [`musescore_cmd`].
 #[must_use]
 pub fn has_musescore() -> bool {
-    static CACHE: OnceLock<bool> = OnceLock::new();
-    *CACHE.get_or_init(|| is_available("mscore") || is_available("musescore"))
+    musescore_cmd().is_some()
 }
 
 /// Strip potentially dangerous content from MusicXML before invoking MuseScore.
@@ -368,14 +384,30 @@ pub fn sanitize_musicxml_content(input: &str) -> String {
                     .zip(b"DOCTYPE")
                     .all(|(a, b)| a.to_ascii_uppercase() == *b)
             {
-                // DOCTYPE declaration — skip to closing >
-                pos += 1;
+                // DOCTYPE declaration — skip to the closing `>`, respecting
+                // internal subsets. A DOCTYPE with an internal subset looks
+                // like `<!DOCTYPE foo [<!ELEMENT bar EMPTY>]>`: the `>` inside
+                // `[…]` must not terminate the declaration, so we track depth.
+                pos += 9; // skip past "<!DOCTYPE"
+                let mut bracket_depth = 0u32;
                 while pos < len {
-                    if bytes[pos] == b'>' {
-                        pos += 1;
-                        break;
+                    match bytes[pos] {
+                        b'[' => {
+                            bracket_depth += 1;
+                            pos += 1;
+                        }
+                        b']' => {
+                            bracket_depth = bracket_depth.saturating_sub(1);
+                            pos += 1;
+                        }
+                        b'>' if bracket_depth == 0 => {
+                            pos += 1;
+                            break;
+                        }
+                        _ => {
+                            pos += 1;
+                        }
                     }
-                    pos += 1;
                 }
             } else {
                 // Normal tag — pass through
@@ -397,6 +429,39 @@ pub fn sanitize_musicxml_content(input: &str) -> String {
     }
 
     output
+}
+
+/// Collect page-numbered SVG files produced by MuseScore 3.x.
+///
+/// MuseScore 3.x writes `output-1.svg`, `output-2.svg`, … (one file per
+/// page) into `tmp_dir`. This function reads all existing page files in
+/// ascending order, wraps each page's SVG in
+/// `<div class="musicxml-page">…</div>`, and concatenates the results.
+///
+/// Returns an empty string if no page files exist (the caller should treat
+/// this as an error). Returns an `Err` if any existing page file cannot be
+/// read.
+fn collect_musescore_pages(tmp_dir: &std::path::Path) -> Result<String, String> {
+    let mut pages = String::new();
+    let mut page = 1u32;
+    loop {
+        let page_path = tmp_dir.join(format!("output-{page}.svg"));
+        if !page_path.exists() {
+            break;
+        }
+        match std::fs::read_to_string(&page_path) {
+            Ok(content) => {
+                pages.push_str("<div class=\"musicxml-page\">");
+                pages.push_str(content.trim());
+                pages.push_str("</div>\n");
+            }
+            Err(e) => {
+                return Err(format!("failed to read MuseScore SVG page {page}: {e}"));
+            }
+        }
+        page += 1;
+    }
+    Ok(pages)
 }
 
 /// Invoke MuseScore on MusicXML content and return the rendered SVG.
@@ -435,12 +500,8 @@ pub fn invoke_musescore(musicxml_content: &str) -> Result<String, String> {
         format!("failed to write temp file: {e}")
     })?;
 
-    // Try `mscore` first, then `musescore`.
-    let cmd_name = if is_available("mscore") {
-        "mscore"
-    } else {
-        "musescore"
-    };
+    let cmd_name = musescore_cmd()
+        .ok_or_else(|| "MuseScore is not available (install mscore or musescore)".to_string())?;
 
     let result = Command::new(cmd_name)
         .arg("-o")
@@ -470,22 +531,9 @@ pub fn invoke_musescore(musicxml_content: &str) -> Result<String, String> {
         })?
     } else {
         // MuseScore 3.x path: collect output-1.svg, output-2.svg, …
-        let mut pages = String::new();
-        let mut page = 1u32;
-        loop {
-            let page_path = tmp_dir.join(format!("output-{page}.svg"));
-            if !page_path.exists() {
-                break;
-            }
-            match std::fs::read_to_string(&page_path) {
-                Ok(content) => pages.push_str(&content),
-                Err(e) => {
-                    let _ = std::fs::remove_dir_all(&tmp_dir);
-                    return Err(format!("failed to read MuseScore SVG page {page}: {e}"));
-                }
-            }
-            page += 1;
-        }
+        let pages = collect_musescore_pages(&tmp_dir).inspect_err(|_| {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+        })?;
         if pages.is_empty() {
             let _ = std::fs::remove_dir_all(&tmp_dir);
             return Err(
@@ -895,6 +943,97 @@ mod tests {
     }
 
     #[test]
+    fn sanitize_musicxml_strips_doctype_with_internal_subset() {
+        // The bug in #1256: the old scanner stopped at the first `>` inside
+        // `[…]`, leaving the residual `]>` in the output.
+        let input = "<!DOCTYPE score-partwise [\
+            <!ELEMENT score-partwise EMPTY>\
+            ]><score-partwise/>";
+        let result = super::sanitize_musicxml_content(input);
+        assert!(!result.contains("DOCTYPE"), "DOCTYPE should be stripped");
+        assert!(
+            !result.contains(']'),
+            "residual `]` from internal subset should not appear"
+        );
+        assert!(
+            result.contains("<score-partwise/>"),
+            "element content should remain"
+        );
+    }
+
+    // -- collect_musescore_pages tests (#1262) --------------------------------
+
+    #[test]
+    fn collect_musescore_pages_single_page() {
+        let dir = std::env::temp_dir().join(format!(
+            "test_ms_single_{}_{}_{}",
+            std::process::id(),
+            super::TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            "collect",
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("output-1.svg"), "<svg>page1</svg>").unwrap();
+        let result = super::collect_musescore_pages(&dir).unwrap();
+        assert!(
+            result.contains("musicxml-page"),
+            "page should be wrapped in musicxml-page div"
+        );
+        assert!(
+            result.contains("<svg>page1</svg>"),
+            "SVG content should be present"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn collect_musescore_pages_multi_page() {
+        let dir = std::env::temp_dir().join(format!(
+            "test_ms_multi_{}_{}_{}",
+            std::process::id(),
+            super::TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            "collect",
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("output-1.svg"), "<svg>page1</svg>").unwrap();
+        std::fs::write(dir.join("output-2.svg"), "<svg>page2</svg>").unwrap();
+        let result = super::collect_musescore_pages(&dir).unwrap();
+        assert_eq!(
+            result.matches("musicxml-page").count(),
+            2,
+            "two pages should produce two wrapper divs"
+        );
+        assert!(
+            result.contains("<svg>page1</svg>"),
+            "page 1 SVG should be present"
+        );
+        assert!(
+            result.contains("<svg>page2</svg>"),
+            "page 2 SVG should be present"
+        );
+        // Pages must appear in order.
+        let p1 = result.find("<svg>page1</svg>").unwrap();
+        let p2 = result.find("<svg>page2</svg>").unwrap();
+        assert!(p1 < p2, "page 1 should appear before page 2");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn collect_musescore_pages_empty_dir_returns_empty_string() {
+        let dir = std::env::temp_dir().join(format!(
+            "test_ms_empty_{}_{}_{}",
+            std::process::id(),
+            super::TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            "collect",
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let result = super::collect_musescore_pages(&dir).unwrap();
+        assert!(result.is_empty(), "no page files → empty string");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // -- musescore integration tests (#1258) ----------------------------------
+
+    #[test]
     fn invoke_musescore_fails_gracefully_without_tool() {
         if has_musescore() {
             return; // Skip if musescore is installed
@@ -902,5 +1041,41 @@ mod tests {
         let mxl = "<score-partwise/>";
         let result = invoke_musescore(mxl);
         assert!(result.is_err(), "should fail without musescore installed");
+    }
+
+    #[test]
+    #[ignore]
+    fn musescore_detection() {
+        assert!(has_musescore(), "mscore or musescore not found in PATH");
+    }
+
+    #[test]
+    #[ignore]
+    fn invoke_musescore_produces_svg() {
+        let mxl = r#"<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1"><part-name>Music</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>4</duration><type>whole</type>
+      </note>
+    </measure>
+  </part>
+</score-partwise>"#;
+        let result = invoke_musescore(mxl);
+        assert!(
+            result.is_ok(),
+            "invoke_musescore failed: {:?}",
+            result.err()
+        );
+        let svg = result.unwrap();
+        assert!(
+            svg.contains("<svg") || svg.contains("<div class=\"musicxml-page\">"),
+            "output should contain SVG or page wrapper"
+        );
     }
 }
