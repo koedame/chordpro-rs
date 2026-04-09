@@ -51,9 +51,7 @@ async fn main() {
                 println!("Language Server Protocol server for ChordPro files.");
                 println!("Communicates over stdio (--stdio is accepted but is the default).");
                 println!();
-                println!(
-                    "Set RUST_LOG=debug for verbose logging (written to stderr)."
-                );
+                println!("Set RUST_LOG=debug for verbose logging (written to stderr).");
                 return;
             }
             unknown => {
