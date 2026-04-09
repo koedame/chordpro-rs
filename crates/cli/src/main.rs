@@ -8,6 +8,8 @@ use std::io::{self, Read, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
+use tempfile::NamedTempFile;
+
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 
@@ -378,7 +380,7 @@ fn run_fmt(files: &[String], check: bool) -> ExitCode {
                     needs_format = true;
                 }
             } else if formatted != input {
-                if let Err(e) = fs::write(file, &formatted) {
+                if let Err(e) = write_formatted_atomic(file, &formatted) {
                     eprintln!("error: {file}: {e}");
                     had_error = true;
                 }
@@ -391,4 +393,27 @@ fn run_fmt(files: &[String], check: bool) -> ExitCode {
     } else {
         ExitCode::SUCCESS
     }
+}
+
+/// Write `content` to `path` atomically: write to a temp file in the same
+/// directory, then rename over `path`. On POSIX, `rename(2)` is atomic on the
+/// same filesystem, so the original file is never left partially written.
+///
+/// File permissions are preserved: the original file's mode is captured before
+/// the rename and restored afterwards, because `NamedTempFile` creates temp
+/// files with mode `0o600` (regardless of umask), which would otherwise
+/// silently restrict access after formatting.
+fn write_formatted_atomic(path: &str, content: &str) -> io::Result<()> {
+    let parent = Path::new(path).parent().unwrap_or(Path::new("."));
+    // Capture original permissions before overwriting.
+    let orig_perms = fs::metadata(path).ok().map(|m| m.permissions());
+    let mut tmp = NamedTempFile::new_in(parent)?;
+    tmp.write_all(content.as_bytes())?;
+    tmp.persist(path).map_err(io::Error::other)?;
+    // Restore the original file's mode; the rename retains the temp file's
+    // restrictive 0o600 permissions rather than the original file's mode.
+    if let Some(perms) = orig_perms {
+        fs::set_permissions(path, perms)?;
+    }
+    Ok(())
 }

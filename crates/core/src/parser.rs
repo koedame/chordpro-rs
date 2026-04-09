@@ -3,8 +3,8 @@
 //! The parser accepts the flat token sequence produced by [`crate::Lexer`] and
 //! builds a [`Song`] AST. Each source line is classified as a directive, a
 //! lyrics line (with optional inline chord annotations), an empty line, or a
-//! comment (from `{comment}`, `{comment_italic}`, or `{comment_box}`
-//! directives).
+//! comment (from `{comment}`, `{comment_italic}`, `{comment_box}` directives,
+//! or file-level `#` comment lines).
 //!
 //! # Directive Classification
 //!
@@ -422,6 +422,8 @@ impl Parser {
             }
             // Inside a verbatim section: treat as plain text (no chord parsing).
             _ if in_verbatim => self.parse_verbatim_line(),
+            // File-level `#` comment: first text token starts with `#`.
+            TokenKind::Text(t) if t.trim_start().starts_with('#') => self.parse_hash_comment_line(),
             // Anything else: a lyrics line.
             _ => self.parse_lyrics_line(),
         }
@@ -520,6 +522,60 @@ impl Parser {
                 segments: vec![LyricsSegment::text_only(text)],
             }))
         }
+    }
+
+    /// Parses a file-level `#` comment line and emits
+    /// `Line::Comment(CommentStyle::Normal, text)`.
+    ///
+    /// The leading `#` is stripped; one immediately-following space is also
+    /// stripped so that `# My comment` produces `"My comment"` rather than
+    /// `" My comment"`. Inline chord brackets and directive delimiters are
+    /// consumed as literal characters (they lose their structural meaning inside
+    /// a source comment).
+    fn parse_hash_comment_line(&mut self) -> Result<Line, ParseError> {
+        let mut raw = String::new();
+
+        loop {
+            match self.peek_kind() {
+                TokenKind::Newline | TokenKind::Eof => break,
+                TokenKind::Text(t) => {
+                    raw.push_str(t);
+                    self.advance();
+                }
+                TokenKind::ChordOpen => {
+                    raw.push('[');
+                    self.advance();
+                }
+                TokenKind::ChordClose => {
+                    raw.push(']');
+                    self.advance();
+                }
+                TokenKind::DirectiveOpen => {
+                    raw.push('{');
+                    self.advance();
+                }
+                TokenKind::DirectiveClose => {
+                    raw.push('}');
+                    self.advance();
+                }
+                TokenKind::Colon => {
+                    raw.push(':');
+                    self.advance();
+                }
+            }
+        }
+
+        // Consume the trailing newline.
+        if self.peek_kind() == &TokenKind::Newline {
+            self.advance();
+        }
+
+        // Strip leading whitespace, then the `#`, then one optional space.
+        let trimmed = raw.trim_start();
+        let after_hash = trimmed.strip_prefix('#').unwrap_or(trimmed);
+        let text = after_hash.strip_prefix(' ').unwrap_or(after_hash);
+
+        Ok(Line::Comment(CommentStyle::Normal, text.to_string()))
     }
 
     // -- Directive parsing --------------------------------------------------
@@ -1685,6 +1741,54 @@ mod tests {
         assert_eq!(
             result,
             vec![Line::Comment(CommentStyle::Boxed, "Important".to_string())],
+        );
+    }
+
+    // -- File-level `#` comment lines --------------------------------------
+
+    #[test]
+    fn hash_comment_basic() {
+        let result = lines("# This is a comment");
+        assert_eq!(
+            result,
+            vec![Line::Comment(
+                CommentStyle::Normal,
+                "This is a comment".to_string()
+            )],
+        );
+    }
+
+    #[test]
+    fn hash_comment_no_space_after_hash() {
+        // `#text` (no space) — hash is stripped but no space to remove.
+        let result = lines("#no space");
+        assert_eq!(
+            result,
+            vec![Line::Comment(CommentStyle::Normal, "no space".to_string())],
+        );
+    }
+
+    #[test]
+    fn hash_comment_standalone_hash() {
+        // A bare `#` produces an empty comment text.
+        let result = lines("#");
+        assert_eq!(
+            result,
+            vec![Line::Comment(CommentStyle::Normal, "".to_string())],
+        );
+    }
+
+    #[test]
+    fn hash_comment_mixed_with_directives() {
+        // `#` comment before and after a directive — both become Comment(Normal).
+        let result = lines("# First\n{title: My Song}\n# Second");
+        assert_eq!(
+            result,
+            vec![
+                Line::Comment(CommentStyle::Normal, "First".to_string()),
+                Line::Directive(Directive::with_value("title", "My Song")),
+                Line::Comment(CommentStyle::Normal, "Second".to_string()),
+            ],
         );
     }
 
