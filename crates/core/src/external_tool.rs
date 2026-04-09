@@ -484,6 +484,11 @@ fn collect_musescore_pages(tmp_dir: &std::path::Path) -> Result<String, String> 
 /// - Neither `mscore` nor `musescore` is available or they fail to execute
 /// - No SVG output file can be found after a successful run
 pub fn invoke_musescore(musicxml_content: &str) -> Result<String, String> {
+    // Check tool availability before creating any temp files so that a missing
+    // tool never leaves an orphaned directory behind.
+    let cmd_name = musescore_cmd()
+        .ok_or_else(|| "MuseScore is not available (install mscore or musescore)".to_string())?;
+
     let sanitized = sanitize_musicxml_content(musicxml_content);
 
     let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -499,9 +504,6 @@ pub fn invoke_musescore(musicxml_content: &str) -> Result<String, String> {
         let _ = std::fs::remove_dir_all(&tmp_dir);
         format!("failed to write temp file: {e}")
     })?;
-
-    let cmd_name = musescore_cmd()
-        .ok_or_else(|| "MuseScore is not available (install mscore or musescore)".to_string())?;
 
     let result = Command::new(cmd_name)
         .arg("-o")
