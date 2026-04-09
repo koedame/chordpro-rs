@@ -12,8 +12,6 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 
 /// ChordPro file processor — parse and render ChordPro songs.
-///
-/// Run `chordsketch fmt --help` for the formatter subcommand.
 #[derive(Parser)]
 #[command(name = "chordsketch", version, about)]
 #[command(args_conflicts_with_subcommands = true)]
