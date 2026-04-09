@@ -373,6 +373,10 @@ jobs:
 
   winget:
     name: winget (Windows)
+    # Skipped until the winget-pkgs community PR for koedame.chordsketch 0.1.0
+    # is merged (tracked in https://github.com/koedame/chordsketch/issues/1032).
+    # When #1032 is resolved: remove this 'if' line and close #1172.
+    if: false
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
