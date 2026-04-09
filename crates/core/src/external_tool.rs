@@ -403,14 +403,21 @@ pub fn sanitize_musicxml_content(input: &str) -> String {
 ///
 /// Writes `musicxml_content` to a temporary `.xml` file, runs
 /// `mscore -o <output.svg> <input.xml>` (falling back to `musescore` if
-/// `mscore` is not available), and reads the resulting `.svg` file.
+/// `mscore` is not available), and reads the resulting `.svg` file(s).
+///
+/// ## Output file naming
+///
+/// MuseScore 3.x produces page-numbered files (`output-1.svg`, `output-2.svg`,
+/// …) even for single-page scores. MuseScore 4.x produces a single
+/// `output.svg`. This function tries `output.svg` first; if absent it collects
+/// all `output-N.svg` files in page order and concatenates their content.
 ///
 /// # Errors
 ///
 /// Returns an error string if:
 /// - The temporary file cannot be written
 /// - Neither `mscore` nor `musescore` is available or they fail to execute
-/// - The output SVG file cannot be read
+/// - No SVG output file can be found after a successful run
 pub fn invoke_musescore(musicxml_content: &str) -> Result<String, String> {
     let sanitized = sanitize_musicxml_content(musicxml_content);
 
@@ -453,10 +460,41 @@ pub fn invoke_musescore(musicxml_content: &str) -> Result<String, String> {
         return Err(format!("{cmd_name} exited with error: {stderr}"));
     }
 
-    let svg = std::fs::read_to_string(&output_svg).map_err(|e| {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-        format!("failed to read MuseScore SVG output: {e}")
-    })?;
+    // MuseScore 4.x writes output.svg; MuseScore 3.x writes output-1.svg,
+    // output-2.svg, … (page-numbered) even for single-page scores.
+    let svg = if output_svg.exists() {
+        // MuseScore 4.x path: single file.
+        std::fs::read_to_string(&output_svg).map_err(|e| {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            format!("failed to read MuseScore SVG output: {e}")
+        })?
+    } else {
+        // MuseScore 3.x path: collect output-1.svg, output-2.svg, …
+        let mut pages = String::new();
+        let mut page = 1u32;
+        loop {
+            let page_path = tmp_dir.join(format!("output-{page}.svg"));
+            if !page_path.exists() {
+                break;
+            }
+            match std::fs::read_to_string(&page_path) {
+                Ok(content) => pages.push_str(&content),
+                Err(e) => {
+                    let _ = std::fs::remove_dir_all(&tmp_dir);
+                    return Err(format!("failed to read MuseScore SVG page {page}: {e}"));
+                }
+            }
+            page += 1;
+        }
+        if pages.is_empty() {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            return Err(
+                "MuseScore produced no SVG output (expected output.svg or output-1.svg)"
+                    .to_string(),
+            );
+        }
+        pages
+    };
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
     Ok(svg)
