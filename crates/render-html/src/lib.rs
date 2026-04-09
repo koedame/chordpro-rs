@@ -286,8 +286,10 @@ fn render_song_body(
                     continue;
                 }
                 if directive.kind == DirectiveKind::Diagrams {
-                    auto_diagrams_instrument =
-                        resolve_diagrams_instrument(directive.value.as_deref(), &default_instrument);
+                    auto_diagrams_instrument = resolve_diagrams_instrument(
+                        directive.value.as_deref(),
+                        &default_instrument,
+                    );
                     show_diagrams = auto_diagrams_instrument.is_some();
                     continue;
                 }

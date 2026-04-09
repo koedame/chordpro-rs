@@ -423,7 +423,10 @@ pub fn render_ascii(data: &DiagramData) -> String {
 /// assert_eq!(resolve_diagrams_instrument(Some("piano"), "guitar"), Some("guitar".to_string()));
 /// ```
 #[must_use]
-pub fn resolve_diagrams_instrument(value: Option<&str>, default_instrument: &str) -> Option<String> {
+pub fn resolve_diagrams_instrument(
+    value: Option<&str>,
+    default_instrument: &str,
+) -> Option<String> {
     let val = value.unwrap_or("on");
     if val.eq_ignore_ascii_case("off") {
         return None;

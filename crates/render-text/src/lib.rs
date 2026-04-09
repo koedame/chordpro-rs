@@ -125,8 +125,10 @@ fn render_song_impl(
                     continue;
                 }
                 if directive.kind == DirectiveKind::Diagrams {
-                    auto_diagrams_instrument =
-                        resolve_diagrams_instrument(directive.value.as_deref(), &default_instrument);
+                    auto_diagrams_instrument = resolve_diagrams_instrument(
+                        directive.value.as_deref(),
+                        &default_instrument,
+                    );
                     continue;
                 }
                 if directive.kind == DirectiveKind::NoDiagrams {
