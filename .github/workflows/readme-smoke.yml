@@ -373,10 +373,6 @@ jobs:
 
   winget:
     name: winget (Windows)
-    # Skipped until the winget-pkgs community PR for koedame.chordsketch 0.1.0
-    # is merged (tracked in https://github.com/koedame/chordsketch/issues/1032).
-    # When #1032 is resolved: remove this 'if' line and close #1172.
-    if: false
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -385,6 +381,16 @@ jobs:
         shell: powershell
         run: |
           winget install --id koedame.chordsketch --exact --accept-source-agreements --accept-package-agreements --silent
+          # winget portable installs place command-line aliases in
+          # %LOCALAPPDATA%\Microsoft\WinGet\Links\ and adds that directory to
+          # the user PATH in the registry — but the current process does not
+          # inherit registry PATH changes. Write the Links directory to
+          # $GITHUB_PATH so that all subsequent steps (including bash ones)
+          # can find `chordsketch` without a new shell.
+          $wingetLinks = "$env:LOCALAPPDATA\Microsoft\WinGet\Links"
+          Add-Content -Path $env:GITHUB_PATH -Value $wingetLinks
+          # Also refresh the current session so the immediate --version check works.
+          $env:Path = "$wingetLinks;" + $env:Path
           chordsketch --version
 
       - name: Render smoke
