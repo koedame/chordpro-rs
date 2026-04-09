@@ -38,6 +38,11 @@ async fn main() {
         match arg.as_str() {
             "--stdio" => {
                 // Expected: stdio is always the transport; accepted as a no-op.
+                // Flags are processed independently — order does not matter.
+            }
+            "--version" | "-V" => {
+                println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+                return;
             }
             "--help" | "-h" => {
                 // Help text goes to stdout per POSIX convention.
@@ -45,6 +50,8 @@ async fn main() {
                 println!();
                 println!("Language Server Protocol server for ChordPro files.");
                 println!("Communicates over stdio (--stdio is accepted but is the default).");
+                println!();
+                println!("Set RUST_LOG=debug for verbose logging (written to stderr).");
                 return;
             }
             unknown => {
