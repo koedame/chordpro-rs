@@ -485,9 +485,14 @@ fn render_song_body(
     // Auto-inject diagram grid when {diagrams} (or {diagrams: guitar/ukulele/on}) was seen.
     if let Some(ref instrument) = auto_diagrams_instrument {
         let defines = song.fretted_defines();
+        // Chords with a {define} entry were already rendered inline; skip them in the
+        // auto-inject grid to avoid showing the same diagram twice.
+        let inline_chords: std::collections::HashSet<&str> =
+            defines.iter().map(|(name, _)| name.as_str()).collect();
         let diagrams: Vec<_> = song
             .used_chord_names()
             .into_iter()
+            .filter(|name| !inline_chords.contains(name.as_str()))
             .filter_map(|name| {
                 chordsketch_core::lookup_diagram(&name, &defines, instrument, diagram_frets)
             })
@@ -2610,13 +2615,20 @@ Verse text\n\
 
     #[test]
     fn test_diagrams_define_takes_priority_over_builtin() {
-        // Custom {define} should override the built-in DB in the auto-inject grid
+        // Chords with a {define} entry are rendered inline at the directive position
+        // and excluded from the auto-inject grid (dedup).  When all used chords are
+        // defined, the auto-inject section is absent entirely.
         let html = render("{diagrams}\n{define: Am base-fret 1 frets x 0 2 2 1 0}\n[Am]Hello");
+        // Am is rendered inline (at the {define} position).
         assert!(
-            html.contains("class=\"chord-diagrams\""),
-            "auto-inject section should appear"
+            html.contains("font-weight=\"bold\">Am</text>"),
+            "Am diagram should appear inline at the {{define}} position"
         );
-        assert!(html.contains(">Am<"), "Am diagram expected in grid");
+        // All used chords have {define} entries → grid is not rendered.
+        assert!(
+            !html.contains("class=\"chord-diagrams\""),
+            "auto-inject section should be absent when all used chords are defined"
+        );
     }
 
     #[test]
@@ -2684,6 +2696,29 @@ Verse text\n\
         assert!(
             !html.contains("<svg"),
             "{{no_diagrams}} should suppress inline define diagram SVG"
+        );
+    }
+
+    #[test]
+    fn test_define_chord_not_duplicated_in_auto_inject_grid() {
+        // When a chord has a {define} entry (rendered inline) and also appears in
+        // lyrics with {diagrams} active, the auto-inject grid must NOT include it
+        // again. Regression test for #1211.
+        let html = render(
+            "{define: Am base-fret 1 frets x 0 2 2 1 0}\n{diagrams}\n[Am]Hello [G]world\n",
+        );
+        // Am was rendered inline at the {define} position; count SVG occurrences.
+        let am_svg_count = html
+            .match_indices("font-weight=\"bold\">Am</text>")
+            .count();
+        assert_eq!(
+            am_svg_count, 1,
+            "Am diagram should appear exactly once (inline via {{define}}), not also in auto-inject grid"
+        );
+        // G has no {define} and should appear in the auto-inject grid.
+        assert!(
+            html.contains("font-weight=\"bold\">G</text>"),
+            "G diagram should appear in the auto-inject grid"
         );
     }
 
