@@ -623,7 +623,7 @@ const UKULELE_DOM7: &[StaticVoicing] = &[
 ///
 /// Because only the root is mapped, this handles any chord suffix — dom9,
 /// sus4, add9, dim7, etc. — without requiring additions to this function.
-fn flat_to_sharp(name: &str) -> Option<String> {
+pub(crate) fn flat_to_sharp(name: &str) -> Option<String> {
     const ROOTS: &[(&str, &str)] = &[
         ("Bb", "A#"),
         ("Db", "C#"),

@@ -8,6 +8,7 @@
 //! directives trigger explicit page breaks.
 
 use chordsketch_core::ast::{CommentStyle, DirectiveKind, ImageAttributes, Line, LyricsLine, Song};
+use chordsketch_core::canonical_chord_name;
 use chordsketch_core::config::Config;
 use chordsketch_core::inline_markup::TextSpan;
 use chordsketch_core::render_result::RenderResult;
@@ -489,6 +490,10 @@ fn render_song_into_doc(
         .map(str::to_ascii_lowercase)
         .unwrap_or_else(|| "guitar".to_string());
     let mut auto_diagrams_instrument: Option<String> = None;
+    // Canonical chord names (sharp form) that were actually rendered inline via
+    // {define} while show_diagrams was true.  Used to exclude them from the
+    // auto-inject grid and avoid duplicates.
+    let mut inline_defined: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // Stores the AST lines of the most recently defined chorus body for replay.
     let mut chorus_body: Vec<Line> = Vec::new();
@@ -602,6 +607,17 @@ fn render_song_into_doc(
                         if let Some(buf) = chorus_buf.as_mut() {
                             buf.push(line.clone());
                         }
+                        // Track {define} chords that are rendered inline so the
+                        // auto-inject grid can skip them (dedup for #1211/#1245/#1246).
+                        if d.kind == DirectiveKind::Define && show_diagrams {
+                            if let Some(ref val) = d.value {
+                                let name =
+                                    chordsketch_core::ast::ChordDefinition::parse_value(val).name;
+                                if !name.is_empty() {
+                                    inline_defined.insert(canonical_chord_name(&name));
+                                }
+                            }
+                        }
                         render_directive(d, show_diagrams, diagram_frets, doc);
                     }
                 }
@@ -625,14 +641,13 @@ fn render_song_into_doc(
     // Auto-inject diagram block when {diagrams} was seen.
     if let Some(ref instrument) = auto_diagrams_instrument {
         let defines = song.fretted_defines();
-        // Chords with a {define} entry were already rendered inline; skip them in the
-        // auto-inject grid to avoid showing the same diagram twice.
-        let inline_chords: std::collections::HashSet<&str> =
-            defines.iter().map(|(name, _)| name.as_str()).collect();
+        // Skip chords that were actually rendered inline via {define} (i.e., show_diagrams
+        // was true at the time).  Compare in canonical sharp form to catch enharmonic
+        // pairs like {define: Bb …} vs [A#] in lyrics.
         let diagrams: Vec<_> = song
             .used_chord_names()
             .into_iter()
-            .filter(|name| !inline_chords.contains(name.as_str()))
+            .filter(|name| !inline_defined.contains(&canonical_chord_name(name)))
             .filter_map(|name| {
                 chordsketch_core::lookup_diagram(&name, &defines, instrument, diagram_frets)
             })

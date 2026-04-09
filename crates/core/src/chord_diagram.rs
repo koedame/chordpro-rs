@@ -439,6 +439,29 @@ pub fn resolve_diagrams_instrument(
     Some(instr.to_string())
 }
 
+/// Returns the canonical (sharp-spelling) form of a chord name.
+///
+/// Enharmonic flat roots (`Bb`, `Db`, `Eb`, `Gb`, `Ab`) are converted to
+/// their sharp equivalents; all other names are returned unchanged.
+///
+/// Use this when comparing chord names for equality across different spellings
+/// (e.g., determining whether a `{define: Bb …}` entry covers `[A#]` in lyrics).
+///
+/// # Examples
+///
+/// ```
+/// use chordsketch_core::chord_diagram::canonical_chord_name;
+///
+/// assert_eq!(canonical_chord_name("Bb"), "A#");
+/// assert_eq!(canonical_chord_name("Bbm7"), "A#m7");
+/// assert_eq!(canonical_chord_name("Am"), "Am");
+/// assert_eq!(canonical_chord_name("G"), "G");
+/// ```
+#[must_use]
+pub fn canonical_chord_name(name: &str) -> String {
+    crate::voicings::flat_to_sharp(name).unwrap_or_else(|| name.to_string())
+}
+
 // ===========================================================================
 // Tests
 // ===========================================================================
