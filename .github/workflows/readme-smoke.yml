@@ -381,11 +381,16 @@ jobs:
         shell: powershell
         run: |
           winget install --id koedame.chordsketch --exact --accept-source-agreements --accept-package-agreements --silent
-          # winget modifies the registry PATH but not the current session's
-          # $env:Path. Refresh it manually so chordsketch is found immediately
-          # without requiring a new shell.
-          $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
-                      [System.Environment]::GetEnvironmentVariable("Path", "User")
+          # winget portable installs place command-line aliases in
+          # %LOCALAPPDATA%\Microsoft\WinGet\Links\ and adds that directory to
+          # the user PATH in the registry — but the current process does not
+          # inherit registry PATH changes. Write the Links directory to
+          # $GITHUB_PATH so that all subsequent steps (including bash ones)
+          # can find `chordsketch` without a new shell.
+          $wingetLinks = "$env:LOCALAPPDATA\Microsoft\WinGet\Links"
+          Add-Content -Path $env:GITHUB_PATH -Value $wingetLinks
+          # Also refresh the current session so the immediate --version check works.
+          $env:Path = "$wingetLinks;" + $env:Path
           chordsketch --version
 
       - name: Render smoke
