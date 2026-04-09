@@ -825,7 +825,14 @@ pub fn lookup_diagram(
     frets_shown: usize,
 ) -> Option<crate::chord_diagram::DiagramData> {
     // 1. Song-level {define} directives take priority.
-    if let Some((_, raw)) = defines.iter().find(|(n, _)| n == chord_name) {
+    // Normalize both the lookup key and the define names to their canonical sharp
+    // form so that e.g. a {define: A# …} entry is found when looking up "Bb",
+    // and vice-versa.
+    let canonical_chord = flat_to_sharp(chord_name).unwrap_or(chord_name);
+    if let Some((_, raw)) = defines.iter().find(|(n, _)| {
+        let canonical_n = flat_to_sharp(n.as_str()).unwrap_or(n.as_str());
+        canonical_n == canonical_chord
+    }) {
         return crate::chord_diagram::DiagramData::from_raw_infer_frets(
             chord_name,
             raw,
@@ -1083,5 +1090,28 @@ mod tests {
         let d = lookup_diagram("Bb", &[], "guitar", 5).unwrap();
         // The DB stores "A#" internally; the returned name reflects that.
         assert_eq!(d.name, "A#");
+    }
+
+    #[test]
+    fn lookup_diagram_define_flat_sharp_alias() {
+        // User writes {define: A# …} but lyrics use [Bb]; the define must be found.
+        // Use frets 1 2 3 4 5 1 (all ≤ frets_shown=5 to avoid clamping).
+        let defines = vec![(
+            "A#".to_string(),
+            "base-fret 1 frets 1 2 3 4 5 1".to_string(),
+        )];
+        let d = lookup_diagram("Bb", &defines, "guitar", 5).unwrap();
+        assert_eq!(d.frets, vec![1, 2, 3, 4, 5, 1]);
+    }
+
+    #[test]
+    fn lookup_diagram_define_sharp_flat_alias() {
+        // User writes {define: Bb …} but lyrics use [A#]; the define must be found.
+        let defines = vec![(
+            "Bb".to_string(),
+            "base-fret 1 frets 1 2 3 4 5 1".to_string(),
+        )];
+        let d = lookup_diagram("A#", &defines, "guitar", 5).unwrap();
+        assert_eq!(d.frets, vec![1, 2, 3, 4, 5, 1]);
     }
 }
