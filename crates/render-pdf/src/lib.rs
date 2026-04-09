@@ -625,9 +625,14 @@ fn render_song_into_doc(
     // Auto-inject diagram block when {diagrams} was seen.
     if let Some(ref instrument) = auto_diagrams_instrument {
         let defines = song.fretted_defines();
+        // Chords with a {define} entry were already rendered inline; skip them in the
+        // auto-inject grid to avoid showing the same diagram twice.
+        let inline_chords: std::collections::HashSet<&str> =
+            defines.iter().map(|(name, _)| name.as_str()).collect();
         let diagrams: Vec<_> = song
             .used_chord_names()
             .into_iter()
+            .filter(|name| !inline_chords.contains(name.as_str()))
             .filter_map(|name| {
                 chordsketch_core::lookup_diagram(&name, &defines, instrument, diagram_frets)
             })
