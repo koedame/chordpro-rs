@@ -371,4 +371,12 @@ mod tests {
         assert_eq!(pos.line, 2);
         assert_eq!(pos.character, 0);
     }
+
+    #[test]
+    fn end_pos_trailing_crlf() {
+        // Trailing \r\n also yields character = 0 on the final line.
+        let pos = document_end_position("line1\r\nline2\r\n");
+        assert_eq!(pos.line, 2);
+        assert_eq!(pos.character, 0);
+    }
 }

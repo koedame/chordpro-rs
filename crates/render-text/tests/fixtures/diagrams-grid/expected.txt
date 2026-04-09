@@ -1,0 +1,11 @@
+Chord Diagrams Text Test
+Am    G
+Hello world
+
+[Chord Diagrams]
+
+Am
+x o 2 2 1 o
+
+G
+3 2 o o o 3

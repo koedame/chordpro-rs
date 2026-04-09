@@ -1,0 +1,11 @@
+{title: Selector Test}
+{comment-piano: Play softly}
+{comment_italic-guitar: Strum gently}
+{key-bass: E}
+{capo-ukulele: 3}
+{start_of_chorus-piano}
+[C]La la la
+{end_of_chorus-piano}
+
+{title-band: Override Title}
+{tempo-drums: 120}
