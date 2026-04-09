@@ -98,8 +98,9 @@ impl LanguageServer for Backend {
                     trigger_characters: Some(vec![
                         "{".to_string(),
                         "[".to_string(),
-                        // Space triggers completion inside `{meta: …}` after the colon+space.
-                        " ".to_string(),
+                        // Metadata-key completion (`{meta: <key>`) is available via
+                        // manual invocation (Ctrl+Space); space is not registered as a
+                        // trigger to avoid firing on every space in the document.
                     ]),
                     ..Default::default()
                 }),

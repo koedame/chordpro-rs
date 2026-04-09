@@ -36,7 +36,8 @@ pub enum CompletionContext {
 
 /// Detects the completion context for `line` at 0-based `col`.
 ///
-/// Scans backwards from `col` to find the innermost open delimiter.
+/// Scans forward through the line prefix up to `col`, tracking open/close
+/// delimiter state to determine the innermost active context.
 /// Returns [`CompletionContext::None`] if the cursor is not inside a
 /// recognized completion region.
 #[must_use]
@@ -46,7 +47,7 @@ pub fn detect_context(line: &str, col: usize) -> CompletionContext {
     let col = col.min(chars.len());
     let prefix_chars = &chars[..col];
 
-    // Track the innermost open delimiter scanning left from the cursor.
+    // Track delimiter state scanning left to right through the prefix.
     let mut in_bracket = false; // inside [
     let mut in_brace = false; // inside {
     let mut brace_colon_pos: Option<usize> = None; // position of `:` inside `{`
@@ -80,7 +81,7 @@ pub fn detect_context(line: &str, col: usize) -> CompletionContext {
                     .iter()
                     .rposition(|&c| c == '{')
                     .map(|p| p + 1)
-                    .unwrap_or(0);
+                    .expect("invariant: ':' inside in_brace always follows a scanned '{'");
                 directive_name = chars[brace_start..i]
                     .iter()
                     .collect::<String>()
@@ -504,5 +505,59 @@ mod tests {
                 prefix: "tit".to_string()
             }
         );
+    }
+
+    // --- edge cases from issue #1193 ---
+
+    #[test]
+    fn context_col_zero_is_none() {
+        // Cursor at column 0: no prefix to scan, always None.
+        assert_eq!(detect_context("{title", 0), CompletionContext::None);
+        assert_eq!(detect_context("[Am", 0), CompletionContext::None);
+    }
+
+    #[test]
+    fn context_col_beyond_length_clamped() {
+        // col > line length: clamped to line length, same as end of line.
+        let line = "{ti";
+        let ctx = detect_context(line, 999);
+        assert_eq!(
+            ctx,
+            CompletionContext::DirectiveName {
+                prefix: "ti".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn context_brace_inside_bracket_last_delimiter_wins() {
+        // `[Am {` — malformed but the last opened delimiter ({) wins.
+        // After `[`, in_bracket=true; then `{` sets in_brace=true and clears in_bracket.
+        let ctx = detect_context("[Am {", 5);
+        assert_eq!(
+            ctx,
+            CompletionContext::DirectiveName {
+                prefix: String::new()
+            }
+        );
+    }
+
+    #[test]
+    fn context_reopened_directive_after_closed_one() {
+        // `{title: My Song} {ti` — the first brace is closed, the second is open.
+        let ctx = detect_context("{title: My Song} {ti", 20);
+        assert_eq!(
+            ctx,
+            CompletionContext::DirectiveName {
+                prefix: "ti".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn context_directive_value_non_meta_is_none() {
+        // Inside a directive value that is not `meta` — no completion.
+        let ctx = detect_context("{title: My", 10);
+        assert_eq!(ctx, CompletionContext::None);
     }
 }
