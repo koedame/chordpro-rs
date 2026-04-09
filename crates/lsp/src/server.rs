@@ -14,8 +14,8 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     CompletionOptions, CompletionParams, CompletionResponse, Diagnostic,
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    InitializeParams, InitializeResult, InitializedParams, PositionEncodingKind,
-    ServerCapabilities, TextDocumentSyncKind, Url,
+    DocumentFormattingParams, InitializeParams, InitializeResult, InitializedParams, OneOf,
+    Position, PositionEncodingKind, Range, ServerCapabilities, TextDocumentSyncKind, TextEdit, Url,
 };
 use tower_lsp::{Client, LanguageServer};
 
@@ -103,6 +103,7 @@ impl LanguageServer for Backend {
                     ]),
                     ..Default::default()
                 }),
+                document_formatting_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -189,6 +190,64 @@ impl LanguageServer for Backend {
             Ok(Some(CompletionResponse::Array(items)))
         }
     }
+
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
+        let uri = &params.text_document.uri;
+
+        // Extract the document text under a short lock scope, then drop the
+        // lock before the (potentially expensive) formatting pass.
+        let text = {
+            let docs = self.documents.lock().await;
+            match docs.get(uri) {
+                Some(t) => t.clone(),
+                None => return Ok(None),
+            }
+        };
+
+        let formatted = chordsketch_core::formatter::format(
+            &text,
+            &chordsketch_core::formatter::FormatOptions::default(),
+        );
+
+        // No-op if already formatted.
+        if formatted == text {
+            return Ok(Some(vec![]));
+        }
+
+        // Replace the entire document with a single TextEdit.
+        // The server declared UTF-8 position encoding, so `character` fields
+        // are byte offsets.
+        let end = document_end_position(&text);
+        let edit = TextEdit {
+            range: Range {
+                start: Position {
+                    line: 0,
+                    character: 0,
+                },
+                end,
+            },
+            new_text: formatted,
+        };
+        Ok(Some(vec![edit]))
+    }
+}
+
+/// Compute the end position (UTF-8 byte offset) of `text`.
+///
+/// Used to build a full-document `TextEdit` range. Each `\n` advances the
+/// line counter; the character offset within the final line is the byte
+/// distance from the last `\n` to the end of the string.
+fn document_end_position(text: &str) -> Position {
+    let mut line: u32 = 0;
+    let mut last_newline_byte: usize = 0;
+    for (i, b) in text.bytes().enumerate() {
+        if b == b'\n' {
+            line += 1;
+            last_newline_byte = i + 1;
+        }
+    }
+    let character = (text.len() - last_newline_byte) as u32;
+    Position { line, character }
 }
 
 #[cfg(test)]

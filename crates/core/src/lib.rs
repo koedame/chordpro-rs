@@ -7,6 +7,7 @@ pub mod config;
 pub mod escape;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod external_tool;
+pub mod formatter;
 pub mod image_path;
 pub mod inline_markup;
 pub mod lexer;
@@ -20,6 +21,7 @@ pub mod voicings;
 
 // Re-export key types for convenience.
 pub use chord::{Accidental, ChordDetail, ChordQuality, Note, parse_chord};
+pub use formatter::{FormatOptions, format as format_chordpro};
 pub use lexer::Lexer;
 pub use parser::{
     MultiParseResult, ParseError, ParseOptions, ParseResult, Parser, parse, parse_image_attributes,

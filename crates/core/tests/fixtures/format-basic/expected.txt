@@ -1,0 +1,136 @@
+Song {
+    metadata: Metadata {
+        title: Some(
+            "My Song",
+        ),
+        subtitles: [],
+        artists: [
+            "Test Artist",
+        ],
+        composers: [],
+        lyricists: [],
+        album: None,
+        year: None,
+        key: None,
+        tempo: None,
+        time: None,
+        capo: None,
+        sort_title: None,
+        sort_artist: None,
+        arrangers: [],
+        copyright: None,
+        duration: None,
+        tags: [],
+        custom: [],
+    },
+    lines: [
+        Directive(
+            Directive {
+                name: "title",
+                value: Some(
+                    "My Song",
+                ),
+                kind: Title,
+                selector: None,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "artist",
+                value: Some(
+                    "Test Artist",
+                ),
+                kind: Artist,
+                selector: None,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "start_of_chorus",
+                value: None,
+                kind: StartOfChorus,
+                selector: None,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "am",
+                                detail: None,
+                                display: None,
+                            },
+                        ),
+                        text: "Hello ",
+                        spans: [],
+                    },
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "g",
+                                detail: None,
+                                display: None,
+                            },
+                        ),
+                        text: "World",
+                        spans: [],
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "end_of_chorus",
+                value: None,
+                kind: EndOfChorus,
+                selector: None,
+            },
+        ),
+        Directive(
+            Directive {
+                name: "start_of_verse",
+                value: None,
+                kind: StartOfVerse,
+                selector: None,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "c",
+                                detail: None,
+                                display: None,
+                            },
+                        ),
+                        text: "Verse line ",
+                        spans: [],
+                    },
+                    LyricsSegment {
+                        chord: Some(
+                            Chord {
+                                name: "f",
+                                detail: None,
+                                display: None,
+                            },
+                        ),
+                        text: "here",
+                        spans: [],
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "end_of_verse",
+                value: None,
+                kind: EndOfVerse,
+                selector: None,
+            },
+        ),
+    ],
+}
