@@ -399,21 +399,21 @@ fn run_fmt(files: &[String], check: bool) -> ExitCode {
 /// directory, then rename over `path`. On POSIX, `rename(2)` is atomic on the
 /// same filesystem, so the original file is never left partially written.
 ///
-/// File permissions are preserved: the original file's mode is captured before
-/// the rename and restored afterwards, because `NamedTempFile` creates temp
-/// files with mode `0o600` (regardless of umask), which would otherwise
-/// silently restrict access after formatting.
+/// File permissions are preserved without a TOCTOU window: the original file's
+/// mode is applied to the temp file *before* `persist()` (rename). Because
+/// `rename(2)` transfers the source inode, the resulting file already has the
+/// correct permissions the instant it becomes visible at `path`.
 fn write_formatted_atomic(path: &str, content: &str) -> io::Result<()> {
     let parent = Path::new(path).parent().unwrap_or(Path::new("."));
-    // Capture original permissions before overwriting.
+    // Capture original permissions before any write.
     let orig_perms = fs::metadata(path).ok().map(|m| m.permissions());
     let mut tmp = NamedTempFile::new_in(parent)?;
     tmp.write_all(content.as_bytes())?;
-    tmp.persist(path).map_err(io::Error::other)?;
-    // Restore the original file's mode; the rename retains the temp file's
-    // restrictive 0o600 permissions rather than the original file's mode.
-    if let Some(perms) = orig_perms {
-        fs::set_permissions(path, perms)?;
+    // Apply the original file's mode to the temp file *before* the rename so
+    // there is no window where the file is visible on disk with 0o600.
+    if let Some(ref perms) = orig_perms {
+        tmp.as_file().set_permissions(perms.clone())?;
     }
+    tmp.persist(path).map_err(io::Error::other)?;
     Ok(())
 }

@@ -422,8 +422,10 @@ impl Parser {
             }
             // Inside a verbatim section: treat as plain text (no chord parsing).
             _ if in_verbatim => self.parse_verbatim_line(),
-            // File-level `#` comment: first text token starts with `#`.
-            TokenKind::Text(t) if t.trim_start().starts_with('#') => self.parse_hash_comment_line(),
+            // File-level `#` comment: first text token starts with `#` at
+            // column 1 (no leading whitespace). The ChordPro spec says "a line
+            // starting with `#`", which means `#` must be the first character.
+            TokenKind::Text(t) if t.starts_with('#') => self.parse_hash_comment_line(),
             // Anything else: a lyrics line.
             _ => self.parse_lyrics_line(),
         }
@@ -570,9 +572,9 @@ impl Parser {
             self.advance();
         }
 
-        // Strip leading whitespace, then the `#`, then one optional space.
-        let trimmed = raw.trim_start();
-        let after_hash = trimmed.strip_prefix('#').unwrap_or(trimmed);
+        // The dispatch guard guarantees `raw` starts with `#` (no leading
+        // whitespace). Strip the `#` and one optional space.
+        let after_hash = raw.strip_prefix('#').unwrap_or_default();
         let text = after_hash.strip_prefix(' ').unwrap_or(after_hash);
 
         Ok(Line::Comment(CommentStyle::Normal, text.to_string()))
@@ -1789,6 +1791,17 @@ mod tests {
                 Line::Directive(Directive::with_value("title", "My Song")),
                 Line::Comment(CommentStyle::Normal, "Second".to_string()),
             ],
+        );
+    }
+
+    #[test]
+    fn hash_comment_indented_is_lyrics_not_comment() {
+        // `  # text` (leading spaces) — NOT a comment; treated as a lyrics line
+        // because the ChordPro spec requires `#` at column 1.
+        let result = lines("  # indented");
+        assert!(
+            matches!(result[..], [Line::Lyrics(_)]),
+            "expected Lyrics, got {result:?}"
         );
     }
 
