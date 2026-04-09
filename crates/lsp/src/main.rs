@@ -3,12 +3,14 @@
 //! # Usage
 //!
 //! ```text
-//! chordsketch-lsp [--stdio]
+//! chordsketch-lsp [--stdio] [--version] [--help]
 //! ```
 //!
 //! The server communicates over standard input/output (stdio transport).
 //! The `--stdio` flag is accepted for compatibility with editor launcher
 //! conventions but is otherwise a no-op — stdio is always the transport.
+//! `--version` / `-V` prints the binary version. `--help` / `-h` prints
+//! usage information.
 //!
 //! # Editor configuration
 //!
@@ -47,17 +49,22 @@ async fn main() {
             }
             "--help" | "-h" => {
                 // Help text goes to stdout per POSIX convention.
-                println!("Usage: chordsketch-lsp [--stdio]");
+                println!("Usage: chordsketch-lsp [--stdio] [--version] [--help]");
                 println!();
                 println!("Language Server Protocol server for ChordPro files.");
                 println!("Communicates over stdio (--stdio is accepted but is the default).");
+                println!();
+                println!("Options:");
+                println!("  --stdio       Use stdio transport (default, accepted as a no-op)");
+                println!("  --version, -V Print version and exit");
+                println!("  --help, -h    Print this help and exit");
                 println!();
                 println!("Set RUST_LOG=debug for verbose logging (written to stderr).");
                 return;
             }
             unknown => {
                 eprintln!("error: unrecognized argument '{unknown}'");
-                eprintln!("Usage: chordsketch-lsp [--stdio]");
+                eprintln!("Usage: chordsketch-lsp [--stdio] [--version] [--help]");
                 std::process::exit(1);
             }
         }
