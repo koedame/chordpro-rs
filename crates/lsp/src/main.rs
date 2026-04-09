@@ -39,12 +39,20 @@ async fn main() {
             "--stdio" => {
                 // Expected: stdio is always the transport; accepted as a no-op.
             }
+            "--version" | "-V" => {
+                println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+                return;
+            }
             "--help" | "-h" => {
                 // Help text goes to stdout per POSIX convention.
                 println!("Usage: chordsketch-lsp [--stdio]");
                 println!();
                 println!("Language Server Protocol server for ChordPro files.");
                 println!("Communicates over stdio (--stdio is accepted but is the default).");
+                println!();
+                println!(
+                    "Set RUST_LOG=debug for verbose logging (written to stderr)."
+                );
                 return;
             }
             unknown => {
