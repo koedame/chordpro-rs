@@ -84,6 +84,39 @@ enum Commands {
         #[arg(long)]
         check: bool,
     },
+
+    /// Convert a plain-text chord+lyrics sheet to ChordPro format.
+    ///
+    /// Reads plain-text files where chord names appear on their own lines
+    /// directly above the corresponding lyric lines, and converts them to
+    /// ChordPro (`.cho`) format.  The output is written to stdout unless
+    /// `--output` is given.
+    ///
+    /// Auto-detection is used by default.  Pass `--from plaintext` to force
+    /// conversion even when the heuristic is uncertain.
+    Convert {
+        /// Input file(s) to convert. Use '-' to read from stdin.
+        #[arg(required = true)]
+        files: Vec<String>,
+
+        /// Input format. `auto` detects the format automatically;
+        /// `plaintext` forces plain chord+lyrics conversion.
+        #[arg(long, default_value = "auto")]
+        from: ConvertFrom,
+
+        /// Write output to a file instead of stdout.
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+}
+
+/// Input format for the `convert` subcommand.
+#[derive(Clone, Debug, clap::ValueEnum)]
+enum ConvertFrom {
+    /// Automatically detect the input format.
+    Auto,
+    /// Force plain chord+lyrics conversion.
+    Plaintext,
 }
 
 /// Supported output formats.
@@ -100,9 +133,17 @@ enum Format {
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    // Dispatch the `fmt` subcommand.
+    // Dispatch subcommands.
     if let Some(Commands::Fmt { files, check }) = cli.command {
         return run_fmt(&files, check);
+    }
+    if let Some(Commands::Convert {
+        files,
+        from,
+        output,
+    }) = cli.command
+    {
+        return run_convert(&files, from, output.as_deref());
     }
 
     // Render mode: require at least one file (unless generating completions).
@@ -389,6 +430,100 @@ fn run_fmt(files: &[String], check: bool) -> ExitCode {
     }
 
     if had_error || needs_format {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// Run the `convert` subcommand.
+///
+/// Reads each file, auto-detects or force-converts plain chord+lyrics text to
+/// ChordPro format, then writes the output to `output_path` (or stdout).
+///
+/// When multiple files are provided their ChordPro output is concatenated.
+///
+/// # Exit codes
+///
+/// * `0` — all files converted successfully.
+/// * `1` — at least one I/O error occurred or a file was skipped because its
+///   format could not be detected.
+fn run_convert(files: &[String], from: ConvertFrom, output_path: Option<&str>) -> ExitCode {
+    use chordsketch_core::{InputFormat, convert_plain_text, detect_format, song_to_chordpro};
+
+    let mut had_error = false;
+    let mut combined = String::new();
+
+    for file in files {
+        let input = if file == "-" {
+            let mut s = String::new();
+            if let Err(e) = io::stdin().read_to_string(&mut s) {
+                eprintln!("error: reading stdin: {e}");
+                had_error = true;
+                continue;
+            }
+            s
+        } else {
+            match fs::read_to_string(file) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("error: {file}: {e}");
+                    had_error = true;
+                    continue;
+                }
+            }
+        };
+
+        let should_convert = match from {
+            ConvertFrom::Plaintext => true,
+            ConvertFrom::Auto => {
+                let fmt = detect_format(&input);
+                match fmt {
+                    InputFormat::PlainChordLyrics => true,
+                    InputFormat::ChordPro => {
+                        // Already ChordPro — pass through unchanged.
+                        if !combined.is_empty() {
+                            combined.push_str("{new_song}\n");
+                        }
+                        combined.push_str(&input);
+                        continue;
+                    }
+                    InputFormat::Unknown => {
+                        let label = if file == "-" {
+                            "<stdin>"
+                        } else {
+                            file.as_str()
+                        };
+                        eprintln!(
+                            "warning: {label}: format could not be detected; \
+                             use --from plaintext to force conversion"
+                        );
+                        had_error = true;
+                        continue;
+                    }
+                }
+            }
+        };
+
+        if should_convert {
+            if !combined.is_empty() {
+                combined.push_str("{new_song}\n");
+            }
+            let song = convert_plain_text(&input);
+            combined.push_str(&song_to_chordpro(&song));
+        }
+    }
+
+    if combined.is_empty() && had_error {
+        return ExitCode::FAILURE;
+    }
+
+    if let Err(e) = write_text(&output_path.map(str::to_string), &combined) {
+        eprintln!("error: {e}");
+        return ExitCode::FAILURE;
+    }
+
+    if had_error {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS

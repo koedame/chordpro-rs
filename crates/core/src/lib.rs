@@ -8,6 +8,7 @@ pub mod escape;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod external_tool;
 pub mod formatter;
+pub mod heuristic;
 pub mod image_path;
 pub mod inline_markup;
 pub mod lexer;
@@ -25,6 +26,9 @@ pub use chord_diagram::{canonical_chord_name, resolve_diagrams_instrument};
 // Aliased as `format_chordpro` to avoid ambiguity with the `format!` macro at
 // call sites that use glob imports.
 pub use formatter::{FormatOptions, format as format_chordpro};
+pub use heuristic::{
+    InputFormat, PlainTextImporter, convert_plain_text, detect_format, song_to_chordpro,
+};
 pub use lexer::Lexer;
 pub use parser::{
     MultiParseResult, ParseError, ParseOptions, ParseResult, Parser, parse, parse_image_attributes,
