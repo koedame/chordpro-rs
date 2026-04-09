@@ -147,8 +147,10 @@ impl Song {
         }
     }
 
-    /// Returns `(name, raw)` pairs for all fretted `{define}` directives in the song.
+    /// Returns `(name, raw)` pairs for all fretted `{define}` and `{chord}` directives
+    /// in the song.
     ///
+    /// `{chord}` is a ChordPro alias for `{define}` and is treated identically here.
     /// Only returns definitions that contain fret data (i.e., `base-fret … frets …`).
     /// Keyboard (`keys`), copy, and display-only definitions are excluded.
     /// Later definitions override earlier ones for the same chord name.
@@ -157,7 +159,9 @@ impl Song {
         let mut result: Vec<(String, String)> = Vec::new();
         for line in &self.lines {
             if let Line::Directive(directive) = line {
-                if directive.kind == DirectiveKind::Define {
+                if directive.kind == DirectiveKind::Define
+                    || directive.kind == DirectiveKind::ChordDirective
+                {
                     if let Some(ref value) = directive.value {
                         let def = ChordDefinition::parse_value(value);
                         if let Some(raw) = def.raw {
@@ -1715,6 +1719,22 @@ mod tests {
             defs[0].1.contains("0 0"),
             "later define should override earlier"
         );
+    }
+
+    #[test]
+    fn fretted_defines_chord_directive_alias() {
+        // {chord:} is a ChordPro alias for {define:} and must be included.
+        let input_chord = "{chord: Am base-fret 1 frets x 0 2 2 1 0}";
+        let input_define = "{define: Am base-fret 1 frets x 0 2 2 1 0}";
+        let defs_chord = crate::parse(input_chord).unwrap().fretted_defines();
+        let defs_define = crate::parse(input_define).unwrap().fretted_defines();
+        assert_eq!(
+            defs_chord.len(),
+            1,
+            "{{chord:}} must appear in fretted_defines"
+        );
+        assert_eq!(defs_chord[0].0, defs_define[0].0, "chord names must match");
+        assert_eq!(defs_chord[0].1, defs_define[0].1, "raw values must match");
     }
 
     #[test]

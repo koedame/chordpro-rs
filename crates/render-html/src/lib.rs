@@ -501,6 +501,7 @@ fn render_song_body(
             .collect();
         if !diagrams.is_empty() {
             html.push_str("<section class=\"chord-diagrams\">\n");
+            html.push_str("<div class=\"section-label\">Chord Diagrams</div>\n");
             html.push_str("<div class=\"chord-diagrams-grid\">\n");
             for diagram in &diagrams {
                 html.push_str("<div class=\"chord-diagram-container\">");
@@ -635,6 +636,7 @@ section > .section-label { font-weight: bold; font-style: italic; margin-bottom:
 .chorus-recall { margin: 1em 0; }
 .chorus-recall > .section-label { font-weight: bold; font-style: italic; margin-bottom: 0.3em; }
 img { max-width: 100%; height: auto; }
+.chord-diagrams-grid { display: flex; flex-wrap: wrap; gap: 0.5em; }
 .chord-diagram-container { display: inline-block; margin: 0.5em 0.5em 0.5em 0; vertical-align: top; }
 .chord-diagram { display: block; }
 ";
