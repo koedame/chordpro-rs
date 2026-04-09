@@ -798,6 +798,47 @@ pub fn ukulele_voicing(chord_name: &str) -> Option<DiagramData> {
     None
 }
 
+/// Looks up a chord diagram by name using a prioritised lookup chain.
+///
+/// # Lookup order
+///
+/// 1. `defines` — fretted `{define}` entries from the song file (highest priority).
+/// 2. Built-in voicing database — `guitar_voicing` or `ukulele_voicing` based on
+///    the `instrument` parameter.
+///
+/// Returns `None` when no diagram is available (unknown chord / keyboard-only
+/// definition).
+///
+/// # Parameters
+///
+/// - `chord_name` — chord name as it appears in the lyrics (e.g., `"Am"`, `"C#m7"`).
+/// - `defines` — list of `(name, raw)` pairs from `{define}` directives.
+///   Obtain via [`Song::fretted_defines`](crate::ast::Song::fretted_defines).
+/// - `instrument` — `"guitar"` or `"ukulele"` (case-insensitive). Anything else
+///   falls back to guitar.
+/// - `frets_shown` — number of fret rows to display in the diagram.
+#[must_use]
+pub fn lookup_diagram(
+    chord_name: &str,
+    defines: &[(String, String)],
+    instrument: &str,
+    frets_shown: usize,
+) -> Option<crate::chord_diagram::DiagramData> {
+    // 1. Song-level {define} directives take priority.
+    if let Some((_, raw)) = defines.iter().find(|(n, _)| n == chord_name) {
+        return crate::chord_diagram::DiagramData::from_raw_infer_frets(
+            chord_name,
+            raw,
+            frets_shown,
+        );
+    }
+    // 2. Built-in database.
+    match instrument.to_ascii_lowercase().as_str() {
+        "ukulele" | "uke" => ukulele_voicing(chord_name),
+        _ => guitar_voicing(chord_name),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1003,5 +1044,44 @@ mod tests {
                 assert_eq!(v.strings, 4, "voicing '{}' strings mismatch", v.name);
             }
         }
+    }
+
+    // --- lookup_diagram ---
+
+    #[test]
+    fn lookup_diagram_builtin_guitar() {
+        let d = lookup_diagram("Am", &[], "guitar", 5).unwrap();
+        assert_eq!(d.name, "Am");
+        assert_eq!(d.strings, 6);
+    }
+
+    #[test]
+    fn lookup_diagram_builtin_ukulele() {
+        let d = lookup_diagram("Am", &[], "ukulele", 5).unwrap();
+        assert_eq!(d.name, "Am");
+        assert_eq!(d.strings, 4);
+    }
+
+    #[test]
+    fn lookup_diagram_unknown_returns_none() {
+        assert!(lookup_diagram("Xyzzy", &[], "guitar", 5).is_none());
+    }
+
+    #[test]
+    fn lookup_diagram_define_overrides_builtin() {
+        // Override Am with a different voicing (3 strings, frets 1 2 3).
+        let defines = vec![("Am".to_string(), "base-fret 1 frets 1 2 3".to_string())];
+        let d = lookup_diagram("Am", &defines, "guitar", 5).unwrap();
+        assert_eq!(d.frets, vec![1, 2, 3]);
+        assert_eq!(d.strings, 3); // inferred from fret count
+    }
+
+    #[test]
+    fn lookup_diagram_flat_alias_resolved() {
+        // Bb is stored internally as A# in the guitar table; lookup_diagram
+        // accepts flat input and returns a diagram (name comes from the DB entry).
+        let d = lookup_diagram("Bb", &[], "guitar", 5).unwrap();
+        // The DB stores "A#" internally; the returned name reflects that.
+        assert_eq!(d.name, "A#");
     }
 }

@@ -481,6 +481,14 @@ fn render_song_into_doc(
     // Controls whether chord diagrams are rendered. Set by {diagrams: off/on}.
     let mut show_diagrams = true;
 
+    // Instrument for the auto-inject diagram block at end of song.
+    let default_instrument = config
+        .get_path("diagrams.instrument")
+        .as_str()
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_else(|| "guitar".to_string());
+    let mut auto_diagrams_instrument: Option<String> = None;
+
     // Stores the AST lines of the most recently defined chorus body for replay.
     let mut chorus_body: Vec<Line> = Vec::new();
     // Temporary buffer for collecting chorus content while inside a chorus section.
@@ -498,10 +506,22 @@ fn render_song_into_doc(
             }
             Line::Directive(d) if !d.kind.is_metadata() => {
                 if d.kind == DirectiveKind::Diagrams {
-                    show_diagrams = !d
-                        .value
-                        .as_deref()
-                        .is_some_and(|v| v.eq_ignore_ascii_case("off"));
+                    let val = d.value.as_deref().unwrap_or("on");
+                    if val.eq_ignore_ascii_case("off") {
+                        show_diagrams = false;
+                        auto_diagrams_instrument = None;
+                    } else {
+                        show_diagrams = true;
+                        let instr = match val.to_ascii_lowercase().as_str() {
+                            "ukulele" | "uke" => "ukulele",
+                            _ => &default_instrument,
+                        };
+                        auto_diagrams_instrument = Some(instr.to_string());
+                    }
+                    continue;
+                }
+                if d.kind == DirectiveKind::NoDiagrams {
+                    auto_diagrams_instrument = None;
                     continue;
                 }
                 if d.kind == DirectiveKind::Transpose {
@@ -606,6 +626,21 @@ fn render_song_into_doc(
                 doc.newline(LINE_GAP * 2.0);
             }
             _ => {}
+        }
+    }
+
+    // Auto-inject diagram block when {diagrams} was seen.
+    if let Some(ref instrument) = auto_diagrams_instrument {
+        let defines = song.fretted_defines();
+        let diagrams: Vec<_> = song
+            .used_chord_names()
+            .into_iter()
+            .filter_map(|name| {
+                chordsketch_core::lookup_diagram(&name, &defines, instrument, diagram_frets)
+            })
+            .collect();
+        for diagram in &diagrams {
+            render_chord_diagram_pdf(diagram, doc);
         }
     }
 }
