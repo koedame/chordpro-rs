@@ -456,10 +456,18 @@ fn chord_positions(line: &str) -> Vec<(usize, String)> {
 fn parse_section_header(line: &str) -> Option<String> {
     let trimmed = line.trim();
 
+    /// Returns `true` if `label` is safe to embed in a ChordPro directive
+    /// value.  Rejects labels containing `{` or `}` because ChordPro has no
+    /// escape mechanism inside directive values and those characters would
+    /// produce malformed output.
+    fn is_safe_label(label: &str) -> bool {
+        !label.is_empty() && !label.contains('{') && !label.contains('}')
+    }
+
     // [Label] form
     if trimmed.starts_with('[') && trimmed.ends_with(']') && trimmed.len() >= 3 {
         let inner = trimmed[1..trimmed.len() - 1].trim();
-        if !inner.is_empty() && !inner.contains('[') {
+        if !inner.contains('[') && is_safe_label(inner) {
             return Some(inner.to_string());
         }
     }
@@ -467,17 +475,17 @@ fn parse_section_header(line: &str) -> Option<String> {
     // (Label) form
     if trimmed.starts_with('(') && trimmed.ends_with(')') && trimmed.len() >= 3 {
         let inner = trimmed[1..trimmed.len() - 1].trim();
-        if !inner.is_empty() && !inner.contains('(') {
+        if !inner.contains('(') && is_safe_label(inner) {
             return Some(inner.to_string());
         }
     }
 
-    // LABEL: form — all-uppercase label followed by exactly one colon
+    // LABEL: form — alphabetic label followed by exactly one colon
     if let Some(label) = trimmed.strip_suffix(':') {
-        if !label.is_empty()
-            && label
-                .chars()
-                .all(|c| c.is_alphabetic() || c == ' ' || c == '-')
+        if label
+            .chars()
+            .all(|c| c.is_alphabetic() || c == ' ' || c == '-')
+            && is_safe_label(label.trim())
         {
             return Some(label.trim().to_string());
         }
@@ -488,7 +496,7 @@ fn parse_section_header(line: &str) -> Option<String> {
         if trimmed.starts_with(delim) && trimmed.ends_with(delim) && trimmed.len() > 2 * delim.len()
         {
             let inner = trimmed[delim.len()..trimmed.len() - delim.len()].trim();
-            if !inner.is_empty() {
+            if is_safe_label(inner) {
                 return Some(inner.to_string());
             }
         }
@@ -590,11 +598,8 @@ fn pair_chords_with_lyric(positions: &[(usize, String)], lyric: &str) -> LyricsL
             });
         }
 
-        let text = if text_start <= lyric_len {
-            lyric[text_start..text_end.min(lyric_len)].to_string()
-        } else {
-            String::new()
-        };
+        // text_start is always <= lyric_len by construction of clamp_to_lyric.
+        let text = lyric[text_start..text_end.min(lyric_len)].to_string();
 
         segments.push(LyricsSegment {
             chord: Some(Chord::new(chord_name.as_str())),
@@ -841,6 +846,15 @@ mod tests {
     fn section_not_matched() {
         assert_eq!(parse_section_header("Hello world"), None);
         assert_eq!(parse_section_header("Am G C Em"), None);
+    }
+
+    #[test]
+    fn section_rejects_brace_in_label() {
+        // Labels containing { or } must be rejected to prevent emitting
+        // malformed ChordPro directive values (M-1 from delta review).
+        assert_eq!(parse_section_header("[Verse}]"), None);
+        assert_eq!(parse_section_header("[{Chorus}]"), None);
+        assert_eq!(parse_section_header("Verse}:"), None);
     }
 
     // --- pair_chords_with_lyric ---

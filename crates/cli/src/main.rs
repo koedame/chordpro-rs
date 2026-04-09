@@ -482,6 +482,9 @@ fn run_convert(files: &[String], from: ConvertFrom, output_path: Option<&str>) -
                     InputFormat::PlainChordLyrics => true,
                     InputFormat::ChordPro => {
                         // Already ChordPro — pass through unchanged.
+                        if !combined.is_empty() {
+                            combined.push_str("{new_song}\n");
+                        }
                         combined.push_str(&input);
                         continue;
                     }
@@ -503,6 +506,9 @@ fn run_convert(files: &[String], from: ConvertFrom, output_path: Option<&str>) -
         };
 
         if should_convert {
+            if !combined.is_empty() {
+                combined.push_str("{new_song}\n");
+            }
             let song = convert_plain_text(&input);
             combined.push_str(&song_to_chordpro(&song));
         }
