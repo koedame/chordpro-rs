@@ -475,6 +475,7 @@ impl Config {
         // (~/.config/chordsketch/) may enable delegates.
         let trusted_abc2svg = config.get_path("delegates.abc2svg").clone();
         let trusted_lilypond = config.get_path("delegates.lilypond").clone();
+        let trusted_musescore = config.get_path("delegates.musescore").clone();
 
         // Project config (untrusted — reduced size limit)
         if let Some(dir) = project_dir {
@@ -520,6 +521,7 @@ impl Config {
 
         let current_abc2svg = config.get_path("delegates.abc2svg").clone();
         let current_lilypond = config.get_path("delegates.lilypond").clone();
+        let current_musescore = config.get_path("delegates.musescore").clone();
 
         if delegate_perm(&current_abc2svg) > delegate_perm(&trusted_abc2svg) {
             // trusted is either null (perm 1) or false (perm 0). If it were
@@ -562,6 +564,26 @@ impl Config {
             warnings.push(format!(
                 "delegates.lilypond was escalated by an untrusted config and has been \
                  {explanation} for security; use --define delegates.lilypond=true to enable"
+            ));
+        }
+        if delegate_perm(&current_musescore) > delegate_perm(&trusted_musescore) {
+            let reset = if trusted_musescore.is_null() {
+                "null"
+            } else {
+                debug_assert_eq!(trusted_musescore.as_bool(), Some(false));
+                "false"
+            };
+            config = config
+                .with_define(&format!("delegates.musescore={reset}"))
+                .expect("hardcoded define is valid");
+            let explanation = if reset == "null" {
+                "reset to null (auto-detect: enabled only if mscore/musescore is installed)"
+            } else {
+                "reset to false (disabled)"
+            };
+            warnings.push(format!(
+                "delegates.musescore was escalated by an untrusted config and has been \
+                 {explanation} for security; use --define delegates.musescore=true to enable"
             ));
         }
 

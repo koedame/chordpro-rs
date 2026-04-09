@@ -450,6 +450,9 @@ fn render_directive(directive: &chordsketch_core::ast::Directive, output: &mut V
         DirectiveKind::StartOfTextblock => {
             render_section_header("Textblock", &directive.value, output);
         }
+        DirectiveKind::StartOfMusicxml => {
+            render_section_header("MusicXML", &directive.value, output);
+        }
         DirectiveKind::StartOfSection(section_name) => {
             // Capitalize the first letter of the section name for display.
             let label = chordsketch_core::capitalize(section_name);
@@ -1075,6 +1078,20 @@ mod delegate_tests {
         let output = render(input);
         assert!(output.contains("[Textblock]"));
         assert!(output.contains("Preformatted text"));
+    }
+
+    #[test]
+    fn test_render_musicxml_section() {
+        let input = "{start_of_musicxml}\n<score-partwise/>\n{end_of_musicxml}";
+        let output = render(input);
+        assert!(output.contains("[MusicXML]"));
+    }
+
+    #[test]
+    fn test_render_musicxml_section_with_label() {
+        let input = "{start_of_musicxml: Score}\n<score-partwise/>\n{end_of_musicxml}";
+        let output = render(input);
+        assert!(output.contains("[MusicXML: Score]"));
     }
 
     #[test]

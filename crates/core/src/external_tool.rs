@@ -325,6 +325,143 @@ pub fn invoke_lilypond(ly_content: &str) -> Result<String, String> {
     Ok(svg)
 }
 
+/// Returns `true` if MuseScore (`mscore` or `musescore`) is available.
+///
+/// Checks for `mscore` first, then `musescore`. The result is cached at the
+/// process level via `OnceLock`, so the subprocess check runs at most once.
+#[must_use]
+pub fn has_musescore() -> bool {
+    static CACHE: OnceLock<bool> = OnceLock::new();
+    *CACHE.get_or_init(|| is_available("mscore") || is_available("musescore"))
+}
+
+/// Strip potentially dangerous content from MusicXML before invoking MuseScore.
+///
+/// MusicXML is XML; this function removes XML processing instructions
+/// (`<?...?>`) which could embed executable directives or external entity
+/// references, and strips `<!DOCTYPE` declarations that might trigger
+/// external entity expansion (XXE). Normal MusicXML element content is
+/// preserved unchanged.
+pub fn sanitize_musicxml_content(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    // Work on the byte string; all delimiters are ASCII so byte indices are safe.
+    let mut pos = 0;
+    let bytes = input.as_bytes();
+    let len = bytes.len();
+
+    while pos < len {
+        if bytes[pos] == b'<' {
+            if pos + 1 < len && bytes[pos + 1] == b'?' {
+                // Processing instruction <?...?> — skip to closing ?>
+                pos += 2;
+                while pos < len {
+                    if bytes[pos] == b'?' && pos + 1 < len && bytes[pos + 1] == b'>' {
+                        pos += 2;
+                        break;
+                    }
+                    pos += 1;
+                }
+            } else if pos + 8 < len
+                && bytes[pos + 1] == b'!'
+                && bytes[pos + 2..pos + 9]
+                    .iter()
+                    .zip(b"DOCTYPE")
+                    .all(|(a, b)| a.to_ascii_uppercase() == *b)
+            {
+                // DOCTYPE declaration — skip to closing >
+                pos += 1;
+                while pos < len {
+                    if bytes[pos] == b'>' {
+                        pos += 1;
+                        break;
+                    }
+                    pos += 1;
+                }
+            } else {
+                // Normal tag — pass through
+                output.push('<');
+                pos += 1;
+            }
+        } else {
+            // SAFETY: pos is a valid UTF-8 boundary because we only advance
+            // by 1 on ASCII bytes (0x3C '<', 0x3F '?', 0x21 '!', 0x3E '>').
+            // Non-ASCII bytes are copied one byte at a time; they only appear
+            // inside text content (never inside the ASCII delimiters above),
+            // and we accumulate them into the output char-by-char below.
+            // Since we must preserve multi-byte sequences, step forward by
+            // the character width at this position.
+            let ch = input[pos..].chars().next().expect("valid UTF-8");
+            output.push(ch);
+            pos += ch.len_utf8();
+        }
+    }
+
+    output
+}
+
+/// Invoke MuseScore on MusicXML content and return the rendered SVG.
+///
+/// Writes `musicxml_content` to a temporary `.xml` file, runs
+/// `mscore -o <output.svg> <input.xml>` (falling back to `musescore` if
+/// `mscore` is not available), and reads the resulting `.svg` file.
+///
+/// # Errors
+///
+/// Returns an error string if:
+/// - The temporary file cannot be written
+/// - Neither `mscore` nor `musescore` is available or they fail to execute
+/// - The output SVG file cannot be read
+pub fn invoke_musescore(musicxml_content: &str) -> Result<String, String> {
+    let sanitized = sanitize_musicxml_content(musicxml_content);
+
+    let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let tmp_dir = std::env::temp_dir().join(format!("chordsketch_mxl_{pid}_{counter}"));
+
+    std::fs::create_dir(&tmp_dir).map_err(|e| format!("failed to create temp directory: {e}"))?;
+
+    let input_path = tmp_dir.join("input.xml");
+    let output_svg = tmp_dir.join("output.svg");
+
+    std::fs::write(&input_path, &sanitized).map_err(|e| {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        format!("failed to write temp file: {e}")
+    })?;
+
+    // Try `mscore` first, then `musescore`.
+    let cmd_name = if is_available("mscore") {
+        "mscore"
+    } else {
+        "musescore"
+    };
+
+    let result = Command::new(cmd_name)
+        .arg("-o")
+        .arg(&output_svg)
+        .arg(&input_path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            format!("failed to invoke {cmd_name}: {e}")
+        })?;
+
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(format!("{cmd_name} exited with error: {stderr}"));
+    }
+
+    let svg = std::fs::read_to_string(&output_svg).map_err(|e| {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        format!("failed to read MuseScore SVG output: {e}")
+    })?;
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    Ok(svg)
+}
+
 /// Returns `true` if the Perl `chordpro` reference implementation is available.
 ///
 /// The result is cached at the process level via `OnceLock`, so the
@@ -664,5 +801,68 @@ mod tests {
     #[ignore]
     fn perl_chordpro_detection() {
         assert!(has_perl_chordpro(), "chordpro (Perl) not found in PATH");
+    }
+
+    // -- sanitize_musicxml_content tests ------------------------------------
+
+    #[test]
+    fn sanitize_musicxml_strips_processing_instruction() {
+        let input = r#"<?xml version="1.0" encoding="UTF-8"?><root/>"#;
+        let result = super::sanitize_musicxml_content(input);
+        assert!(!result.contains("<?xml"), "PI should be stripped");
+        assert!(result.contains("<root/>"), "element content should remain");
+    }
+
+    #[test]
+    fn sanitize_musicxml_strips_doctype() {
+        let input =
+            r#"<!DOCTYPE score-partwise PUBLIC "-//foo//bar" "http://evil.example/"><root/>"#;
+        let result = super::sanitize_musicxml_content(input);
+        assert!(!result.contains("DOCTYPE"), "DOCTYPE should be stripped");
+        assert!(result.contains("<root/>"), "element content should remain");
+    }
+
+    #[test]
+    fn sanitize_musicxml_strips_doctype_case_insensitive() {
+        let input = "<!doctype foo><root/>";
+        let result = super::sanitize_musicxml_content(input);
+        assert!(
+            !result.contains("doctype"),
+            "doctype (lowercase) should be stripped"
+        );
+        assert!(result.contains("<root/>"));
+    }
+
+    #[test]
+    fn sanitize_musicxml_preserves_normal_elements() {
+        let input =
+            "<score-partwise><part id=\"P1\"><measure number=\"1\"/></part></score-partwise>";
+        let result = super::sanitize_musicxml_content(input);
+        assert_eq!(result, input, "normal MusicXML should be preserved");
+    }
+
+    #[test]
+    fn sanitize_musicxml_preserves_utf8_text() {
+        let input = "<part>café naïve résumé</part>";
+        let result = super::sanitize_musicxml_content(input);
+        assert_eq!(result, input, "UTF-8 text content should be preserved");
+    }
+
+    #[test]
+    fn sanitize_musicxml_strips_multiple_pis() {
+        let input = "<?foo bar?><?baz quux?><root/>";
+        let result = super::sanitize_musicxml_content(input);
+        assert!(!result.contains("<?"), "all PIs should be stripped");
+        assert!(result.contains("<root/>"));
+    }
+
+    #[test]
+    fn invoke_musescore_fails_gracefully_without_tool() {
+        if has_musescore() {
+            return; // Skip if musescore is installed
+        }
+        let mxl = "<score-partwise/>";
+        let result = invoke_musescore(mxl);
+        assert!(result.is_err(), "should fail without musescore installed");
     }
 }

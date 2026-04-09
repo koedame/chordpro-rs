@@ -183,6 +183,77 @@ Song {
                 selector: None,
             },
         ),
+        Directive(
+            Directive {
+                name: "start_of_musicxml",
+                value: None,
+                kind: StartOfMusicxml,
+                selector: None,
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                        spans: [],
+                    },
+                ],
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "<score-partwise version=\"4.0\">",
+                        spans: [],
+                    },
+                ],
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "  <part-list><score-part id=\"P1\"><part-name>Music</part-name></score-part></part-list>",
+                        spans: [],
+                    },
+                ],
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "  <part id=\"P1\"><measure number=\"1\"><note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note></measure></part>",
+                        spans: [],
+                    },
+                ],
+            },
+        ),
+        Lyrics(
+            LyricsLine {
+                segments: [
+                    LyricsSegment {
+                        chord: None,
+                        text: "</score-partwise>",
+                        spans: [],
+                    },
+                ],
+            },
+        ),
+        Directive(
+            Directive {
+                name: "end_of_musicxml",
+                value: None,
+                kind: EndOfMusicxml,
+                selector: None,
+            },
+        ),
         Lyrics(
             LyricsLine {
                 segments: [

@@ -442,6 +442,7 @@ impl Parser {
             DirectiveKind::StartOfLy => Some("end_of_ly".to_string()),
             DirectiveKind::StartOfSvg => Some("end_of_svg".to_string()),
             DirectiveKind::StartOfTextblock => Some("end_of_textblock".to_string()),
+            DirectiveKind::StartOfMusicxml => Some("end_of_musicxml".to_string()),
             _ => None,
         }
     }

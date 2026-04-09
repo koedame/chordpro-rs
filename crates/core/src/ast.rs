@@ -1042,6 +1042,11 @@ pub enum DirectiveKind {
     StartOfTextblock,
     /// `{end_of_textblock}` — ends a preformatted text block section.
     EndOfTextblock,
+    /// `{start_of_musicxml}` — begins a MusicXML notation section.
+    /// Content is treated as verbatim text (no chord parsing).
+    StartOfMusicxml,
+    /// `{end_of_musicxml}` — ends a MusicXML notation section.
+    EndOfMusicxml,
 
     // -- Custom section directives -------------------------------------------
     /// `{start_of_X}` — begins a custom section (e.g., intro, outro, solo).
@@ -1156,6 +1161,8 @@ impl DirectiveKind {
             "end_of_svg" => Self::EndOfSvg,
             "start_of_textblock" => Self::StartOfTextblock,
             "end_of_textblock" => Self::EndOfTextblock,
+            "start_of_musicxml" => Self::StartOfMusicxml,
+            "end_of_musicxml" => Self::EndOfMusicxml,
 
             // Recall
             "chorus" => Self::Chorus,
@@ -1355,6 +1362,8 @@ impl DirectiveKind {
             Self::EndOfSvg => "end_of_svg",
             Self::StartOfTextblock => "start_of_textblock",
             Self::EndOfTextblock => "end_of_textblock",
+            Self::StartOfMusicxml => "start_of_musicxml",
+            Self::EndOfMusicxml => "end_of_musicxml",
             Self::Chorus => "chorus",
             Self::NewPage => "new_page",
             Self::NewPhysicalPage => "new_physical_page",
@@ -1473,6 +1482,7 @@ impl DirectiveKind {
                 | Self::StartOfLy
                 | Self::StartOfSvg
                 | Self::StartOfTextblock
+                | Self::StartOfMusicxml
                 | Self::StartOfSection(_)
         )
     }
@@ -1491,6 +1501,7 @@ impl DirectiveKind {
                 | Self::EndOfLy
                 | Self::EndOfSvg
                 | Self::EndOfTextblock
+                | Self::EndOfMusicxml
                 | Self::EndOfSection(_)
         )
     }

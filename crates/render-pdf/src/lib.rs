@@ -833,6 +833,7 @@ fn render_section_label(directive: &chordsketch_core::ast::Directive, doc: &mut 
         DirectiveKind::StartOfLy => Some("Lilypond".to_string()),
         DirectiveKind::StartOfSvg => Some("SVG".to_string()),
         DirectiveKind::StartOfTextblock => Some("Textblock".to_string()),
+        DirectiveKind::StartOfMusicxml => Some("MusicXML".to_string()),
         DirectiveKind::StartOfSection(section_name) => {
             Some(chordsketch_core::capitalize(section_name))
         }
@@ -3065,6 +3066,15 @@ mod delegate_tests {
         let bytes = render_song(&song);
         let content = String::from_utf8_lossy(&bytes);
         assert!(content.contains("Textblock"));
+    }
+
+    #[test]
+    fn test_musicxml_section_in_pdf() {
+        let input = "{start_of_musicxml: Score}\n<score-partwise/>\n{end_of_musicxml}";
+        let song = chordsketch_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("MusicXML"));
     }
 }
 

@@ -219,10 +219,13 @@ fn render_song_body(
     // run when a delegate section is actually present in the input.
     let mut abc2svg_resolved: Option<bool> = config.get_path("delegates.abc2svg").as_bool();
     let mut lilypond_resolved: Option<bool> = config.get_path("delegates.lilypond").as_bool();
+    let mut musescore_resolved: Option<bool> = config.get_path("delegates.musescore").as_bool();
     let mut abc_buf: Option<String> = None;
     let mut abc_label: Option<String> = None;
     let mut ly_buf: Option<String> = None;
     let mut ly_label: Option<String> = None;
+    let mut musicxml_buf: Option<String> = None;
+    let mut musicxml_label: Option<String> = None;
 
     // Controls whether chord diagrams are rendered. Set by {diagrams: off/on}.
     let mut show_diagrams = true;
@@ -276,6 +279,11 @@ fn render_song_body(
                     buf.push('\n');
                 } else if let Some(ref mut buf) = ly_buf {
                     // Inside Lilypond section with lilypond enabled: collect content.
+                    let raw = lyrics_line.text();
+                    buf.push_str(&raw);
+                    buf.push('\n');
+                } else if let Some(ref mut buf) = musicxml_buf {
+                    // Inside MusicXML section with musescore enabled: collect content.
                     let raw = lyrics_line.text();
                     buf.push_str(&raw);
                     buf.push('\n');
@@ -446,6 +454,33 @@ fn render_song_body(
                         if let Some(ly_content) = ly_buf.take() {
                             render_ly_with_fallback(&ly_content, &ly_label, html, warnings);
                             ly_label = None;
+                        }
+                    }
+                    DirectiveKind::StartOfMusicxml => {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        let enabled = *musescore_resolved
+                            .get_or_insert_with(chordsketch_core::external_tool::has_musescore);
+                        #[cfg(target_arch = "wasm32")]
+                        let enabled = *musescore_resolved.get_or_insert(false);
+                        if enabled {
+                            musicxml_buf = Some(String::new());
+                            musicxml_label = directive.value.clone();
+                        } else {
+                            if let Some(buf) = chorus_buf.as_mut() {
+                                buf.push(line.clone());
+                            }
+                            render_directive_inner(directive, show_diagrams, diagram_frets, html);
+                        }
+                    }
+                    DirectiveKind::EndOfMusicxml if musicxml_buf.is_some() => {
+                        if let Some(musicxml_content) = musicxml_buf.take() {
+                            render_musicxml_with_fallback(
+                                &musicxml_content,
+                                &musicxml_label,
+                                html,
+                                warnings,
+                            );
+                            musicxml_label = None;
                         }
                     }
                     DirectiveKind::StartOfSvg => {
@@ -1273,6 +1308,9 @@ fn render_directive_inner(
         DirectiveKind::StartOfTextblock => {
             render_section_open("textblock", "Textblock", &directive.value, html);
         }
+        DirectiveKind::StartOfMusicxml => {
+            render_section_open("musicxml", "MusicXML", &directive.value, html);
+        }
         DirectiveKind::StartOfSection(section_name) => {
             let class = format!("section-{}", sanitize_css_class(section_name));
             let label = escape(&chordsketch_core::capitalize(section_name));
@@ -1285,6 +1323,7 @@ fn render_directive_inner(
         | DirectiveKind::EndOfGrid
         | DirectiveKind::EndOfAbc
         | DirectiveKind::EndOfLy
+        | DirectiveKind::EndOfMusicxml
         | DirectiveKind::EndOfSvg
         | DirectiveKind::EndOfTextblock
         | DirectiveKind::EndOfSection(_) => {
@@ -1461,6 +1500,53 @@ fn render_ly_with_fallback(
     render_section_open("ly", "Lilypond", label, html);
     html.push_str("<pre>");
     html.push_str(&escape(ly_content));
+    html.push_str("</pre>\n");
+    html.push_str("</section>\n");
+}
+
+/// Render MusicXML content using MuseScore, falling back to preformatted text.
+///
+/// When MuseScore is available and produces valid output, the SVG is embedded
+/// inside a `<section class="musicxml">` element. When MuseScore is unavailable
+/// or fails, the raw MusicXML is rendered as preformatted text.
+#[cfg(not(target_arch = "wasm32"))]
+fn render_musicxml_with_fallback(
+    musicxml_content: &str,
+    label: &Option<String>,
+    html: &mut String,
+    warnings: &mut Vec<String>,
+) {
+    match chordsketch_core::external_tool::invoke_musescore(musicxml_content) {
+        Ok(svg) => {
+            render_section_open("musicxml", "MusicXML", label, html);
+            html.push_str(&sanitize_svg_content(&svg));
+            html.push('\n');
+            html.push_str("</section>\n");
+        }
+        Err(e) => {
+            warnings.push(format!("musescore invocation failed: {e}"));
+            render_section_open("musicxml", "MusicXML", label, html);
+            html.push_str("<pre>");
+            html.push_str(&escape(musicxml_content));
+            html.push_str("</pre>\n");
+            html.push_str("</section>\n");
+        }
+    }
+}
+
+/// Fallback for wasm32: external tools are never available, so render as
+/// preformatted text. Unreachable in practice because `has_musescore()` always
+/// returns false on wasm32.
+#[cfg(target_arch = "wasm32")]
+fn render_musicxml_with_fallback(
+    musicxml_content: &str,
+    label: &Option<String>,
+    html: &mut String,
+    _warnings: &mut Vec<String>,
+) {
+    render_section_open("musicxml", "MusicXML", label, html);
+    html.push_str("<pre>");
+    html.push_str(&escape(musicxml_content));
     html.push_str("</pre>\n");
     html.push_str("</section>\n");
 }
@@ -3000,6 +3086,61 @@ mod delegate_tests {
         assert!(html.contains("<section class=\"ly\">"));
         assert!(html.contains("Lilypond"));
         assert!(html.contains("</section>"));
+    }
+
+    // -- MusicXML delegate rendering tests ----------------------------------
+
+    #[test]
+    fn test_render_musicxml_section_disabled() {
+        // With delegates.musescore explicitly disabled, MusicXML renders as text.
+        let input = "{start_of_musicxml}\n<score-partwise/>\n{end_of_musicxml}";
+        let song = chordsketch_core::parse(input).unwrap();
+        let config = chordsketch_core::config::Config::defaults()
+            .with_define("delegates.musescore=false")
+            .unwrap();
+        let html = render_song_with_transpose(&song, 0, &config);
+        assert!(
+            html.contains("<section class=\"musicxml\">"),
+            "fallback section should render when musescore is disabled: {html}"
+        );
+        assert!(html.contains("MusicXML"), "section label should appear");
+        assert!(html.contains("</section>"), "section should be closed");
+    }
+
+    #[test]
+    fn test_render_musicxml_section_no_musescore_installed() {
+        // Default config has delegates.musescore=null (auto-detect).
+        // When musescore is not installed, sections render as plain text.
+        if chordsketch_core::external_tool::has_musescore() {
+            return; // Skip on machines with musescore installed
+        }
+
+        let input = "{start_of_musicxml}\n<score-partwise/>\n{end_of_musicxml}";
+        let song = chordsketch_core::parse(input).unwrap();
+        let config = chordsketch_core::config::Config::defaults();
+        assert!(
+            config.get_path("delegates.musescore").is_null(),
+            "default config should have null delegates.musescore"
+        );
+        let html = render_song_with_transpose(&song, 0, &config);
+        assert!(
+            html.contains("<section class=\"musicxml\">"),
+            "null auto-detect with no musescore should render as text section"
+        );
+    }
+
+    #[test]
+    fn test_render_musicxml_section_with_label() {
+        let input = "{start_of_musicxml: Score}\n<score-partwise/>\n{end_of_musicxml}";
+        let song = chordsketch_core::parse(input).unwrap();
+        let config = chordsketch_core::config::Config::defaults()
+            .with_define("delegates.musescore=false")
+            .unwrap();
+        let html = render_song_with_transpose(&song, 0, &config);
+        assert!(
+            html.contains("Score"),
+            "label should appear in section header"
+        );
     }
 
     #[test]

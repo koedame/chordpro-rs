@@ -15,4 +15,11 @@ K:G
 This is [verbatim] text with {braces} and [brackets].
 No chord parsing here.
 {end_of_textblock}
+{start_of_musicxml}
+<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Music</part-name></score-part></part-list>
+  <part id="P1"><measure number="1"><note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note></measure></part>
+</score-partwise>
+{end_of_musicxml}
 [Am]After delegate sections
