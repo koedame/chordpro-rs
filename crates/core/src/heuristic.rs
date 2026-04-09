@@ -715,14 +715,15 @@ pub fn song_to_chordpro(song: &Song) -> String {
                 }
             }
             Line::Directive(dir) => {
+                let name = sanitize_directive_value(&dir.name);
                 if let Some(ref value) = dir.value {
                     out.push_str(&format!(
                         "{{{}: {}}}\n",
-                        dir.name,
+                        name,
                         sanitize_directive_value(value)
                     ));
                 } else {
-                    out.push_str(&format!("{{{}}}\n", dir.name));
+                    out.push_str(&format!("{{{}}}\n", name));
                 }
             }
             Line::Lyrics(lyrics) => {
@@ -1039,9 +1040,40 @@ mod tests {
         let mut song = Song::default();
         song.metadata.title = Some("Hello {World}".to_string());
         let out = song_to_chordpro(&song);
-        // Braces inside the value must be stripped; the directive itself is
-        // still well-formed.
+        // Braces inside the value must be stripped; the directive itself is still well-formed.
         assert_eq!(out, "{title: Hello World}\n");
-        assert!(!out.contains("{World}"));
+    }
+
+    #[test]
+    fn song_to_chordpro_strips_braces_in_artist() {
+        let mut song = Song::default();
+        song.metadata.artists.push("{Dodgy} Artist".to_string());
+        let out = song_to_chordpro(&song);
+        assert_eq!(out, "{artist: Dodgy Artist}\n");
+    }
+
+    #[test]
+    fn song_to_chordpro_strips_braces_in_comment() {
+        use crate::ast::{CommentStyle, Line};
+        let mut song = Song::default();
+        song.lines.push(Line::Comment(
+            CommentStyle::Normal,
+            "See {note}".to_string(),
+        ));
+        let out = song_to_chordpro(&song);
+        assert_eq!(out, "{comment: See note}\n");
+    }
+
+    #[test]
+    fn song_to_chordpro_strips_braces_in_directive_name_and_value() {
+        // A manually-constructed Song with braces in directive name/value
+        // must still produce well-formed ChordPro (issue #1291).
+        use crate::ast::{Directive, Line};
+        let mut dir = Directive::name_only("start_of_{section}".to_string());
+        dir.value = Some("{custom}".to_string());
+        let mut song = Song::default();
+        song.lines.push(Line::Directive(dir));
+        let out = song_to_chordpro(&song);
+        assert_eq!(out, "{start_of_section: custom}\n");
     }
 }
