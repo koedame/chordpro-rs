@@ -2770,6 +2770,23 @@ Verse text\n\
         );
     }
 
+    #[test]
+    fn test_chord_directive_appears_in_auto_inject_grid() {
+        // {chord} (DirectiveKind::ChordDirective) does not render inline — it must
+        // always appear in the auto-inject grid.  Regression test for #1250.
+        let html = render("{chord: Am base-fret 1 frets x 0 2 2 1 0}\n{diagrams}\n[Am]Hello\n");
+        // Am has a {chord} entry but no inline diagram was rendered.
+        // It should appear in the auto-inject grid.
+        assert!(
+            html.contains("class=\"chord-diagrams\""),
+            "auto-inject grid should appear since {{chord}} does not render inline"
+        );
+        assert!(
+            html.contains("font-weight=\"bold\">Am</text>"),
+            "Am should appear in the auto-inject grid via {{chord}} voicing"
+        );
+    }
+
     // -- abc2svg delegate rendering tests -----------------------------------------
 
     #[test]
