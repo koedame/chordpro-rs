@@ -3891,6 +3891,25 @@ mod chord_diagram_pdf_tests {
             "Am should appear at most twice (chord label + inline diagram), got {am_count}"
         );
     }
+
+    #[test]
+    fn test_define_after_nodiagrams_appears_in_grid() {
+        // {define} encountered while show_diagrams=false must NOT be tracked as
+        // inline-rendered; the chord should appear in the auto-inject grid.
+        // Regression test for #1245 / parity with HTML renderer (#1251).
+        let input =
+            "{no_diagrams}\n{define: Am base-fret 1 frets x 0 2 2 1 0}\n{diagrams}\n[Am]Hello\n";
+        let song = chordsketch_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF-1.4"), "must produce a valid PDF");
+        let content = String::from_utf8_lossy(&bytes);
+        // Am was NOT rendered inline ({no_diagrams} was active at {define} time).
+        // It should appear in the auto-inject grid.
+        assert!(
+            content.contains("Am"),
+            "Am should appear in the auto-inject grid"
+        );
+    }
 }
 
 #[cfg(test)]
