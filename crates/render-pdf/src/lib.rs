@@ -3905,9 +3905,12 @@ mod chord_diagram_pdf_tests {
         let content = String::from_utf8_lossy(&bytes);
         // Am was NOT rendered inline ({no_diagrams} was active at {define} time).
         // It should appear in the auto-inject grid.
+        // Count occurrences: chord-over-lyrics label (1) + auto-inject grid title (1) = 2.
+        // If the bug is reintroduced, Am would be excluded from the grid (count = 1).
+        let am_count = content.matches("Am").count();
         assert!(
-            content.contains("Am"),
-            "Am should appear in the auto-inject grid"
+            am_count >= 2,
+            "Am should appear in the auto-inject grid (found {am_count} occurrences, expected ≥ 2)"
         );
     }
 }
