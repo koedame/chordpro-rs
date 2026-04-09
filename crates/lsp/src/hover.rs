@@ -144,6 +144,103 @@ pub fn detect_hover_context(line: &str, col: usize) -> HoverContext {
 // Hover content builders
 // ---------------------------------------------------------------------------
 
+/// Returns the character-offset span `[start, end)` of the hovered token in `line`.
+///
+/// This mirrors the logic of [`detect_hover_context`] but returns the token's
+/// position so that callers can construct an LSP [`Range`] for the hover
+/// response (causing editors to highlight the hovered symbol).
+///
+/// Returns `None` when there is no hover target at `col`.
+///
+/// [`Range`]: tower_lsp::lsp_types::Range
+#[must_use]
+pub fn hover_token_span(line: &str, col: usize) -> Option<(usize, usize)> {
+    let chars: Vec<char> = line.chars().collect();
+    let col = col.min(chars.len());
+
+    let scan_to = col;
+    let mut bracket_start: Option<usize> = None;
+    let mut brace_start: Option<usize> = None;
+    let mut depth_bracket = 0i32;
+    let mut depth_brace = 0i32;
+
+    for i in (0..scan_to).rev() {
+        match chars[i] {
+            ']' => depth_bracket += 1,
+            '[' => {
+                if depth_bracket == 0 {
+                    bracket_start = Some(i);
+                    break;
+                }
+                depth_bracket -= 1;
+            }
+            '}' => depth_brace += 1,
+            '{' => {
+                if depth_brace == 0 {
+                    brace_start = Some(i);
+                    break;
+                }
+                depth_brace -= 1;
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(bstart) = brace_start {
+        // If there's a colon between bstart+1 and col, cursor is in value → no span.
+        let colon_pos = chars[bstart + 1..col]
+            .iter()
+            .position(|&c| c == ':')
+            .map(|p| bstart + 1 + p);
+        if colon_pos.is_some() {
+            return None;
+        }
+        let name_end = chars[bstart + 1..]
+            .iter()
+            .position(|&c| c == ':' || c == '}')
+            .map(|p| bstart + 1 + p)
+            .unwrap_or(chars.len());
+        if col > name_end {
+            return None;
+        }
+        let name: String = chars[bstart + 1..name_end]
+            .iter()
+            .collect::<String>()
+            .trim()
+            .to_ascii_lowercase();
+        if name.is_empty() {
+            return None;
+        }
+        // Span covers the directive name characters (excluding braces and whitespace).
+        let name_start = bstart
+            + 1
+            + chars[bstart + 1..name_end]
+                .iter()
+                .take_while(|&&c| c == ' ')
+                .count();
+        return Some((name_start, name_end));
+    }
+
+    if let Some(bstart) = bracket_start {
+        let close = chars[bstart + 1..]
+            .iter()
+            .position(|&c| c == ']')
+            .map(|p| bstart + 1 + p);
+        let end = close.unwrap_or(chars.len());
+        if col >= end {
+            return None;
+        }
+        let name: String = chars[bstart + 1..end].iter().collect();
+        if name.trim().is_empty() {
+            return None;
+        }
+        // Span covers the chord name characters (excluding the `[` and `]`).
+        Some((bstart + 1, end))
+    } else {
+        None
+    }
+}
+
 /// Build Markdown hover content for a chord name.
 ///
 /// Looks up the chord in the built-in guitar voicing database and renders an
@@ -422,6 +519,158 @@ const DIRECTIVE_DOCS: &[(&str, &str, &str)] = &[
         "{endif}",
         "Closes an `{ifdef}` or `{ifndef}` block.",
     ),
+    // Inline font / size / colour directives (Aliases: tf ts tc cf cs cc)
+    (
+        "textfont",
+        "{textfont: Font}",
+        "Sets the font for lyrics text. Alias: `{tf}`. Takes effect from this point forward.",
+    ),
+    (
+        "textsize",
+        "{textsize: N}",
+        "Sets the point size for lyrics text. Alias: `{ts}`.",
+    ),
+    (
+        "textcolour",
+        "{textcolour: Colour}",
+        "Sets the colour for lyrics text (CSS colour name or `#RRGGBB`). Alias: `{tc}`.",
+    ),
+    (
+        "chordfont",
+        "{chordfont: Font}",
+        "Sets the font for chord names. Alias: `{cf}`.",
+    ),
+    (
+        "chordsize",
+        "{chordsize: N}",
+        "Sets the point size for chord names. Alias: `{cs}`.",
+    ),
+    (
+        "chordcolour",
+        "{chordcolour: Colour}",
+        "Sets the colour for chord names. Alias: `{cc}`.",
+    ),
+    (
+        "tabfont",
+        "{tabfont: Font}",
+        "Sets the font for tab sections.",
+    ),
+    (
+        "tabsize",
+        "{tabsize: N}",
+        "Sets the point size for tab sections.",
+    ),
+    (
+        "tabcolour",
+        "{tabcolour: Colour}",
+        "Sets the colour for tab sections.",
+    ),
+    // Title-level font / size / colour directives
+    (
+        "titlefont",
+        "{titlefont: Font}",
+        "Sets the font for the song title.",
+    ),
+    (
+        "titlesize",
+        "{titlesize: N}",
+        "Sets the point size for the song title.",
+    ),
+    (
+        "titlecolour",
+        "{titlecolour: Colour}",
+        "Sets the colour for the song title.",
+    ),
+    (
+        "chorusfont",
+        "{chorusfont: Font}",
+        "Sets the font for chorus section text.",
+    ),
+    (
+        "chorussize",
+        "{chorussize: N}",
+        "Sets the point size for chorus section text.",
+    ),
+    (
+        "choruscolour",
+        "{choruscolour: Colour}",
+        "Sets the colour for chorus section text.",
+    ),
+    (
+        "footerfont",
+        "{footerfont: Font}",
+        "Sets the font for page footers.",
+    ),
+    (
+        "footersize",
+        "{footersize: N}",
+        "Sets the point size for page footers.",
+    ),
+    (
+        "footercolour",
+        "{footercolour: Colour}",
+        "Sets the colour for page footers.",
+    ),
+    (
+        "headerfont",
+        "{headerfont: Font}",
+        "Sets the font for page headers.",
+    ),
+    (
+        "headersize",
+        "{headersize: N}",
+        "Sets the point size for page headers.",
+    ),
+    (
+        "headercolour",
+        "{headercolour: Colour}",
+        "Sets the colour for page headers.",
+    ),
+    (
+        "labelfont",
+        "{labelfont: Font}",
+        "Sets the font for section labels.",
+    ),
+    (
+        "labelsize",
+        "{labelsize: N}",
+        "Sets the point size for section labels.",
+    ),
+    (
+        "labelcolour",
+        "{labelcolour: Colour}",
+        "Sets the colour for section labels.",
+    ),
+    (
+        "gridfont",
+        "{gridfont: Font}",
+        "Sets the font for chord grid text.",
+    ),
+    (
+        "gridsize",
+        "{gridsize: N}",
+        "Sets the point size for chord grid text.",
+    ),
+    (
+        "gridcolour",
+        "{gridcolour: Colour}",
+        "Sets the colour for chord grid text.",
+    ),
+    (
+        "tocfont",
+        "{tocfont: Font}",
+        "Sets the font for the table of contents.",
+    ),
+    (
+        "tocsize",
+        "{tocsize: N}",
+        "Sets the point size for the table of contents.",
+    ),
+    (
+        "toccolour",
+        "{toccolour: Colour}",
+        "Sets the colour for the table of contents.",
+    ),
 ];
 
 /// Build Markdown hover content for a directive name.
@@ -606,5 +855,87 @@ mod tests {
     fn directive_hover_case_insensitive() {
         let md = directive_hover_markdown("TITLE");
         assert!(md.is_some(), "should match regardless of case");
+    }
+
+    // --- font/colour directives (#1269) --------------------------------------
+
+    #[test]
+    fn directive_hover_textfont_canonical() {
+        let md = directive_hover_markdown("textfont");
+        assert!(md.is_some(), "textfont should have hover docs");
+        let md = md.unwrap();
+        assert!(md.contains("{textfont:"));
+    }
+
+    #[test]
+    fn directive_hover_textfont_alias_tf() {
+        // alias tf → textfont
+        let md = directive_hover_markdown("tf");
+        assert!(
+            md.is_some(),
+            "alias tf should resolve to textfont hover docs"
+        );
+        let md = md.unwrap();
+        assert!(md.contains("textfont"));
+    }
+
+    #[test]
+    fn directive_hover_chordfont_alias_cf() {
+        let md = directive_hover_markdown("cf");
+        assert!(md.is_some(), "alias cf should resolve to chordfont docs");
+    }
+
+    #[test]
+    fn directive_hover_titlefont() {
+        let md = directive_hover_markdown("titlefont");
+        assert!(md.is_some(), "titlefont should have hover docs");
+    }
+
+    #[test]
+    fn directive_hover_gridcolour() {
+        let md = directive_hover_markdown("gridcolour");
+        assert!(md.is_some(), "gridcolour should have hover docs");
+    }
+
+    // --- hover_token_span (#1270) --------------------------------------------
+
+    #[test]
+    fn token_span_chord_inside_bracket() {
+        // [Am] — cursor at position 1 ('A')
+        // span should be (1, 3) for "Am" (chars 1 and 2)
+        let span = super::hover_token_span("[Am]", 1);
+        assert_eq!(span, Some((1, 3)));
+    }
+
+    #[test]
+    fn token_span_chord_at_bracket_open_returns_none() {
+        let span = super::hover_token_span("[Am]", 0);
+        assert_eq!(span, None);
+    }
+
+    #[test]
+    fn token_span_chord_at_bracket_close_returns_none() {
+        let span = super::hover_token_span("[Am]", 3);
+        assert_eq!(span, None);
+    }
+
+    #[test]
+    fn token_span_directive_name() {
+        // {title: My Song} — cursor at 3
+        // span should be (1, 6) for "title"
+        let span = super::hover_token_span("{title: My Song}", 3);
+        assert_eq!(span, Some((1, 6)));
+    }
+
+    #[test]
+    fn token_span_directive_value_returns_none() {
+        let span = super::hover_token_span("{title: My Song}", 10);
+        assert_eq!(span, None);
+    }
+
+    #[test]
+    fn token_span_no_context_returns_none() {
+        let span = super::hover_token_span("Hello world", 3);
+        assert_eq!(span, None);
     }
 }

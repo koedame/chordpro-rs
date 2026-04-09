@@ -31,6 +31,7 @@ use crate::completion::{
 use crate::convert::parse_error_to_diagnostic;
 use crate::hover::{
     HoverContext, chord_hover_markdown, detect_hover_context, directive_hover_markdown,
+    hover_token_span,
 };
 
 /// Maximum number of open documents tracked for completion.
@@ -227,12 +228,28 @@ impl LanguageServer for Backend {
             HoverContext::None => None,
         };
 
+        let range = hover_token_span(&line_owned, col).map(|(start_char, end_char)| {
+            // Convert char indices to UTF-8 byte offsets (position encoding is UTF8).
+            let start_byte = char_to_byte_offset(&line_owned, start_char);
+            let end_byte = char_to_byte_offset(&line_owned, end_char);
+            Range {
+                start: Position {
+                    line: pos.line,
+                    character: start_byte,
+                },
+                end: Position {
+                    line: pos.line,
+                    character: end_byte,
+                },
+            }
+        });
+
         Ok(markdown.map(|md| Hover {
             contents: HoverContents::Markup(MarkupContent {
                 kind: MarkupKind::Markdown,
                 value: md,
             }),
-            range: None,
+            range,
         }))
     }
 
@@ -283,6 +300,17 @@ impl LanguageServer for Backend {
 /// CRLF (`\r\n`), and CR-only (`\r`) line endings. Each line break advances
 /// the line counter; the character offset is the byte distance from the last
 /// line-break byte to the end of the string.
+/// Convert a 0-based character index within `line` to a UTF-8 byte offset.
+///
+/// Returns `line.len()` (cast to `u32`) when `char_idx` is beyond the last
+/// character, which is the correct sentinel value for an LSP range end.
+fn char_to_byte_offset(line: &str, char_idx: usize) -> u32 {
+    line.char_indices()
+        .nth(char_idx)
+        .map(|(b, _)| b as u32)
+        .unwrap_or(line.len() as u32)
+}
+
 fn document_end_position(text: &str) -> Position {
     let mut line: u32 = 0;
     let mut last_newline_byte: usize = 0;
