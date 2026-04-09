@@ -1,0 +1,9 @@
+{title: My Song}
+{artist: Test Artist}
+{start_of_chorus}
+[Am]Hello [G]World
+{end_of_chorus}
+
+{start_of_verse}
+[C]Verse line [F]here
+{end_of_verse}
