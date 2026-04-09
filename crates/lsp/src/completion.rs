@@ -108,7 +108,6 @@ pub fn detect_context(line: &str, col: usize) -> CompletionContext {
                 .iter()
                 .skip_while(|&&c| c == ' ')
                 .collect::<String>()
-                .trim_start()
                 .to_ascii_lowercase();
             if directive_name == "meta" {
                 return CompletionContext::MetadataKey { prefix };
@@ -474,5 +473,36 @@ mod tests {
         let items = meta_key_items("art");
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label, "artist");
+    }
+
+    // --- non-ASCII input ---
+
+    #[test]
+    fn context_chord_name_non_ascii_prefix() {
+        // "Ré" contains a 2-byte UTF-8 character; col is a char count, not a
+        // byte count. The function must not panic or produce a wrong prefix.
+        let line = "[Ré";
+        let col = line.chars().count(); // 3 chars: '[', 'R', 'é'
+        let ctx = detect_context(line, col);
+        assert_eq!(
+            ctx,
+            CompletionContext::ChordName {
+                prefix: "Ré".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn context_directive_name_non_ascii_text_before_brace() {
+        // Non-ASCII lyrics text on the same line before the `{`.
+        let line = "Ré [Am] {tit";
+        let col = line.chars().count();
+        let ctx = detect_context(line, col);
+        assert_eq!(
+            ctx,
+            CompletionContext::DirectiveName {
+                prefix: "tit".to_string()
+            }
+        );
     }
 }

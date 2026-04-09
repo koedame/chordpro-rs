@@ -157,23 +157,26 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position.text_document.uri;
         let pos = &params.text_document_position.position;
 
-        let docs = self.documents.lock().await;
-        let Some(text) = docs.get(uri) else {
-            return Ok(None);
+        // Extract the relevant line under a short critical section, then drop
+        // the lock before calling detect_context and the item builders so that
+        // concurrent did_open/did_change/did_close are not blocked.
+        let line_owned: String = {
+            let docs = self.documents.lock().await;
+            let Some(text) = docs.get(uri) else {
+                return Ok(None);
+            };
+            text.lines().nth(pos.line as usize).unwrap_or("").to_owned()
         };
-
-        // Get the line at the cursor (0-based line index).
-        let line = text.lines().nth(pos.line as usize).unwrap_or("");
 
         // The server declared UTF-8 position encoding, so `pos.character` is a
         // byte offset into the line. Convert to a char count for `detect_context`.
         let byte_col = pos.character as usize;
-        let col = line
+        let col = line_owned
             .char_indices()
             .take_while(|(byte_idx, _)| *byte_idx < byte_col)
             .count();
 
-        let items = match detect_context(line, col) {
+        let items = match detect_context(&line_owned, col) {
             CompletionContext::DirectiveName { prefix } => directive_items(&prefix),
             CompletionContext::MetadataKey { prefix } => meta_key_items(&prefix),
             CompletionContext::ChordName { prefix } => chord_items(&prefix),
