@@ -171,11 +171,19 @@ fn try_format_directive(line: &str, options: &FormatOptions) -> Option<String> {
     };
 
     // Reconstruct the directive.
+    //
+    // When normalization is ON, `canonical_name` is the base name only
+    // (e.g. `"textfont"`), so we must append the selector separately.
+    // When normalization is OFF, `canonical_name` is `name_trimmed` which
+    // already contains the selector (e.g. `"textfont-piano"`), so appending
+    // it again would produce a doubled suffix like `"textfont-piano-piano"`.
     let mut result = String::from("{");
     result.push_str(&canonical_name);
-    if let Some(sel) = &selector {
-        result.push('-');
-        result.push_str(sel);
+    if options.normalize_directive_names {
+        if let Some(sel) = &selector {
+            result.push('-');
+            result.push_str(sel);
+        }
     }
     if let Some(value) = value_opt {
         let v = value.trim();
@@ -332,6 +340,21 @@ mod tests {
             ..FormatOptions::default()
         };
         assert_eq!(format("{soc}\n", &opts), "{soc}\n");
+    }
+
+    #[test]
+    fn directive_with_selector_normalization_disabled() {
+        // Regression test: when normalize_directive_names is false the selector
+        // must NOT be appended a second time.  Previously this produced
+        // `{textfont-piano-piano: Courier}`.
+        let opts = FormatOptions {
+            normalize_directive_names: false,
+            ..FormatOptions::default()
+        };
+        assert_eq!(
+            format("{textfont-piano: Courier}\n", &opts),
+            "{textfont-piano: Courier}\n"
+        );
     }
 
     // --- Chord spelling normalization ----------------------------------------
