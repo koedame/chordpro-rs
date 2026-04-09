@@ -146,6 +146,57 @@ impl Song {
             }
         }
     }
+
+    /// Returns `(name, raw)` pairs for all fretted `{define}` directives in the song.
+    ///
+    /// Only returns definitions that contain fret data (i.e., `base-fret … frets …`).
+    /// Keyboard (`keys`), copy, and display-only definitions are excluded.
+    /// Later definitions override earlier ones for the same chord name.
+    #[must_use]
+    pub fn fretted_defines(&self) -> Vec<(String, String)> {
+        let mut result: Vec<(String, String)> = Vec::new();
+        for line in &self.lines {
+            if let Line::Directive(directive) = line {
+                if directive.kind == DirectiveKind::Define {
+                    if let Some(ref value) = directive.value {
+                        let def = ChordDefinition::parse_value(value);
+                        if let Some(raw) = def.raw {
+                            if let Some(pos) = result.iter().position(|(n, _)| *n == def.name) {
+                                result[pos].1 = raw;
+                            } else {
+                                result.push((def.name, raw));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    /// Returns the unique chord names used in the song, in order of first appearance.
+    ///
+    /// Scans every [`LyricsSegment`] in every [`LyricsLine`] in the song. The
+    /// returned names are the raw chord strings as they appear in the source
+    /// (e.g., `"Am"`, `"C#m7"`).  Each name appears at most once; names are
+    /// returned in the order they are first encountered.
+    #[must_use]
+    pub fn used_chord_names(&self) -> Vec<String> {
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut result: Vec<String> = Vec::new();
+        for line in &self.lines {
+            if let Line::Lyrics(lyrics) = line {
+                for seg in &lyrics.segments {
+                    if let Some(ref chord) = seg.chord {
+                        if seen.insert(chord.name.clone()) {
+                            result.push(chord.name.clone());
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
 }
 
 impl Default for Song {
@@ -1009,6 +1060,9 @@ pub enum DirectiveKind {
     /// diagram visibility. When set to "off", renderers suppress automatic
     /// chord diagrams for the current song.
     Diagrams,
+    /// `{no_diagrams}` — suppresses the auto-generated diagram block for
+    /// this song. Equivalent to `{diagrams: off}`.
+    NoDiagrams,
 
     // -- Image directive ----------------------------------------------------
     /// `{image: src=filename}` — embeds an image with optional attributes.
@@ -1135,6 +1189,7 @@ impl DirectiveKind {
             "define" => Self::Define,
             "chord" => Self::ChordDirective,
             "diagrams" => Self::Diagrams,
+            "no_diagrams" | "nodiagrams" => Self::NoDiagrams,
 
             // Generic metadata
             "meta" => Self::Meta(String::new()),
@@ -1304,6 +1359,7 @@ impl DirectiveKind {
             Self::Define => "define",
             Self::ChordDirective => "chord",
             Self::Diagrams => "diagrams",
+            Self::NoDiagrams => "no_diagrams",
             Self::Meta(_) => "meta",
 
             Self::Image(_) => "image",
@@ -1620,6 +1676,45 @@ mod tests {
     #[test]
     fn song_default_equals_new() {
         assert_eq!(Song::default(), Song::new());
+    }
+
+    #[test]
+    fn used_chord_names_empty() {
+        let song = crate::parse("{title: Test}").unwrap();
+        assert!(song.used_chord_names().is_empty());
+    }
+
+    #[test]
+    fn used_chord_names_order_and_dedup() {
+        let song = crate::parse("[Am]one [G]two [Am]three [C]four").unwrap();
+        assert_eq!(song.used_chord_names(), vec!["Am", "G", "C"]);
+    }
+
+    #[test]
+    fn fretted_defines_empty() {
+        let song = crate::parse("{title: Test}").unwrap();
+        assert!(song.fretted_defines().is_empty());
+    }
+
+    #[test]
+    fn fretted_defines_returns_raw_only() {
+        let input = "{define: Am base-fret 1 frets x 0 2 2 1 0}\n{define: G keys 0 4 7}";
+        let song = crate::parse(input).unwrap();
+        let defs = song.fretted_defines();
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].0, "Am");
+    }
+
+    #[test]
+    fn fretted_defines_later_overrides_earlier() {
+        let input = "{define: Am base-fret 1 frets x 0 2 2 1 0}\n{define: Am base-fret 1 frets x 0 2 2 0 0}";
+        let song = crate::parse(input).unwrap();
+        let defs = song.fretted_defines();
+        assert_eq!(defs.len(), 1);
+        assert!(
+            defs[0].1.contains("0 0"),
+            "later define should override earlier"
+        );
     }
 
     #[test]

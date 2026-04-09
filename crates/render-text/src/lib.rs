@@ -98,6 +98,15 @@ fn render_song_impl(
     let mut chorus_buf: Option<Vec<Line>> = None;
     let mut chorus_recall_count: usize = 0;
 
+    // Instrument for the auto-inject ASCII diagram block.
+    // Set by {diagrams: guitar/ukulele/on}; cleared by {diagrams: off} / {no_diagrams}.
+    let default_instrument = _config
+        .get_path("diagrams.instrument")
+        .as_str()
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_else(|| "guitar".to_string());
+    let mut auto_diagrams_instrument: Option<String> = None;
+
     render_metadata(&song.metadata, &mut output);
 
     for line in &song.lines {
@@ -112,6 +121,24 @@ fn render_song_impl(
                 // Metadata directives are already rendered via song.metadata;
                 // skip them in the body to avoid duplicate output.
                 if directive.kind.is_metadata() {
+                    continue;
+                }
+                if directive.kind == DirectiveKind::Diagrams {
+                    let val = directive.value.as_deref().unwrap_or("on");
+                    if val.eq_ignore_ascii_case("off") {
+                        auto_diagrams_instrument = None;
+                    } else {
+                        let instr = match val.to_ascii_lowercase().as_str() {
+                            "ukulele" | "uke" => "ukulele",
+                            "guitar" => "guitar",
+                            _ => &default_instrument,
+                        };
+                        auto_diagrams_instrument = Some(instr.to_string());
+                    }
+                    continue;
+                }
+                if directive.kind == DirectiveKind::NoDiagrams {
+                    auto_diagrams_instrument = None;
                     continue;
                 }
                 if directive.kind == DirectiveKind::Transpose {
@@ -181,6 +208,34 @@ fn render_song_impl(
                     buf.push(line.clone());
                 }
                 output.push(String::new());
+            }
+        }
+    }
+
+    // Auto-inject ASCII diagram block when {diagrams} was seen.
+    if let Some(ref instrument) = auto_diagrams_instrument {
+        let frets_shown = _config
+            .get_path("diagrams.frets")
+            .as_f64()
+            .map_or(chordsketch_core::chord_diagram::DEFAULT_FRETS_SHOWN, |n| {
+                (n as usize).max(1)
+            });
+        let defines = song.fretted_defines();
+        let diagrams: Vec<_> = song
+            .used_chord_names()
+            .into_iter()
+            .filter_map(|name| {
+                chordsketch_core::lookup_diagram(&name, &defines, instrument, frets_shown)
+            })
+            .collect();
+        if !diagrams.is_empty() {
+            output.push(String::new());
+            output.push("[Chord Diagrams]".to_string());
+            for diagram in &diagrams {
+                output.push(String::new());
+                for diagram_line in chordsketch_core::chord_diagram::render_ascii(diagram).lines() {
+                    output.push(diagram_line.to_string());
+                }
             }
         }
     }
@@ -1144,6 +1199,38 @@ mod delegate_tests {
         assert!(
             output.contains("Guitar verse"),
             "unselectored content should remain"
+        );
+    }
+
+    // -- auto-inject ASCII diagram block (issue #1140) ----------------------------
+
+    #[test]
+    fn test_diagrams_auto_inject_text() {
+        let output = render("{diagrams}\n[Am]Hello");
+        assert!(
+            output.contains("[Chord Diagrams]"),
+            "text output should include Chord Diagrams header"
+        );
+        assert!(output.contains("Am"), "Am ASCII diagram expected");
+        // Am = x o 2 2 1 o (guitar open position)
+        assert!(output.contains("x o"), "Am fret pattern expected");
+    }
+
+    #[test]
+    fn test_no_diagrams_suppresses_text_inject() {
+        let output = render("{no_diagrams}\n[Am]Hello");
+        assert!(
+            !output.contains("[Chord Diagrams]"),
+            "{{no_diagrams}} should suppress ASCII diagram block"
+        );
+    }
+
+    #[test]
+    fn test_diagrams_off_suppresses_text_inject() {
+        let output = render("{diagrams: off}\n[Am]Hello");
+        assert!(
+            !output.contains("[Chord Diagrams]"),
+            "{{diagrams: off}} should suppress ASCII diagram block"
         );
     }
 

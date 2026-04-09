@@ -355,6 +355,53 @@ pub fn render_svg(data: &DiagramData) -> String {
     svg
 }
 
+/// Render a chord diagram as compact ASCII text.
+///
+/// Produces a multi-line string showing:
+/// - The chord name (display name if set).
+/// - Muted (`x`), open (`o`), and fretted (`1`–`N`) positions for each string.
+/// - A base-fret marker when the diagram doesn't start at the nut.
+///
+/// # Format
+///
+/// ```text
+/// Am
+/// x o 2 2 1 o
+/// ```
+///
+/// When `base_fret > 1`:
+///
+/// ```text
+/// Bm
+/// x 2 4 4 3 2   (fr. 2)
+/// ```
+///
+/// Open strings are shown as `o`, muted strings as `x`, and fretted strings
+/// as an integer representing the **absolute** fret number
+/// (`base_fret + relative_fret - 1`).
+#[must_use]
+pub fn render_ascii(data: &DiagramData) -> String {
+    let title = data.title();
+    let mut positions: Vec<String> = Vec::with_capacity(data.frets.len());
+    for &f in &data.frets {
+        match f {
+            -1 => positions.push("x".to_string()),
+            0 => positions.push("o".to_string()),
+            n => {
+                // Convert relative fret to absolute fret number.
+                let abs_fret = data.base_fret as i32 + n - 1;
+                positions.push(abs_fret.to_string());
+            }
+        }
+    }
+    let frets_str = positions.join(" ");
+    if data.base_fret > 1 {
+        format!("{title}\n{frets_str}   (fr. {base})", base = data.base_fret)
+    } else {
+        format!("{title}\n{frets_str}")
+    }
+}
+
 // ===========================================================================
 // Tests
 // ===========================================================================

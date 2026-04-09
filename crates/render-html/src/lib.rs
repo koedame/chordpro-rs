@@ -233,6 +233,16 @@ fn render_song_body(
             (n as usize).max(1)
         });
 
+    // Instrument for the auto-inject diagram block at end of song.
+    // Set by {diagrams: guitar/ukulele/on}; cleared by {diagrams: off} / {no_diagrams}.
+    // None means no auto-inject grid is rendered.
+    let default_instrument = config
+        .get_path("diagrams.instrument")
+        .as_str()
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_else(|| "guitar".to_string());
+    let mut auto_diagrams_instrument: Option<String> = None;
+
     // Stores the AST lines of the most recently defined chorus body.
     // Re-rendered at recall time so the current transpose offset is applied.
     let mut chorus_body: Vec<Line> = Vec::new();
@@ -275,10 +285,24 @@ fn render_song_body(
                     continue;
                 }
                 if directive.kind == DirectiveKind::Diagrams {
-                    show_diagrams = !directive
-                        .value
-                        .as_deref()
-                        .is_some_and(|v| v.eq_ignore_ascii_case("off"));
+                    let val = directive.value.as_deref().unwrap_or("on");
+                    if val.eq_ignore_ascii_case("off") {
+                        show_diagrams = false;
+                        auto_diagrams_instrument = None;
+                    } else {
+                        show_diagrams = true;
+                        let instr = match val.to_ascii_lowercase().as_str() {
+                            "ukulele" | "uke" => "ukulele",
+                            "guitar" => "guitar",
+                            _ => &default_instrument,
+                        };
+                        auto_diagrams_instrument = Some(instr.to_string());
+                    }
+                    continue;
+                }
+                if directive.kind == DirectiveKind::NoDiagrams {
+                    show_diagrams = false;
+                    auto_diagrams_instrument = None;
                     continue;
                 }
                 if directive.kind == DirectiveKind::Transpose {
@@ -463,6 +487,29 @@ fn render_song_body(
     // Close any open multi-column div.
     if columns_open {
         html.push_str("</div>\n");
+    }
+
+    // Auto-inject diagram grid when {diagrams} (or {diagrams: guitar/ukulele/on}) was seen.
+    if let Some(ref instrument) = auto_diagrams_instrument {
+        let defines = song.fretted_defines();
+        let diagrams: Vec<_> = song
+            .used_chord_names()
+            .into_iter()
+            .filter_map(|name| {
+                chordsketch_core::lookup_diagram(&name, &defines, instrument, diagram_frets)
+            })
+            .collect();
+        if !diagrams.is_empty() {
+            html.push_str("<section class=\"chord-diagrams\">\n");
+            html.push_str("<div class=\"chord-diagrams-grid\">\n");
+            for diagram in &diagrams {
+                html.push_str("<div class=\"chord-diagram-container\">");
+                html.push_str(&chordsketch_core::chord_diagram::render_svg(diagram));
+                html.push_str("</div>\n");
+            }
+            html.push_str("</div>\n");
+            html.push_str("</section>\n");
+        }
     }
 
     html.push_str("</div>\n");
@@ -2528,6 +2575,120 @@ Verse text\n\
         assert!(
             !html.contains("<svg"),
             "diagrams=OFF should suppress diagrams (case-insensitive)"
+        );
+    }
+
+    // -- auto-inject diagram grid (issue #1140) -----------------------------------
+
+    #[test]
+    fn test_diagrams_auto_inject_from_builtin_db() {
+        // {diagrams} with known chords should append a grid section
+        let html = render("{diagrams}\n[Am]Hello [G]World");
+        assert!(
+            html.contains("class=\"chord-diagrams\""),
+            "should render chord-diagrams section"
+        );
+        // Both Am and G are in the built-in guitar DB
+        assert!(html.contains(">Am<"), "Am diagram expected");
+        assert!(html.contains(">G<"), "G diagram expected");
+    }
+
+    #[test]
+    fn test_diagrams_auto_inject_unknown_chord_skipped() {
+        // Unknown chords (not in DB, no {define}) should be silently skipped
+        let html = render("{diagrams}\n[Xyzzy]Hello");
+        // No chord-diagrams section because no known chords
+        assert!(
+            !html.contains("class=\"chord-diagrams\""),
+            "no diagram section for unknown chord"
+        );
+    }
+
+    #[test]
+    fn test_no_diagrams_suppresses_auto_inject() {
+        let html = render("{no_diagrams}\n[Am]Hello");
+        assert!(
+            !html.contains("class=\"chord-diagrams\""),
+            "{{no_diagrams}} should suppress auto-inject"
+        );
+    }
+
+    #[test]
+    fn test_diagrams_define_takes_priority_over_builtin() {
+        // Custom {define} should override the built-in DB in the auto-inject grid
+        let html = render("{diagrams}\n{define: Am base-fret 1 frets x 0 2 2 1 0}\n[Am]Hello");
+        assert!(
+            html.contains("class=\"chord-diagrams\""),
+            "auto-inject section should appear"
+        );
+        assert!(html.contains(">Am<"), "Am diagram expected in grid");
+    }
+
+    #[test]
+    fn test_diagrams_off_suppresses_auto_inject() {
+        let html = render("{diagrams: off}\n[Am]Hello");
+        assert!(
+            !html.contains("class=\"chord-diagrams\""),
+            "{{diagrams: off}} should suppress auto-inject grid"
+        );
+    }
+
+    #[test]
+    fn test_diagrams_ukulele_instrument() {
+        let html = render("{diagrams: ukulele}\n[Am]Hello");
+        assert!(
+            html.contains("class=\"chord-diagrams\""),
+            "ukulele diagrams section expected"
+        );
+        // Ukulele Am has 4 strings so the SVG will differ from guitar
+        assert!(html.contains(">Am<"), "Am diagram expected");
+    }
+
+    #[test]
+    fn test_diagrams_guitar_explicit_overrides_config_default() {
+        // Even when config could default to ukulele, {diagrams: guitar} should
+        // use guitar (6-string Am) not ukulele (4-string Am).
+        let song = chordsketch_core::parse("{diagrams: guitar}\n[Am]Hello").unwrap();
+        let config = chordsketch_core::config::Config::defaults()
+            .with_define("diagrams.instrument=ukulele")
+            .unwrap();
+        let html = render_song_with_transpose(&song, 0, &config);
+        assert!(
+            html.contains("class=\"chord-diagrams\""),
+            "guitar diagrams section expected"
+        );
+        assert!(html.contains(">Am<"), "Am diagram expected");
+        let guitar_am_html = render_song_with_transpose(
+            &chordsketch_core::parse("{diagrams: guitar}\n[Am]Hello").unwrap(),
+            0,
+            &chordsketch_core::config::Config::defaults(),
+        );
+        let uke_am_html = render_song_with_transpose(
+            &chordsketch_core::parse("{diagrams: ukulele}\n[Am]Hello").unwrap(),
+            0,
+            &chordsketch_core::config::Config::defaults(),
+        );
+        // Guitar and ukulele diagrams must differ in their SVG content.
+        assert_ne!(
+            guitar_am_html, uke_am_html,
+            "guitar and ukulele Am diagrams should differ"
+        );
+        // With config defaulting to ukulele, {diagrams: guitar} must produce
+        // the same output as the guitar default.
+        assert_eq!(
+            html, guitar_am_html,
+            "{{diagrams: guitar}} must select guitar regardless of config default"
+        );
+    }
+
+    #[test]
+    fn test_no_diagrams_suppresses_inline_define_diagrams() {
+        // {no_diagrams} should suppress inline {define} diagram rendering
+        // (show_diagrams = false), not just the auto-inject grid.
+        let html = render("{no_diagrams}\n{define: Am base-fret 1 frets x 0 2 2 1 0}\n[Am]Hello");
+        assert!(
+            !html.contains("<svg"),
+            "{{no_diagrams}} should suppress inline define diagram SVG"
         );
     }
 
