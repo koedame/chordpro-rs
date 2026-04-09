@@ -78,8 +78,14 @@ fn heuristic_golden_tests() {
                      to generate it."
                 );
             });
-            if actual != expected {
-                eprintln!("FAIL: {name}\n--- expected ---\n{expected}\n--- actual ---\n{actual}");
+            // Normalize CRLF → LF before comparing so that the test passes on
+            // Windows even when git checks out expected.cho with \r\n endings.
+            let expected_norm = expected.replace("\r\n", "\n");
+            let actual_norm = actual.replace("\r\n", "\n");
+            if actual_norm != expected_norm {
+                eprintln!(
+                    "FAIL: {name}\n--- expected ---\n{expected_norm}\n--- actual ---\n{actual_norm}"
+                );
                 failed = true;
             }
         }
