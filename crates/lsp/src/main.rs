@@ -23,6 +23,7 @@
 //! }
 //! ```
 
+mod completion;
 mod convert;
 mod server;
 
