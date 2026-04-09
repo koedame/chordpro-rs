@@ -198,9 +198,8 @@ impl PlainTextImporter {
                     let label = label.clone();
                     // Close any open section.
                     if let Some(ref sec) = current_section {
-                        if let Some(end_dir) = end_directive_for_section(sec) {
-                            song.lines.push(Line::Directive(end_dir));
-                        }
+                        song.lines
+                            .push(Line::Directive(end_directive_for_section(sec)));
                     }
                     // Open the new section.
                     let (start_dir, canonical) = start_directive_for_section(&label);
@@ -239,9 +238,8 @@ impl PlainTextImporter {
 
         // Close the last open section.
         if let Some(ref sec) = current_section {
-            if let Some(end_dir) = end_directive_for_section(sec) {
-                song.lines.push(Line::Directive(end_dir));
-            }
+            song.lines
+                .push(Line::Directive(end_directive_for_section(sec)));
         }
 
         song
@@ -561,11 +559,10 @@ fn start_directive_for_section(label: &str) -> (Directive, String) {
     (dir, canonical.to_string())
 }
 
-/// Returns the `{end_of_*}` directive for the given canonical section name,
-/// or `None` for unknown sections.
-fn end_directive_for_section(canonical: &str) -> Option<Directive> {
+/// Returns the `{end_of_*}` directive for the given canonical section name.
+fn end_directive_for_section(canonical: &str) -> Directive {
     let dir_name = format!("end_of_{canonical}");
-    Some(Directive::name_only(dir_name))
+    Directive::name_only(dir_name)
 }
 
 /// Builds a [`LyricsLine`] by pairing chord column positions with the
