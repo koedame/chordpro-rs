@@ -21,6 +21,7 @@ pub mod voicings;
 
 // Re-export key types for convenience.
 pub use chord::{Accidental, ChordDetail, ChordQuality, Note, parse_chord};
+pub use chord_diagram::resolve_diagrams_instrument;
 // Aliased as `format_chordpro` to avoid ambiguity with the `format!` macro at
 // call sites that use glob imports.
 pub use formatter::{FormatOptions, format as format_chordpro};

@@ -22,6 +22,7 @@ use chordsketch_core::config::Config;
 use chordsketch_core::escape::escape_xml as escape;
 use chordsketch_core::inline_markup::{SpanAttributes, TextSpan};
 use chordsketch_core::render_result::RenderResult;
+use chordsketch_core::resolve_diagrams_instrument;
 use chordsketch_core::transpose::transpose_chord;
 
 /// Maximum number of chorus recall directives allowed per song.
@@ -285,19 +286,11 @@ fn render_song_body(
                     continue;
                 }
                 if directive.kind == DirectiveKind::Diagrams {
-                    let val = directive.value.as_deref().unwrap_or("on");
-                    if val.eq_ignore_ascii_case("off") {
-                        show_diagrams = false;
-                        auto_diagrams_instrument = None;
-                    } else {
-                        show_diagrams = true;
-                        let instr = match val.to_ascii_lowercase().as_str() {
-                            "ukulele" | "uke" => "ukulele",
-                            "guitar" => "guitar",
-                            _ => &default_instrument,
-                        };
-                        auto_diagrams_instrument = Some(instr.to_string());
-                    }
+                    auto_diagrams_instrument = resolve_diagrams_instrument(
+                        directive.value.as_deref(),
+                        &default_instrument,
+                    );
+                    show_diagrams = auto_diagrams_instrument.is_some();
                     continue;
                 }
                 if directive.kind == DirectiveKind::NoDiagrams {

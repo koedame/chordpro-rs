@@ -402,6 +402,43 @@ pub fn render_ascii(data: &DiagramData) -> String {
     }
 }
 
+/// Resolves the active instrument for a `{diagrams}` directive value.
+///
+/// Returns `None` when diagrams are disabled (`value` is `"off"`,
+/// case-insensitive).  Returns `Some(instrument_name)` otherwise, normalising
+/// known aliases (`"uke"` → `"ukulele"`) and falling back to
+/// `default_instrument` for unrecognised values.
+///
+/// This helper is shared by all renderer crates so the instrument-matching
+/// logic stays in one place.
+///
+/// # Examples
+///
+/// ```
+/// use chordsketch_core::chord_diagram::resolve_diagrams_instrument;
+///
+/// assert_eq!(resolve_diagrams_instrument(None, "guitar"), Some("guitar".to_string()));
+/// assert_eq!(resolve_diagrams_instrument(Some("off"), "guitar"), None);
+/// assert_eq!(resolve_diagrams_instrument(Some("uke"), "guitar"), Some("ukulele".to_string()));
+/// assert_eq!(resolve_diagrams_instrument(Some("piano"), "guitar"), Some("guitar".to_string()));
+/// ```
+#[must_use]
+pub fn resolve_diagrams_instrument(
+    value: Option<&str>,
+    default_instrument: &str,
+) -> Option<String> {
+    let val = value.unwrap_or("on");
+    if val.eq_ignore_ascii_case("off") {
+        return None;
+    }
+    let instr = match val.to_ascii_lowercase().as_str() {
+        "ukulele" | "uke" => "ukulele",
+        "guitar" => "guitar",
+        _ => default_instrument,
+    };
+    Some(instr.to_string())
+}
+
 // ===========================================================================
 // Tests
 // ===========================================================================
