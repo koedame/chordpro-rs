@@ -233,11 +233,17 @@ class PreviewPanel {
   /**
    * Builds the WebView HTML.
    *
-   * Uses a CSP nonce to allow only the bundled script. The WASM binary URI
-   * is injected via a `<meta name="chordsketch-wasm-uri">` element so the
-   * WebView script can read it at runtime. A `data-` attribute on
-   * `<script type="module">` cannot be used because `document.currentScript`
-   * is always `null` for ES module scripts (HTML spec).
+   * Uses a CSP nonce to allow only the bundled script. Extension-provided
+   * values are injected via `<meta>` elements so the WebView script can read
+   * them at runtime:
+   *   - `chordsketch-wasm-uri`: the WASM binary URI (VS Code WebView URI)
+   *   - `chordsketch-default-mode`: the `chordsketch.preview.defaultMode`
+   *     setting value, used as the initial view mode when no persisted state
+   *     exists (only `"html"` and `"text"` are accepted; anything else falls
+   *     back to `"html"` in the WebView script).
+   *
+   * A `data-` attribute on `<script type="module">` cannot be used because
+   * `document.currentScript` is always `null` for ES module scripts (HTML spec).
    */
   private buildHtml(): string {
     const webview = this.panel.webview;
@@ -257,6 +263,13 @@ class PreviewPanel {
       ),
     );
 
+    // Read the default mode setting and clamp to the known-valid set so that
+    // an out-of-range config value cannot affect the WebView's behaviour.
+    const rawMode = vscode.workspace
+      .getConfiguration('chordsketch')
+      .get<string>('preview.defaultMode', 'html');
+    const defaultMode: 'html' | 'text' = rawMode === 'text' ? 'text' : 'html';
+
     // cspSource includes the extension's own dist/webview/ origin.
     const csp = webview.cspSource;
 
@@ -274,6 +287,7 @@ class PreviewPanel {
   ">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="chordsketch-wasm-uri" content="${wasmUri}">
+  <meta name="chordsketch-default-mode" content="${defaultMode}">
   <title>ChordSketch Preview</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
