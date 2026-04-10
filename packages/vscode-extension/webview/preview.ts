@@ -29,7 +29,7 @@ type ViewMode = 'html' | 'text';
 /** Persisted panel state saved and restored via the VS Code WebView API. */
 interface PanelState {
   mode?: ViewMode;
-  /** Semitone transposition offset; any integer value (renderer reduces mod 12). */
+  /** Semitone transposition offset; clamped to [-11, +11] by adjustTranspose. */
   transpose?: number;
 }
 
@@ -147,7 +147,27 @@ function syncButtonStates(): void {
 /** Formats the transpose value for the toolbar label (e.g. `±0`, `+3`, `−2`). */
 function formatTranspose(t: number): string {
   if (t === 0) return '±0';
-  return t > 0 ? `+${t}` : `${t}`;
+  // Use U+2212 MINUS SIGN to match the − character used on the decrement button.
+  return t > 0 ? `+${t}` : `\u2212${Math.abs(t)}`;
+}
+
+/**
+ * Returns a validated copy of the persisted WebView state.
+ *
+ * `vscode.getState()` returns `unknown`; this function narrows the result to a
+ * well-typed `PanelState` with each field individually validated, so that a
+ * corrupted or forward-incompatible stored value cannot bypass type-level checks.
+ */
+function safeGetState(): PanelState {
+  const raw = vscode.getState() as Record<string, unknown> | null;
+  const result: PanelState = {};
+  if (raw?.['mode'] === 'html' || raw?.['mode'] === 'text') {
+    result.mode = raw['mode'] as ViewMode;
+  }
+  if (typeof raw?.['transpose'] === 'number' && Number.isFinite(raw['transpose'])) {
+    result.transpose = Math.max(-11, Math.min(11, raw['transpose'] as number));
+  }
+  return result;
 }
 
 /**
@@ -210,9 +230,7 @@ function setViewMode(mode: ViewMode): void {
     return; // No-op: avoid redundant WASM call and iframe flicker.
   }
   viewMode = mode;
-  // Spread the existing state before writing back so that any fields added to
-  // PanelState in a future PR are not silently wiped on every mode toggle.
-  vscode.setState({ ...(vscode.getState() as PanelState | null) ?? {}, mode } satisfies PanelState);
+  vscode.setState({ ...safeGetState(), mode } satisfies PanelState);
   syncButtonStates();
 
   renderPreview(lastText);
@@ -232,23 +250,30 @@ function adjustTranspose(delta: -1 | 1): void {
   // Clamp to [-11, +11]: one full chromatic octave in each direction.
   transpose = Math.max(-11, Math.min(11, next));
   transposeLabel.textContent = formatTranspose(transpose);
-  // Spread the existing state to preserve other PanelState fields.
-  vscode.setState({ ...(vscode.getState() as PanelState | null) ?? {}, transpose } satisfies PanelState);
+  // Disable the ± buttons when the limit is reached so the user gets explicit
+  // visual feedback rather than a silent no-op click.
+  btnTransposeDown.disabled = transpose === -11;
+  btnTransposeUp.disabled = transpose === 11;
+  vscode.setState({ ...safeGetState(), transpose } satisfies PanelState);
 
   renderPreview(lastText);
 }
 
 async function main(): Promise<void> {
   // Restore the persisted view mode and transpose so the user's choices
-  // survive hide/show cycles.
-  const saved = vscode.getState() as PanelState | null;
-  if (saved?.mode === 'html' || saved?.mode === 'text') {
+  // survive hide/show cycles. safeGetState() validates and clamps each field
+  // so that stale or corrupted state from a previous extension version cannot
+  // bypass the runtime invariants enforced by adjustTranspose().
+  const saved = safeGetState();
+  if (saved.mode !== undefined) {
     viewMode = saved.mode;
     syncButtonStates();
   }
-  if (typeof saved?.transpose === 'number') {
+  if (saved.transpose !== undefined) {
     transpose = saved.transpose;
     transposeLabel.textContent = formatTranspose(transpose);
+    btnTransposeDown.disabled = transpose === -11;
+    btnTransposeUp.disabled = transpose === 11;
   }
 
   // Read the WASM binary URI injected by the extension host.
