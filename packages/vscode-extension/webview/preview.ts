@@ -189,7 +189,9 @@ function setViewMode(mode: ViewMode): void {
     return; // No-op: avoid redundant WASM call and iframe flicker.
   }
   viewMode = mode;
-  vscode.setState({ mode } satisfies PanelState);
+  // Spread the existing state before writing back so that any fields added to
+  // PanelState in a future PR are not silently wiped on every mode toggle.
+  vscode.setState({ ...(vscode.getState() as PanelState | null) ?? {}, mode } satisfies PanelState);
   syncButtonStates();
 
   renderPreview(lastText);
