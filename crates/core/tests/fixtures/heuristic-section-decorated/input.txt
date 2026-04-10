@@ -1,0 +1,9 @@
+-- Verse --
+Am        G
+Hello world here
+F         C
+Something else now
+
+-- Chorus --
+C     G
+Lala lala la
