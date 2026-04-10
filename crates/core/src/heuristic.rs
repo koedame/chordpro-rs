@@ -121,11 +121,19 @@ impl PlainTextImporter {
     /// ```
     /// use chordsketch_core::heuristic::PlainTextImporter;
     ///
+    /// // Valid mid-range value.
     /// let importer = PlainTextImporter::with_thresholds(0.75, 3).unwrap();
     /// assert_eq!(importer.chord_threshold, 0.75);
     /// assert_eq!(importer.min_chord_tokens, 3);
     ///
+    /// // Boundary values are valid.
+    /// assert!(PlainTextImporter::with_thresholds(0.0, 1).is_ok());
+    /// assert!(PlainTextImporter::with_thresholds(1.0, 1).is_ok());
+    ///
+    /// // Out-of-range values are rejected.
     /// assert!(PlainTextImporter::with_thresholds(1.5, 2).is_err());
+    /// assert!(PlainTextImporter::with_thresholds(-0.1, 2).is_err());
+    /// assert!(PlainTextImporter::with_thresholds(f64::NAN, 2).is_err());
     /// assert!(PlainTextImporter::with_thresholds(0.5, 0).is_err());
     /// ```
     pub fn with_thresholds(chord_threshold: f64, min_chord_tokens: usize) -> Result<Self, String> {
