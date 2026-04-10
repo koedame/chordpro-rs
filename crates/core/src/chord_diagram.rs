@@ -402,12 +402,234 @@ pub fn render_ascii(data: &DiagramData) -> String {
     }
 }
 
+/// Data needed to render a keyboard (piano) chord diagram.
+///
+/// MIDI note numbers (0–127) identify which keys to highlight. Values in
+/// the range 0–11 are treated as pitch-class offsets (C=0 … B=11) and
+/// automatically mapped to octave 4 (MIDI 60–71) for display.
+///
+/// # Examples
+///
+/// ```
+/// use chordsketch_core::chord_diagram::{KeyboardVoicing, render_keyboard_svg};
+///
+/// let v = KeyboardVoicing {
+///     name: "Cmaj7".to_string(),
+///     display_name: None,
+///     keys: vec![60, 64, 67, 71],
+///     root_key: 60,
+/// };
+/// let svg = render_keyboard_svg(&v);
+/// assert!(svg.contains("<svg"));
+/// assert!(svg.contains("Cmaj7"));
+/// ```
+#[derive(Debug, Clone)]
+pub struct KeyboardVoicing {
+    /// Chord name (identifier used for matching).
+    pub name: String,
+    /// Display name override from `{define}` `display` attribute.
+    ///
+    /// When present, diagram titles show this instead of `name`.
+    pub display_name: Option<String>,
+    /// MIDI note numbers (0–127) for the chord tones to highlight.
+    ///
+    /// When all values are in the range 0–11 they are treated as
+    /// pitch-class offsets (C=0 … B=11) and displayed in octave 4
+    /// (MIDI 60–71).
+    pub keys: Vec<u8>,
+    /// MIDI note number of the root key.
+    ///
+    /// Displayed with extra visual emphasis (darker fill). When `keys` are
+    /// normalised from pitch classes, `root_key` is normalised accordingly.
+    pub root_key: u8,
+}
+
+impl KeyboardVoicing {
+    /// Returns the title to display above the diagram.
+    ///
+    /// Uses the `display_name` override if present, otherwise falls back to `name`.
+    #[must_use]
+    pub fn title(&self) -> &str {
+        self.display_name.as_deref().unwrap_or(&self.name)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard SVG layout constants
+// ---------------------------------------------------------------------------
+
+/// White key width in pixels for keyboard diagrams.
+const KBD_WHITE_W: f32 = 15.0;
+/// White key height in pixels.
+const KBD_WHITE_H: f32 = 60.0;
+/// Black key width in pixels.
+const KBD_BLACK_W: f32 = 9.0;
+/// Black key height in pixels.
+const KBD_BLACK_H: f32 = 36.0;
+/// Vertical space above keyboard for the chord name.
+const KBD_TOP_PAD: f32 = 30.0;
+/// Horizontal margin on each side.
+const KBD_SIDE_PAD: f32 = 8.0;
+
+/// White key semitone offsets within an octave and their left-edge x-offsets
+/// (in pixels, relative to the octave's starting C key).
+const WHITE_KEY_POSITIONS: [(u8, f32); 7] = [
+    (0, 0.0 * KBD_WHITE_W),  // C
+    (2, 1.0 * KBD_WHITE_W),  // D
+    (4, 2.0 * KBD_WHITE_W),  // E
+    (5, 3.0 * KBD_WHITE_W),  // F
+    (7, 4.0 * KBD_WHITE_W),  // G
+    (9, 5.0 * KBD_WHITE_W),  // A
+    (11, 6.0 * KBD_WHITE_W), // B
+];
+
+/// Black key semitone offsets within an octave and their left-edge x-offsets
+/// (in pixels, relative to the octave's starting C key).
+///
+/// Each black key is centred at the boundary between its two adjacent white
+/// keys: `left_edge = (right_edge_of_left_white) - BLACK_W / 2`.
+const BLACK_KEY_POSITIONS: [(u8, f32); 5] = [
+    (1, 10.0),  // C# (between C and D: 15 − 4.5 ≈ 10)
+    (3, 25.0),  // D# (between D and E: 30 − 4.5 ≈ 25)
+    (6, 55.0),  // F# (between F and G: 60 − 4.5 ≈ 55)
+    (8, 70.0),  // G# (between G and A: 75 − 4.5 ≈ 70)
+    (10, 85.0), // A# (between A and B: 90 − 4.5 ≈ 85)
+];
+
+/// Normalise `keys` and `root_key` for display.
+///
+/// When all keys are in 0–11 (pitch classes), shifts them to octave 4
+/// (adds 60). Otherwise returns them unchanged.
+fn normalise_keyboard_keys(keys: &[u8], root_key: u8) -> (Vec<u8>, u8) {
+    if keys.iter().all(|&k| k < 12) {
+        let normalised: Vec<u8> = keys.iter().map(|&k| k.saturating_add(60)).collect();
+        let root = if root_key < 12 {
+            root_key.saturating_add(60)
+        } else {
+            root_key
+        };
+        (normalised, root)
+    } else {
+        (keys.to_vec(), root_key)
+    }
+}
+
+/// Render a keyboard chord diagram as an inline SVG string.
+///
+/// Shows the piano octave(s) containing the chord tones, with highlighted
+/// keys for each chord tone and extra emphasis on the root key.
+///
+/// Returns an empty string when `voicing.keys` is empty.
+///
+/// # Examples
+///
+/// ```
+/// use chordsketch_core::chord_diagram::{KeyboardVoicing, render_keyboard_svg};
+///
+/// let v = KeyboardVoicing {
+///     name: "Am".to_string(),
+///     display_name: None,
+///     keys: vec![69, 72, 76],
+///     root_key: 69,
+/// };
+/// let svg = render_keyboard_svg(&v);
+/// assert!(svg.contains("<svg"));
+/// assert!(svg.contains("Am"));
+/// assert!(svg.contains("class=\"keyboard-diagram\""));
+/// ```
+#[must_use]
+pub fn render_keyboard_svg(voicing: &KeyboardVoicing) -> String {
+    if voicing.keys.is_empty() {
+        return String::new();
+    }
+
+    let (keys, root) = normalise_keyboard_keys(&voicing.keys, voicing.root_key);
+
+    let min_key = *keys.iter().min().unwrap_or(&60);
+    let max_key = *keys.iter().max().unwrap_or(&71);
+
+    // Start from C of the octave containing the lowest key.
+    let start_octave = u32::from(min_key / 12);
+    let end_octave = u32::from(max_key / 12);
+    // Show at least 2 octaves, cap at 3 for readability.
+    let num_octaves = ((end_octave - start_octave) + 1).clamp(2, 3) as usize;
+    let start_midi = (start_octave * 12) as u8;
+
+    let kbd_w = num_octaves as f32 * 7.0 * KBD_WHITE_W;
+    let total_w = kbd_w + KBD_SIDE_PAD * 2.0;
+    let total_h = KBD_TOP_PAD + KBD_WHITE_H + 8.0;
+
+    let mut svg = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{total_w}\" height=\"{total_h}\" \
+         viewBox=\"0 0 {total_w} {total_h}\" class=\"keyboard-diagram\">\n"
+    );
+
+    // Chord name label
+    let name_x = total_w / 2.0;
+    svg.push_str(&format!(
+        "<text x=\"{name_x}\" y=\"15\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"14\" font-weight=\"bold\">{}</text>\n",
+        crate::escape::escape_xml(voicing.title())
+    ));
+
+    // --- Draw white keys first (black keys are drawn on top) ---
+    for oct in 0..num_octaves {
+        let oct_midi = start_midi.saturating_add((oct * 12) as u8);
+        let oct_x = KBD_SIDE_PAD + oct as f32 * 7.0 * KBD_WHITE_W;
+        for (semitone, x_off) in WHITE_KEY_POSITIONS {
+            let midi = oct_midi.saturating_add(semitone);
+            let x = oct_x + x_off;
+            let highlighted = keys.contains(&midi);
+            let is_root = highlighted && midi == root;
+            let fill = if is_root {
+                "#1a5fb4" // root key: dark blue
+            } else if highlighted {
+                "#4a90e2" // chord tone: medium blue
+            } else {
+                "white"
+            };
+            svg.push_str(&format!(
+                "<rect x=\"{x}\" y=\"{KBD_TOP_PAD}\" width=\"{KBD_WHITE_W}\" \
+                 height=\"{KBD_WHITE_H}\" fill=\"{fill}\" stroke=\"black\" \
+                 stroke-width=\"0.5\"/>\n"
+            ));
+        }
+    }
+
+    // --- Draw black keys on top ---
+    for oct in 0..num_octaves {
+        let oct_midi = start_midi.saturating_add((oct * 12) as u8);
+        let oct_x = KBD_SIDE_PAD + oct as f32 * 7.0 * KBD_WHITE_W;
+        for (semitone, x_off) in BLACK_KEY_POSITIONS {
+            let midi = oct_midi.saturating_add(semitone);
+            let x = oct_x + x_off;
+            let highlighted = keys.contains(&midi);
+            let is_root = highlighted && midi == root;
+            let fill = if is_root {
+                "#1a5fb4" // root: dark blue
+            } else if highlighted {
+                "#4a90e2" // chord tone: medium blue (contrasts with default dark key)
+            } else {
+                "#222" // normal black key
+            };
+            svg.push_str(&format!(
+                "<rect x=\"{x}\" y=\"{KBD_TOP_PAD}\" width=\"{KBD_BLACK_W}\" \
+                 height=\"{KBD_BLACK_H}\" fill=\"{fill}\" stroke=\"black\" \
+                 stroke-width=\"0.5\"/>\n"
+            ));
+        }
+    }
+
+    svg.push_str("</svg>");
+    svg
+}
+
 /// Resolves the active instrument for a `{diagrams}` directive value.
 ///
 /// Returns `None` when diagrams are disabled (`value` is `"off"`,
 /// case-insensitive).  Returns `Some(instrument_name)` otherwise, normalising
-/// known aliases (`"uke"` → `"ukulele"`) and falling back to
-/// `default_instrument` for unrecognised values.
+/// known aliases (`"uke"` → `"ukulele"`, `"keyboard"` / `"keys"` → `"piano"`)
+/// and falling back to `default_instrument` for unrecognised values.
 ///
 /// This helper is shared by all renderer crates so the instrument-matching
 /// logic stays in one place.
@@ -420,7 +642,10 @@ pub fn render_ascii(data: &DiagramData) -> String {
 /// assert_eq!(resolve_diagrams_instrument(None, "guitar"), Some("guitar".to_string()));
 /// assert_eq!(resolve_diagrams_instrument(Some("off"), "guitar"), None);
 /// assert_eq!(resolve_diagrams_instrument(Some("uke"), "guitar"), Some("ukulele".to_string()));
-/// assert_eq!(resolve_diagrams_instrument(Some("piano"), "guitar"), Some("guitar".to_string()));
+/// assert_eq!(resolve_diagrams_instrument(Some("piano"), "guitar"), Some("piano".to_string()));
+/// assert_eq!(resolve_diagrams_instrument(Some("keys"), "guitar"), Some("piano".to_string()));
+/// assert_eq!(resolve_diagrams_instrument(Some("keyboard"), "guitar"), Some("piano".to_string()));
+/// assert_eq!(resolve_diagrams_instrument(Some("unknown"), "guitar"), Some("guitar".to_string()));
 /// ```
 #[must_use]
 pub fn resolve_diagrams_instrument(
@@ -434,6 +659,7 @@ pub fn resolve_diagrams_instrument(
     let instr = match val.to_ascii_lowercase().as_str() {
         "ukulele" | "uke" => "ukulele",
         "guitar" => "guitar",
+        "piano" | "keyboard" | "keys" => "piano",
         _ => default_instrument,
     };
     Some(instr.to_string())
@@ -1166,5 +1392,98 @@ mod tests {
         let data = DiagramData::from_raw_infer("X", "frets 1 2 3").unwrap();
         assert_eq!(data.strings, 3);
         assert_eq!(data.frets.len(), 3);
+    }
+
+    // ---------------------------------------------------------------------------
+    // KeyboardVoicing and render_keyboard_svg tests
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn test_render_keyboard_svg_absolute_midi() {
+        let v = KeyboardVoicing {
+            name: "Cmaj7".to_string(),
+            display_name: None,
+            keys: vec![60, 64, 67, 71],
+            root_key: 60,
+        };
+        let svg = render_keyboard_svg(&v);
+        assert!(svg.contains("<svg"));
+        assert!(svg.contains("</svg>"));
+        assert!(svg.contains("Cmaj7"));
+        assert!(svg.contains("class=\"keyboard-diagram\""));
+        // Highlighted keys use blue fill
+        assert!(svg.contains("#4a90e2") || svg.contains("#1a5fb4"));
+    }
+
+    #[test]
+    fn test_render_keyboard_svg_pitch_classes_normalised_to_octave4() {
+        // keys 0 3 7 (pitch classes) should be shown in octave 4
+        let v = KeyboardVoicing {
+            name: "Am".to_string(),
+            display_name: None,
+            keys: vec![0, 3, 7],
+            root_key: 0,
+        };
+        let svg = render_keyboard_svg(&v);
+        assert!(svg.contains("<svg"));
+        assert!(svg.contains("Am"));
+    }
+
+    #[test]
+    fn test_render_keyboard_svg_empty_keys_returns_empty() {
+        let v = KeyboardVoicing {
+            name: "X".to_string(),
+            display_name: None,
+            keys: vec![],
+            root_key: 60,
+        };
+        assert_eq!(render_keyboard_svg(&v), "");
+    }
+
+    #[test]
+    fn test_render_keyboard_svg_display_name_override() {
+        let v = KeyboardVoicing {
+            name: "Am".to_string(),
+            display_name: Some("A minor".to_string()),
+            keys: vec![69, 72, 76],
+            root_key: 69,
+        };
+        let svg = render_keyboard_svg(&v);
+        assert!(svg.contains("A minor"));
+        assert!(!svg.contains(">Am<"));
+    }
+
+    #[test]
+    fn test_keyboard_voicing_title() {
+        let v = KeyboardVoicing {
+            name: "G".to_string(),
+            display_name: Some("G major".to_string()),
+            keys: vec![67, 71, 74],
+            root_key: 67,
+        };
+        assert_eq!(v.title(), "G major");
+        let v2 = KeyboardVoicing {
+            name: "G".to_string(),
+            display_name: None,
+            keys: vec![67, 71, 74],
+            root_key: 67,
+        };
+        assert_eq!(v2.title(), "G");
+    }
+
+    #[test]
+    fn test_resolve_diagrams_instrument_piano() {
+        assert_eq!(
+            resolve_diagrams_instrument(Some("piano"), "guitar"),
+            Some("piano".to_string())
+        );
+        assert_eq!(
+            resolve_diagrams_instrument(Some("keys"), "guitar"),
+            Some("piano".to_string())
+        );
+        assert_eq!(
+            resolve_diagrams_instrument(Some("keyboard"), "guitar"),
+            Some("piano".to_string())
+        );
     }
 }

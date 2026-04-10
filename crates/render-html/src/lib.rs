@@ -533,31 +533,59 @@ fn render_song_body(
         html.push_str("</div>\n");
     }
 
-    // Auto-inject diagram grid when {diagrams} (or {diagrams: guitar/ukulele/on}) was seen.
+    // Auto-inject diagram grid when {diagrams} (or {diagrams: guitar/ukulele/piano/on}) was seen.
     if let Some(ref instrument) = auto_diagrams_instrument {
-        let defines = song.fretted_defines();
         // Skip chords that were actually rendered inline via {define} (i.e., show_diagrams
         // was true at the time).  Compare in canonical sharp form to catch enharmonic
         // pairs like {define: Bb …} vs [A#] in lyrics.
-        let diagrams: Vec<_> = song
+        let chord_names: Vec<String> = song
             .used_chord_names()
             .into_iter()
             .filter(|name| !inline_defined.contains(&canonical_chord_name(name)))
-            .filter_map(|name| {
-                chordsketch_core::lookup_diagram(&name, &defines, instrument, diagram_frets)
-            })
             .collect();
-        if !diagrams.is_empty() {
-            html.push_str("<section class=\"chord-diagrams\">\n");
-            html.push_str("<div class=\"section-label\">Chord Diagrams</div>\n");
-            html.push_str("<div class=\"chord-diagrams-grid\">\n");
-            for diagram in &diagrams {
-                html.push_str("<div class=\"chord-diagram-container\">");
-                html.push_str(&chordsketch_core::chord_diagram::render_svg(diagram));
+
+        if instrument == "piano" {
+            // Keyboard instrument: use the piano voicing database.
+            let kbd_defines = song.keyboard_defines();
+            let voicings: Vec<_> = chord_names
+                .into_iter()
+                .filter_map(|name| chordsketch_core::lookup_keyboard_voicing(&name, &kbd_defines))
+                .collect();
+            if !voicings.is_empty() {
+                html.push_str("<section class=\"chord-diagrams\">\n");
+                html.push_str("<div class=\"section-label\">Chord Diagrams</div>\n");
+                html.push_str("<div class=\"chord-diagrams-grid\">\n");
+                for voicing in &voicings {
+                    html.push_str("<div class=\"chord-diagram-container\">");
+                    html.push_str(&chordsketch_core::chord_diagram::render_keyboard_svg(
+                        voicing,
+                    ));
+                    html.push_str("</div>\n");
+                }
                 html.push_str("</div>\n");
+                html.push_str("</section>\n");
             }
-            html.push_str("</div>\n");
-            html.push_str("</section>\n");
+        } else {
+            // Fretted instruments (guitar, ukulele, etc.).
+            let defines = song.fretted_defines();
+            let diagrams: Vec<_> = chord_names
+                .into_iter()
+                .filter_map(|name| {
+                    chordsketch_core::lookup_diagram(&name, &defines, instrument, diagram_frets)
+                })
+                .collect();
+            if !diagrams.is_empty() {
+                html.push_str("<section class=\"chord-diagrams\">\n");
+                html.push_str("<div class=\"section-label\">Chord Diagrams</div>\n");
+                html.push_str("<div class=\"chord-diagrams-grid\">\n");
+                for diagram in &diagrams {
+                    html.push_str("<div class=\"chord-diagram-container\">");
+                    html.push_str(&chordsketch_core::chord_diagram::render_svg(diagram));
+                    html.push_str("</div>\n");
+                }
+                html.push_str("</div>\n");
+                html.push_str("</section>\n");
+            }
         }
     }
 
@@ -1336,7 +1364,34 @@ fn render_directive_inner(
             if show_diagrams {
                 if let Some(ref value) = directive.value {
                     let def = chordsketch_core::ast::ChordDefinition::parse_value(value);
-                    if let Some(ref raw) = def.raw {
+                    // Keyboard defines: render a piano keyboard SVG.
+                    if let Some(ref keys_raw) = def.keys {
+                        let keys_u8: Vec<u8> = keys_raw
+                            .iter()
+                            .filter_map(|&k| {
+                                if (0i32..=127).contains(&k) {
+                                    Some(k as u8)
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        if !keys_u8.is_empty() {
+                            let root = keys_u8[0];
+                            let voicing = chordsketch_core::chord_diagram::KeyboardVoicing {
+                                name: def.name.clone(),
+                                display_name: def.display.clone(),
+                                keys: keys_u8,
+                                root_key: root,
+                            };
+                            html.push_str("<div class=\"chord-diagram-container\">");
+                            html.push_str(&chordsketch_core::chord_diagram::render_keyboard_svg(
+                                &voicing,
+                            ));
+                            html.push_str("</div>\n");
+                        }
+                    } else if let Some(ref raw) = def.raw {
+                        // Fretted defines: render the standard fret-grid SVG.
                         if let Some(mut diagram) =
                             chordsketch_core::chord_diagram::DiagramData::from_raw_infer_frets(
                                 &def.name,
@@ -2561,10 +2616,42 @@ Verse text\n\
     }
 
     #[test]
-    fn test_define_keyboard_no_diagram() {
+    fn test_define_keyboard_renders_keyboard_svg() {
+        // {define: Am keys 0 3 7} should now render a keyboard diagram SVG.
         let html = render("{define: Am keys 0 3 7}");
-        // Keyboard definitions don't produce SVG diagrams
-        assert!(!html.contains("<svg"));
+        assert!(
+            html.contains("<svg"),
+            "keyboard define should produce an SVG"
+        );
+        assert!(
+            html.contains("keyboard-diagram"),
+            "should use keyboard-diagram CSS class"
+        );
+        assert!(html.contains("Am"), "chord name should appear in SVG");
+    }
+
+    #[test]
+    fn test_define_keyboard_absolute_midi_renders_svg() {
+        // Absolute MIDI note numbers (as in the issue spec example).
+        let html = render("{define: Cmaj7 keys 60 64 67 71}");
+        assert!(html.contains("<svg"));
+        assert!(html.contains("keyboard-diagram"));
+        assert!(html.contains("Cmaj7"));
+    }
+
+    #[test]
+    fn test_diagrams_piano_auto_inject() {
+        let input = "{diagrams: piano}\n[Am]Hello [C]world";
+        let html = render(input);
+        // Should auto-inject keyboard diagrams for Am and C
+        assert!(
+            html.contains("keyboard-diagram"),
+            "piano instrument should use keyboard diagrams"
+        );
+        assert!(
+            html.contains("chord-diagrams"),
+            "diagram section should be present"
+        );
     }
 
     #[test]

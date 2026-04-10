@@ -37,7 +37,9 @@ pub use parser::{
 };
 pub use render_result::RenderResult;
 pub use token::{Position, Span, Token, TokenKind};
-pub use voicings::{guitar_voicing, lookup_diagram, ukulele_voicing};
+pub use voicings::{
+    guitar_voicing, keyboard_voicing, lookup_diagram, lookup_keyboard_voicing, ukulele_voicing,
+};
 
 /// Returns the library version.
 #[must_use]

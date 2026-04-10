@@ -734,6 +734,431 @@ pub fn lookup_diagram(
 }
 
 // ---------------------------------------------------------------------------
+// Piano / keyboard voicings
+// ---------------------------------------------------------------------------
+
+use crate::chord_diagram::KeyboardVoicing;
+
+/// Internal static piano voicing record.
+struct StaticKeyVoicing {
+    /// Chord name (sharp spelling).
+    name: &'static str,
+    /// MIDI note numbers for the chord tones (absolute, octave 4 unless noted).
+    keys: &'static [u8],
+    /// MIDI note number of the root key.
+    root_key: u8,
+}
+
+impl StaticKeyVoicing {
+    fn to_voicing(&self, requested_name: &str) -> KeyboardVoicing {
+        KeyboardVoicing {
+            name: requested_name.to_string(),
+            display_name: None,
+            keys: self.keys.to_vec(),
+            root_key: self.root_key,
+        }
+    }
+}
+
+// Piano major voicings – root position, octave 4 (C4 = MIDI 60).
+// Intervals: root (R), major third (+4), perfect fifth (+7).
+const PIANO_MAJOR: &[StaticKeyVoicing] = &[
+    StaticKeyVoicing {
+        name: "C",
+        keys: &[60, 64, 67],
+        root_key: 60,
+    },
+    StaticKeyVoicing {
+        name: "C#",
+        keys: &[61, 65, 68],
+        root_key: 61,
+    },
+    StaticKeyVoicing {
+        name: "D",
+        keys: &[62, 66, 69],
+        root_key: 62,
+    },
+    StaticKeyVoicing {
+        name: "D#",
+        keys: &[63, 67, 70],
+        root_key: 63,
+    },
+    StaticKeyVoicing {
+        name: "E",
+        keys: &[64, 68, 71],
+        root_key: 64,
+    },
+    StaticKeyVoicing {
+        name: "F",
+        keys: &[65, 69, 72],
+        root_key: 65,
+    },
+    StaticKeyVoicing {
+        name: "F#",
+        keys: &[66, 70, 73],
+        root_key: 66,
+    },
+    StaticKeyVoicing {
+        name: "G",
+        keys: &[67, 71, 74],
+        root_key: 67,
+    },
+    StaticKeyVoicing {
+        name: "G#",
+        keys: &[68, 72, 75],
+        root_key: 68,
+    },
+    StaticKeyVoicing {
+        name: "A",
+        keys: &[69, 73, 76],
+        root_key: 69,
+    },
+    StaticKeyVoicing {
+        name: "A#",
+        keys: &[70, 74, 77],
+        root_key: 70,
+    },
+    StaticKeyVoicing {
+        name: "B",
+        keys: &[71, 75, 78],
+        root_key: 71,
+    },
+];
+
+// Piano minor voicings.
+// Intervals: root, minor third (+3), perfect fifth (+7).
+const PIANO_MINOR: &[StaticKeyVoicing] = &[
+    StaticKeyVoicing {
+        name: "Cm",
+        keys: &[60, 63, 67],
+        root_key: 60,
+    },
+    StaticKeyVoicing {
+        name: "C#m",
+        keys: &[61, 64, 68],
+        root_key: 61,
+    },
+    StaticKeyVoicing {
+        name: "Dm",
+        keys: &[62, 65, 69],
+        root_key: 62,
+    },
+    StaticKeyVoicing {
+        name: "D#m",
+        keys: &[63, 66, 70],
+        root_key: 63,
+    },
+    StaticKeyVoicing {
+        name: "Em",
+        keys: &[64, 67, 71],
+        root_key: 64,
+    },
+    StaticKeyVoicing {
+        name: "Fm",
+        keys: &[65, 68, 72],
+        root_key: 65,
+    },
+    StaticKeyVoicing {
+        name: "F#m",
+        keys: &[66, 69, 73],
+        root_key: 66,
+    },
+    StaticKeyVoicing {
+        name: "Gm",
+        keys: &[67, 70, 74],
+        root_key: 67,
+    },
+    StaticKeyVoicing {
+        name: "G#m",
+        keys: &[68, 71, 75],
+        root_key: 68,
+    },
+    StaticKeyVoicing {
+        name: "Am",
+        keys: &[69, 72, 76],
+        root_key: 69,
+    },
+    StaticKeyVoicing {
+        name: "A#m",
+        keys: &[70, 73, 77],
+        root_key: 70,
+    },
+    StaticKeyVoicing {
+        name: "Bm",
+        keys: &[71, 74, 78],
+        root_key: 71,
+    },
+];
+
+// Piano dominant-seventh voicings.
+// Intervals: root, major third (+4), perfect fifth (+7), minor seventh (+10).
+const PIANO_DOM7: &[StaticKeyVoicing] = &[
+    StaticKeyVoicing {
+        name: "C7",
+        keys: &[60, 64, 67, 70],
+        root_key: 60,
+    },
+    StaticKeyVoicing {
+        name: "C#7",
+        keys: &[61, 65, 68, 71],
+        root_key: 61,
+    },
+    StaticKeyVoicing {
+        name: "D7",
+        keys: &[62, 66, 69, 72],
+        root_key: 62,
+    },
+    StaticKeyVoicing {
+        name: "D#7",
+        keys: &[63, 67, 70, 73],
+        root_key: 63,
+    },
+    StaticKeyVoicing {
+        name: "E7",
+        keys: &[64, 68, 71, 74],
+        root_key: 64,
+    },
+    StaticKeyVoicing {
+        name: "F7",
+        keys: &[65, 69, 72, 75],
+        root_key: 65,
+    },
+    StaticKeyVoicing {
+        name: "F#7",
+        keys: &[66, 70, 73, 76],
+        root_key: 66,
+    },
+    StaticKeyVoicing {
+        name: "G7",
+        keys: &[67, 71, 74, 77],
+        root_key: 67,
+    },
+    StaticKeyVoicing {
+        name: "G#7",
+        keys: &[68, 72, 75, 78],
+        root_key: 68,
+    },
+    StaticKeyVoicing {
+        name: "A7",
+        keys: &[69, 73, 76, 79],
+        root_key: 69,
+    },
+    StaticKeyVoicing {
+        name: "A#7",
+        keys: &[70, 74, 77, 80],
+        root_key: 70,
+    },
+    StaticKeyVoicing {
+        name: "B7",
+        keys: &[71, 75, 78, 81],
+        root_key: 71,
+    },
+];
+
+// Piano major-seventh voicings.
+// Intervals: root, major third (+4), perfect fifth (+7), major seventh (+11).
+const PIANO_MAJ7: &[StaticKeyVoicing] = &[
+    StaticKeyVoicing {
+        name: "Cmaj7",
+        keys: &[60, 64, 67, 71],
+        root_key: 60,
+    },
+    StaticKeyVoicing {
+        name: "C#maj7",
+        keys: &[61, 65, 68, 72],
+        root_key: 61,
+    },
+    StaticKeyVoicing {
+        name: "Dmaj7",
+        keys: &[62, 66, 69, 73],
+        root_key: 62,
+    },
+    StaticKeyVoicing {
+        name: "D#maj7",
+        keys: &[63, 67, 70, 74],
+        root_key: 63,
+    },
+    StaticKeyVoicing {
+        name: "Emaj7",
+        keys: &[64, 68, 71, 75],
+        root_key: 64,
+    },
+    StaticKeyVoicing {
+        name: "Fmaj7",
+        keys: &[65, 69, 72, 76],
+        root_key: 65,
+    },
+    StaticKeyVoicing {
+        name: "F#maj7",
+        keys: &[66, 70, 73, 77],
+        root_key: 66,
+    },
+    StaticKeyVoicing {
+        name: "Gmaj7",
+        keys: &[67, 71, 74, 78],
+        root_key: 67,
+    },
+    StaticKeyVoicing {
+        name: "G#maj7",
+        keys: &[68, 72, 75, 79],
+        root_key: 68,
+    },
+    StaticKeyVoicing {
+        name: "Amaj7",
+        keys: &[69, 73, 76, 80],
+        root_key: 69,
+    },
+    StaticKeyVoicing {
+        name: "A#maj7",
+        keys: &[70, 74, 77, 81],
+        root_key: 70,
+    },
+    StaticKeyVoicing {
+        name: "Bmaj7",
+        keys: &[71, 75, 78, 82],
+        root_key: 71,
+    },
+];
+
+// Piano minor-seventh voicings.
+// Intervals: root, minor third (+3), perfect fifth (+7), minor seventh (+10).
+const PIANO_MIN7: &[StaticKeyVoicing] = &[
+    StaticKeyVoicing {
+        name: "Cm7",
+        keys: &[60, 63, 67, 70],
+        root_key: 60,
+    },
+    StaticKeyVoicing {
+        name: "C#m7",
+        keys: &[61, 64, 68, 71],
+        root_key: 61,
+    },
+    StaticKeyVoicing {
+        name: "Dm7",
+        keys: &[62, 65, 69, 72],
+        root_key: 62,
+    },
+    StaticKeyVoicing {
+        name: "D#m7",
+        keys: &[63, 66, 70, 73],
+        root_key: 63,
+    },
+    StaticKeyVoicing {
+        name: "Em7",
+        keys: &[64, 67, 71, 74],
+        root_key: 64,
+    },
+    StaticKeyVoicing {
+        name: "Fm7",
+        keys: &[65, 68, 72, 75],
+        root_key: 65,
+    },
+    StaticKeyVoicing {
+        name: "F#m7",
+        keys: &[66, 69, 73, 76],
+        root_key: 66,
+    },
+    StaticKeyVoicing {
+        name: "Gm7",
+        keys: &[67, 70, 74, 77],
+        root_key: 67,
+    },
+    StaticKeyVoicing {
+        name: "G#m7",
+        keys: &[68, 71, 75, 78],
+        root_key: 68,
+    },
+    StaticKeyVoicing {
+        name: "Am7",
+        keys: &[69, 72, 76, 79],
+        root_key: 69,
+    },
+    StaticKeyVoicing {
+        name: "A#m7",
+        keys: &[70, 73, 77, 80],
+        root_key: 70,
+    },
+    StaticKeyVoicing {
+        name: "Bm7",
+        keys: &[71, 74, 78, 81],
+        root_key: 71,
+    },
+];
+
+/// Looks up a built-in piano/keyboard voicing for `chord_name`.
+///
+/// Returns `None` if no voicing is available for the requested chord.
+/// Accepts both sharp and flat spellings (e.g., `"Bb"` → same as `"A#"`).
+///
+/// The built-in database covers major, minor, dominant-seventh, major-seventh,
+/// and minor-seventh chord families for all twelve roots.
+#[must_use]
+pub fn keyboard_voicing(chord_name: &str) -> Option<KeyboardVoicing> {
+    let canonical = flat_to_sharp(chord_name);
+    let name = canonical.as_deref().unwrap_or(chord_name);
+    let tables: &[&[StaticKeyVoicing]] =
+        &[PIANO_MAJOR, PIANO_MINOR, PIANO_DOM7, PIANO_MAJ7, PIANO_MIN7];
+    for table in tables {
+        if let Some(v) = table.iter().find(|v| v.name == name) {
+            return Some(v.to_voicing(chord_name));
+        }
+    }
+    None
+}
+
+/// Looks up a keyboard voicing by chord name using a prioritised chain.
+///
+/// # Lookup order
+///
+/// 1. `keyboard_defines` — `{define: Name keys n1 n2 ...}` entries from the
+///    song file (highest priority).
+/// 2. Built-in piano voicing database ([`keyboard_voicing`]).
+///
+/// Returns `None` when no voicing is found.
+///
+/// # Parameters
+///
+/// - `chord_name` — chord name as it appears in the lyrics (e.g., `"Am"`, `"Cmaj7"`).
+/// - `keyboard_defines` — list of `(name, keys)` pairs from keyboard `{define}`
+///   directives. Obtain via [`Song::keyboard_defines`](crate::ast::Song::keyboard_defines).
+#[must_use]
+pub fn lookup_keyboard_voicing(
+    chord_name: &str,
+    keyboard_defines: &[(String, Vec<i32>)],
+) -> Option<KeyboardVoicing> {
+    // 1. Song-level {define: name keys ...} directives take priority.
+    let canonical_owned = flat_to_sharp(chord_name);
+    let canonical = canonical_owned.as_deref().unwrap_or(chord_name);
+    if let Some((_, keys)) = keyboard_defines.iter().find(|(n, _)| {
+        let cn_owned = flat_to_sharp(n.as_str());
+        let cn = cn_owned.as_deref().unwrap_or(n.as_str());
+        cn == canonical
+    }) {
+        let keys_u8: Vec<u8> = keys
+            .iter()
+            .filter_map(|&k| {
+                if (0i32..=127).contains(&k) {
+                    Some(k as u8)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if !keys_u8.is_empty() {
+            let root = keys_u8[0];
+            return Some(KeyboardVoicing {
+                name: chord_name.to_string(),
+                display_name: None,
+                keys: keys_u8,
+                root_key: root,
+            });
+        }
+    }
+    // 2. Built-in database.
+    keyboard_voicing(chord_name)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1049,5 +1474,66 @@ mod tests {
         )];
         let d = lookup_diagram("A#", &defines, "guitar", 5).unwrap();
         assert_eq!(d.frets, vec![1, 2, 3, 4, 5, 1]);
+    }
+
+    // --- piano / keyboard voicing lookups ---
+
+    #[test]
+    fn piano_major_c_voicing() {
+        let v = keyboard_voicing("C").unwrap();
+        assert_eq!(v.keys, vec![60, 64, 67]);
+        assert_eq!(v.root_key, 60);
+        assert_eq!(v.name, "C");
+    }
+
+    #[test]
+    fn piano_minor_am_voicing() {
+        let v = keyboard_voicing("Am").unwrap();
+        assert_eq!(v.keys, vec![69, 72, 76]);
+        assert_eq!(v.root_key, 69);
+    }
+
+    #[test]
+    fn piano_maj7_cmaj7_voicing() {
+        let v = keyboard_voicing("Cmaj7").unwrap();
+        assert_eq!(v.keys, vec![60, 64, 67, 71]);
+        assert_eq!(v.root_key, 60);
+    }
+
+    #[test]
+    fn piano_flat_alias_bb() {
+        // Bb is stored as A#; lookup_keyboard_voicing with flat name should work.
+        let v = keyboard_voicing("Bb").unwrap();
+        // name preserved as requested
+        assert_eq!(v.name, "Bb");
+        // keys are for A# major (same as Bb major)
+        assert_eq!(v.keys, vec![70, 74, 77]);
+    }
+
+    #[test]
+    fn piano_unknown_chord_returns_none() {
+        assert!(keyboard_voicing("Xyzzy").is_none());
+    }
+
+    #[test]
+    fn lookup_keyboard_voicing_define_overrides_builtin() {
+        let defines = vec![("Am".to_string(), vec![57i32, 60, 64])];
+        let v = lookup_keyboard_voicing("Am", &defines).unwrap();
+        assert_eq!(v.keys, vec![57, 60, 64]);
+        assert_eq!(v.root_key, 57);
+    }
+
+    #[test]
+    fn lookup_keyboard_voicing_falls_back_to_builtin() {
+        let v = lookup_keyboard_voicing("G7", &[]).unwrap();
+        assert_eq!(v.keys, vec![67, 71, 74, 77]);
+    }
+
+    #[test]
+    fn lookup_keyboard_voicing_flat_sharp_alias_in_define() {
+        // Define uses A# but lookup uses Bb
+        let defines = vec![("A#".to_string(), vec![58i32, 62, 65])];
+        let v = lookup_keyboard_voicing("Bb", &defines).unwrap();
+        assert_eq!(v.keys, vec![58, 62, 65]);
     }
 }

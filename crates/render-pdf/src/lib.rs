@@ -638,22 +638,33 @@ fn render_song_into_doc(
         }
     }
 
-    // Auto-inject diagram block when {diagrams} was seen.
+    // Auto-inject diagram block when {diagrams} (or {diagrams: piano/guitar/ukulele}) was seen.
     if let Some(ref instrument) = auto_diagrams_instrument {
-        let defines = song.fretted_defines();
-        // Skip chords that were actually rendered inline via {define} (i.e., show_diagrams
-        // was true at the time).  Compare in canonical sharp form to catch enharmonic
-        // pairs like {define: Bb …} vs [A#] in lyrics.
-        let diagrams: Vec<_> = song
+        // Skip chords rendered inline via {define} while show_diagrams was true.
+        let chord_names: Vec<String> = song
             .used_chord_names()
             .into_iter()
             .filter(|name| !inline_defined.contains(&canonical_chord_name(name)))
-            .filter_map(|name| {
-                chordsketch_core::lookup_diagram(&name, &defines, instrument, diagram_frets)
-            })
             .collect();
-        for diagram in &diagrams {
-            render_chord_diagram_pdf(diagram, doc);
+
+        if instrument == "piano" {
+            let kbd_defines = song.keyboard_defines();
+            for name in chord_names {
+                if let Some(voicing) =
+                    chordsketch_core::lookup_keyboard_voicing(&name, &kbd_defines)
+                {
+                    render_keyboard_diagram_pdf(&voicing, doc);
+                }
+            }
+        } else {
+            let defines = song.fretted_defines();
+            for name in chord_names {
+                if let Some(diagram) =
+                    chordsketch_core::lookup_diagram(&name, &defines, instrument, diagram_frets)
+                {
+                    render_chord_diagram_pdf(&diagram, doc);
+                }
+            }
         }
     }
 }
@@ -859,6 +870,31 @@ fn render_directive(
     if directive.kind == DirectiveKind::Define && show_diagrams {
         if let Some(ref value) = directive.value {
             let def = chordsketch_core::ast::ChordDefinition::parse_value(value);
+            // Keyboard defines: render a piano keyboard diagram.
+            if let Some(ref keys_raw) = def.keys {
+                let keys_u8: Vec<u8> = keys_raw
+                    .iter()
+                    .filter_map(|&k| {
+                        if (0i32..=127).contains(&k) {
+                            Some(k as u8)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                if !keys_u8.is_empty() {
+                    let root = keys_u8[0];
+                    let voicing = chordsketch_core::chord_diagram::KeyboardVoicing {
+                        name: def.name.clone(),
+                        display_name: def.display.clone(),
+                        keys: keys_u8,
+                        root_key: root,
+                    };
+                    render_keyboard_diagram_pdf(&voicing, doc);
+                    return;
+                }
+            }
+            // Fretted defines: render the standard fret-grid diagram.
             if let Some(ref raw) = def.raw {
                 if let Some(mut diagram) =
                     chordsketch_core::chord_diagram::DiagramData::from_raw_infer_frets(
@@ -1260,6 +1296,131 @@ fn render_chord_diagram_pdf(
                     doc.white_text_at(&label, Font::Helvetica, 5.0, x - 1.5, y - 1.5);
                 }
             }
+        }
+    }
+
+    doc.advance_y(total_h);
+    doc.newline(LINE_GAP);
+}
+
+/// Render a keyboard (piano) chord diagram directly into the PDF content stream.
+///
+/// Draws a 2-octave piano keyboard strip with filled rectangles for each key,
+/// highlighting chord tones in blue and the root key in darker blue.
+fn render_keyboard_diagram_pdf(
+    voicing: &chordsketch_core::chord_diagram::KeyboardVoicing,
+    doc: &mut PdfDocument,
+) {
+    if voicing.keys.is_empty() {
+        return;
+    }
+
+    // Normalise pitch-class keys (0–11) to octave 4.
+    let (keys, root) = {
+        if voicing.keys.iter().all(|&k| k < 12) {
+            let k: Vec<u8> = voicing.keys.iter().map(|&k| k.saturating_add(60)).collect();
+            let r = if voicing.root_key < 12 {
+                voicing.root_key.saturating_add(60)
+            } else {
+                voicing.root_key
+            };
+            (k, r)
+        } else {
+            (voicing.keys.clone(), voicing.root_key)
+        }
+    };
+
+    let min_key = *keys.iter().min().unwrap_or(&60);
+    let max_key = *keys.iter().max().unwrap_or(&71);
+    let start_octave = u32::from(min_key / 12);
+    let end_octave = u32::from(max_key / 12);
+    let num_octaves = ((end_octave - start_octave) + 1).clamp(2, 3) as usize;
+    let start_midi = (start_octave * 12) as u8;
+
+    // PDF layout (points). Smaller than SVG to fit on the printed page.
+    let white_w: f32 = 8.0;
+    let white_h: f32 = 30.0;
+    let black_w: f32 = 5.0;
+    let black_h: f32 = 18.0;
+    let name_h: f32 = 10.0;
+    let total_h = name_h + white_h + 6.0;
+
+    doc.ensure_space(total_h);
+
+    let base_x = doc.margin_left();
+    let top_y = doc.y();
+
+    // Chord name
+    doc.text_at(voicing.title(), Font::HelveticaBold, 7.0, base_x, top_y);
+
+    // Y for top of keyboard (PDF Y goes down when we subtract)
+    let kbd_top_y = top_y - name_h;
+
+    // White key semitone offsets within an octave and x-offset from octave start.
+    const WHITE_KEYS_PDF: [(u8, f32); 7] = [
+        (0, 0.0),  // C
+        (2, 1.0),  // D
+        (4, 2.0),  // E
+        (5, 3.0),  // F
+        (7, 4.0),  // G
+        (9, 5.0),  // A
+        (11, 6.0), // B
+    ];
+    // Black key semitone offsets and x-offsets within octave.
+    const BLACK_KEYS_PDF: [(u8, f32); 5] = [
+        (1, 0.6),  // C#
+        (3, 1.6),  // D#
+        (6, 3.6),  // F#
+        (8, 4.6),  // G#
+        (10, 5.6), // A#
+    ];
+
+    // Draw white keys
+    for oct in 0..num_octaves {
+        let oct_midi = start_midi.saturating_add((oct * 12) as u8);
+        let oct_x = base_x + oct as f32 * 7.0 * white_w;
+        for (semitone, x_idx) in WHITE_KEYS_PDF {
+            let midi = oct_midi.saturating_add(semitone);
+            let x = oct_x + x_idx * white_w;
+            let highlighted = keys.contains(&midi);
+            let is_root = highlighted && midi == root;
+            // PDF bottom-up: key bottom is kbd_top_y - white_h
+            let y_bottom = kbd_top_y - white_h;
+            // Colors: root = dark blue, chord tone = medium blue, neutral = white
+            const ROOT_BLUE: (f32, f32, f32) = (0.102, 0.373, 0.706);
+            const CHORD_BLUE: (f32, f32, f32) = (0.290, 0.565, 0.886);
+            const WHITE: (f32, f32, f32) = (1.0, 1.0, 1.0);
+            let color = if is_root {
+                ROOT_BLUE
+            } else if highlighted {
+                CHORD_BLUE
+            } else {
+                WHITE
+            };
+            doc.filled_rect_color(x, y_bottom, white_w - 0.5, white_h, color);
+            doc.rect_stroke(x, y_bottom, white_w - 0.5, white_h, 0.3);
+        }
+    }
+
+    // Draw black keys on top
+    for oct in 0..num_octaves {
+        let oct_midi = start_midi.saturating_add((oct * 12) as u8);
+        let oct_x = base_x + oct as f32 * 7.0 * white_w;
+        for (semitone, x_idx) in BLACK_KEYS_PDF {
+            let midi = oct_midi.saturating_add(semitone);
+            let x = oct_x + x_idx * white_w;
+            let highlighted = keys.contains(&midi);
+            let is_root = highlighted && midi == root;
+            let y_bottom = kbd_top_y - black_h;
+            const DARK_KEY: (f32, f32, f32) = (0.133, 0.133, 0.133);
+            let color = if is_root {
+                (0.102, 0.373, 0.706)
+            } else if highlighted {
+                (0.290, 0.565, 0.886)
+            } else {
+                DARK_KEY
+            };
+            doc.filled_rect_color(x, y_bottom, black_w, black_h, color);
         }
     }
 
@@ -2103,6 +2264,26 @@ impl PdfDocument {
             fmt_f32(y1),
             fmt_f32(x2),
             fmt_f32(y2)
+        ));
+        ops.push("Q".to_string());
+    }
+
+    /// Draw a filled rectangle with an RGB colour.
+    ///
+    /// `color` is `(r, g, b)` with each component in the 0.0–1.0 range.
+    /// The fill is solid with no stroke. Wraps the operation in `q`/`Q`
+    /// to avoid colour leakage.
+    fn filled_rect_color(&mut self, x: f32, y: f32, w: f32, h: f32, color: (f32, f32, f32)) {
+        let (r, g, b) = color;
+        let ops = self.current_page_mut();
+        ops.push("q".to_string());
+        ops.push(format!("{} {} {} rg", fmt_f32(r), fmt_f32(g), fmt_f32(b)));
+        ops.push(format!(
+            "{} {} {} {} re f",
+            fmt_f32(x),
+            fmt_f32(y),
+            fmt_f32(w),
+            fmt_f32(h)
         ));
         ops.push("Q".to_string());
     }
@@ -3725,12 +3906,31 @@ mod chord_diagram_pdf_tests {
     }
 
     #[test]
-    fn test_define_keyboard_no_diagram_in_pdf() {
+    fn test_define_keyboard_renders_in_pdf() {
+        // {define: Am keys 0 3 7} should produce a valid PDF (keyboard diagram rendered).
         let input = "{define: Am keys 0 3 7}\n[Am]Hello";
         let song = chordsketch_core::parse(input).unwrap();
         let bytes = render_song(&song);
         assert!(bytes.starts_with(b"%PDF"));
-        // Should still be valid
+        assert!(bytes.ends_with(b"%%EOF\n"));
+    }
+
+    #[test]
+    fn test_define_keyboard_absolute_midi_pdf() {
+        let input = "{define: Cmaj7 keys 60 64 67 71}\n[Cmaj7]Hello";
+        let song = chordsketch_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert!(bytes.ends_with(b"%%EOF\n"));
+    }
+
+    #[test]
+    fn test_diagrams_piano_auto_inject_pdf() {
+        let input = "{diagrams: piano}\n[Am]Hello [C]world";
+        let song = chordsketch_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert!(bytes.ends_with(b"%%EOF\n"));
     }
 
     #[test]

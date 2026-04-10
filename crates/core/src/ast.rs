@@ -178,6 +178,39 @@ impl Song {
         result
     }
 
+    /// Returns keyboard chord definitions as `(name, keys)` pairs.
+    ///
+    /// Scans `{define}` / `{chord}` directives for entries that use the `keys`
+    /// attribute (e.g., `{define: Am keys 0 3 7}`). Fretted, copy, and
+    /// display-only definitions are excluded.  Later definitions override
+    /// earlier ones for the same chord name.
+    ///
+    /// The `keys` values are the raw integers from the directive — typically
+    /// MIDI note numbers (0–127) or semitone offsets.
+    #[must_use]
+    pub fn keyboard_defines(&self) -> Vec<(String, Vec<i32>)> {
+        let mut result: Vec<(String, Vec<i32>)> = Vec::new();
+        for line in &self.lines {
+            if let Line::Directive(directive) = line {
+                if directive.kind == DirectiveKind::Define
+                    || directive.kind == DirectiveKind::ChordDirective
+                {
+                    if let Some(ref value) = directive.value {
+                        let def = ChordDefinition::parse_value(value);
+                        if let Some(keys) = def.keys {
+                            if let Some(pos) = result.iter().position(|(n, _)| *n == def.name) {
+                                result[pos].1 = keys;
+                            } else {
+                                result.push((def.name, keys));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
+
     /// Returns the unique chord names used in the song, in order of first appearance.
     ///
     /// Scans every [`LyricsSegment`] in every [`LyricsLine`] in the song. The
