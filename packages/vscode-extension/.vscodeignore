@@ -1,0 +1,22 @@
+# Source files — compiled output is in dist/
+src/**
+webview/**
+
+# Test files
+test/**
+
+# Build and config files
+esbuild.mjs
+tsconfig.json
+.eslintrc*
+
+# Node modules are bundled by esbuild, not needed in the VSIX
+node_modules/**
+
+# Git and editor files
+.gitignore
+.editorconfig
+*.map
+
+# Development artifacts
+*.vsix

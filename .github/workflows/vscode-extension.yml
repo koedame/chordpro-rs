@@ -1,0 +1,76 @@
+name: VS Code Extension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/vscode-extension/**"
+      - "syntaxes/**"
+      - ".github/workflows/vscode-extension.yml"
+  pull_request:
+    paths:
+      - "packages/vscode-extension/**"
+      - "syntaxes/**"
+      - ".github/workflows/vscode-extension.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & Package Extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: packages/vscode-extension/package-lock.json
+
+      # The WASM package's web build must be present so esbuild can bundle
+      # the JS glue and copy the .wasm binary into dist/webview/.
+      # We restore it from the npm registry rather than building from source
+      # so this CI job has no Rust toolchain dependency.
+      - name: Install @chordsketch/wasm (web build)
+        run: |
+          mkdir -p packages/npm
+          cd packages/npm
+          npm pack @chordsketch/wasm@latest 2>/dev/null || true
+          # Unpack into packages/npm/ so esbuild.mjs can find packages/npm/web/
+          if ls chordsketch-wasm-*.tgz 1>/dev/null 2>&1; then
+            tar xzf chordsketch-wasm-*.tgz --strip-components=1
+            echo "Unpacked @chordsketch/wasm"
+          else
+            echo "WARNING: @chordsketch/wasm not available from registry; WASM preview will be absent in this build."
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: packages/vscode-extension
+
+      - name: Type-check
+        run: npm run lint
+        working-directory: packages/vscode-extension
+
+      - name: Build
+        run: npm run build
+        working-directory: packages/vscode-extension
+
+      - name: Package extension
+        run: npm run package
+        working-directory: packages/vscode-extension
+
+      - name: Verify packaged files
+        run: npx @vscode/vsce ls
+        working-directory: packages/vscode-extension
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: chordsketch-vsix
+          path: packages/vscode-extension/*.vsix
+          if-no-files-found: error

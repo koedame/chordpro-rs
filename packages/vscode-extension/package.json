@@ -1,0 +1,119 @@
+{
+  "name": "chordsketch",
+  "displayName": "ChordSketch",
+  "description": "ChordPro language support with syntax highlighting, diagnostics, completions, and a live HTML preview panel.",
+  "version": "0.1.0",
+  "publisher": "koedame",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Formatters",
+    "Other"
+  ],
+  "keywords": [
+    "chordpro",
+    "chord",
+    "music",
+    "lyrics",
+    "cho"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/koedame/chordsketch.git",
+    "directory": "packages/vscode-extension"
+  },
+  "homepage": "https://github.com/koedame/chordsketch",
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "chordpro",
+        "aliases": [
+          "ChordPro",
+          "chordpro"
+        ],
+        "extensions": [
+          ".cho",
+          ".chordpro",
+          ".chopro"
+        ],
+        "configuration": "./syntaxes/language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "chordpro",
+        "scopeName": "source.chordpro",
+        "path": "./syntaxes/chordpro.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "chordsketch.openPreview",
+        "title": "ChordSketch: Open Preview",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "chordsketch.openPreviewToSide",
+        "title": "ChordSketch: Open Preview to the Side",
+        "icon": "$(open-preview)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "chordsketch.openPreviewToSide",
+          "when": "editorLangId == chordpro",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "chordsketch.openPreview",
+          "when": "editorLangId == chordpro"
+        },
+        {
+          "command": "chordsketch.openPreviewToSide",
+          "when": "editorLangId == chordpro"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ChordSketch",
+      "properties": {
+        "chordsketch.lsp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the ChordSketch Language Server for diagnostics, completions, hover, and formatting."
+        },
+        "chordsketch.lsp.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the chordsketch-lsp binary. If empty, the extension looks on the system PATH first, then falls back to the bundled binary (if present)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "build:watch": "node esbuild.mjs --watch",
+    "lint": "tsc --noEmit",
+    "package": "vsce package --no-dependencies",
+    "prepackage": "npm run build"
+  },
+  "dependencies": {
+    "@chordsketch/wasm": "^0.1.1",
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.2",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.3"
+  }
+}
