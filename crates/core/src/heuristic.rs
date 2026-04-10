@@ -724,7 +724,7 @@ fn pair_chords_with_lyric(positions: &[(usize, String)], lyric: &str) -> LyricsL
 /// Strips `{` and `}` from a string so it is safe to embed as a ChordPro
 /// directive name or value.  ChordPro has no escape mechanism inside directive
 /// names or values, so brace characters would produce malformed output.
-fn sanitize_directive_value(s: &str) -> std::borrow::Cow<'_, str> {
+fn sanitize_directive_token(s: &str) -> std::borrow::Cow<'_, str> {
     if s.contains('{') || s.contains('}') {
         std::borrow::Cow::Owned(s.replace(['{', '}'], ""))
     } else {
@@ -757,12 +757,12 @@ pub fn song_to_chordpro(song: &Song) -> String {
 
     // Emit metadata directives first if populated.
     if let Some(ref title) = song.metadata.title {
-        out.push_str(&format!("{{title: {}}}\n", sanitize_directive_value(title)));
+        out.push_str(&format!("{{title: {}}}\n", sanitize_directive_token(title)));
     }
     if let Some(artist) = song.metadata.artists.first() {
         out.push_str(&format!(
             "{{artist: {}}}\n",
-            sanitize_directive_value(artist)
+            sanitize_directive_token(artist)
         ));
     }
 
@@ -770,7 +770,7 @@ pub fn song_to_chordpro(song: &Song) -> String {
         match line {
             Line::Empty => out.push('\n'),
             Line::Comment(style, text) => {
-                let t = sanitize_directive_value(text);
+                let t = sanitize_directive_token(text);
                 match style {
                     CommentStyle::Normal => out.push_str(&format!("{{comment: {t}}}\n")),
                     CommentStyle::Italic => out.push_str(&format!("{{comment_italic: {t}}}\n")),
@@ -778,12 +778,12 @@ pub fn song_to_chordpro(song: &Song) -> String {
                 }
             }
             Line::Directive(dir) => {
-                let name = sanitize_directive_value(&dir.name);
+                let name = sanitize_directive_token(&dir.name);
                 if let Some(ref value) = dir.value {
                     out.push_str(&format!(
                         "{{{}: {}}}\n",
                         name,
-                        sanitize_directive_value(value)
+                        sanitize_directive_token(value)
                     ));
                 } else {
                     out.push_str(&format!("{{{}}}\n", name));
