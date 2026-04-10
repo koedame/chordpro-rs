@@ -643,6 +643,9 @@ fn end_directive_for_section(canonical: &str) -> Directive {
 /// Each chord annotates the lyric text starting at its column position in the
 /// chord line. Text that precedes the first chord is emitted in a leading
 /// chord-free segment.
+///
+/// If `positions` is empty the function returns a single chord-free segment
+/// containing the full `lyric` string (rather than an empty `LyricsLine`).
 fn pair_chords_with_lyric(positions: &[(usize, String)], lyric: &str) -> LyricsLine {
     // Fast path: no chord positions — return the lyric as a single plain segment.
     if positions.is_empty() {
