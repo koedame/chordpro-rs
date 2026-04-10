@@ -147,9 +147,8 @@ async function main(): Promise<void> {
       // Unknown or malformed message — silently ignore.
       return;
     }
-    if (event.data.type === 'update') {
-      renderPreview(event.data.text);
-    }
+    // isExtToWebview guarantees type === 'update'; no inner dispatch needed.
+    renderPreview(event.data.text);
   });
 
   // Tell the extension host that the WebView is ready to receive content.
