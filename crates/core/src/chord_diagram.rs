@@ -500,7 +500,16 @@ const BLACK_KEY_POSITIONS: [(u8, f32); 5] = [
 ///
 /// When all keys are in 0–11 (pitch classes), shifts them to octave 4
 /// (adds 60). Otherwise returns them unchanged.
-fn normalise_keyboard_keys(keys: &[u8], root_key: u8) -> (Vec<u8>, u8) {
+///
+/// # Convention
+///
+/// When keys contain pitch classes, `root_key` is expected to also be a pitch
+/// class (0–11). If `root_key >= 12` while the chord tones are all pitch
+/// classes, it is left unchanged (no normalisation applied to the root).
+/// Callers should ensure both `keys` and `root_key` use the same
+/// representation.
+#[must_use]
+pub fn normalise_keyboard_keys(keys: &[u8], root_key: u8) -> (Vec<u8>, u8) {
     if keys.iter().all(|&k| k < 12) {
         let normalised: Vec<u8> = keys.iter().map(|&k| k.saturating_add(60)).collect();
         let root = if root_key < 12 {
