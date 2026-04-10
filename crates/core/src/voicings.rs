@@ -705,9 +705,9 @@ pub fn ukulele_voicing(chord_name: &str) -> Option<DiagramData> {
 /// - `defines` — list of `(name, raw)` pairs from `{define}` directives.
 ///   Obtain via [`Song::fretted_defines`](crate::ast::Song::fretted_defines).
 /// - `instrument` — `"guitar"` or `"ukulele"` (case-insensitive). Anything else
-///   falls back to guitar. **Do not pass `"piano"` here**; the renderers branch
-///   on the instrument before calling this function, routing piano to
-///   [`lookup_keyboard_voicing`] instead.
+///   falls back to guitar. Returns `None` immediately for keyboard-family
+///   instruments (`"piano"`, `"keyboard"`, `"keys"`); use
+///   [`lookup_keyboard_voicing`] for those.
 /// - `frets_shown` — number of fret rows to display in the diagram.
 #[must_use]
 pub fn lookup_diagram(
@@ -716,6 +716,14 @@ pub fn lookup_diagram(
     instrument: &str,
     frets_shown: usize,
 ) -> Option<crate::chord_diagram::DiagramData> {
+    // Keyboard instruments have no fretted diagrams.
+    if matches!(
+        instrument.to_ascii_lowercase().as_str(),
+        "piano" | "keyboard" | "keys"
+    ) {
+        return None;
+    }
+
     // 1. Song-level {define} directives take priority.
     // Normalize both the lookup key and the define names to their canonical sharp
     // form so that e.g. a {define: A# …} entry is found when looking up "Bb",
@@ -1549,5 +1557,25 @@ mod tests {
         let defines = vec![("A#".to_string(), vec![58i32, 62, 65])];
         let v = lookup_keyboard_voicing("Bb", &defines).unwrap();
         assert_eq!(v.keys, vec![58, 62, 65]);
+    }
+
+    // --- lookup_diagram piano rejection ---
+
+    #[test]
+    fn lookup_diagram_rejects_piano_instrument() {
+        // Passing "piano" to lookup_diagram must return None; it has no fretted
+        // diagram database. Callers should use lookup_keyboard_voicing instead.
+        assert!(
+            lookup_diagram("Am", &[], "piano", 5).is_none(),
+            "piano should return None from lookup_diagram"
+        );
+        assert!(
+            lookup_diagram("Am", &[], "keyboard", 5).is_none(),
+            "keyboard should return None from lookup_diagram"
+        );
+        assert!(
+            lookup_diagram("Am", &[], "keys", 5).is_none(),
+            "keys should return None from lookup_diagram"
+        );
     }
 }

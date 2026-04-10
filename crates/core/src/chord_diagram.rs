@@ -508,6 +508,13 @@ const BLACK_KEY_POSITIONS: [(u8, f32); 5] = [
 /// classes, it is left unchanged (no normalisation applied to the root).
 /// Callers should ensure both `keys` and `root_key` use the same
 /// representation.
+///
+/// # Empty-slice behaviour
+///
+/// When `keys` is empty, `all(|k| k < 12)` is vacuously true, so
+/// `root_key` is still shifted to octave 4 if it is less than 12. Both
+/// current callers guard against empty keys before calling this function,
+/// but future callers should be aware of this edge case.
 #[must_use]
 pub fn normalise_keyboard_keys(keys: &[u8], root_key: u8) -> (Vec<u8>, u8) {
     if keys.iter().all(|&k| k < 12) {
@@ -1494,5 +1501,38 @@ mod tests {
             resolve_diagrams_instrument(Some("keyboard"), "guitar"),
             Some("piano".to_string())
         );
+    }
+
+    // ---------------------------------------------------------------------------
+    // normalise_keyboard_keys — public API contract
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn normalise_keyboard_keys_empty_slice_shifts_pitch_class_root() {
+        // When keys is empty, all() is vacuously true, so a pitch-class root_key
+        // is still shifted to octave 4.  Both current callers guard against
+        // empty keys before calling this function, but the contract is
+        // machine-checked here so regressions are caught.
+        let (keys_out, root_out) = normalise_keyboard_keys(&[], 0);
+        assert!(keys_out.is_empty());
+        assert_eq!(
+            root_out, 60,
+            "pitch-class root 0 should be shifted to C4 (60)"
+        );
+
+        let (keys_out2, root_out2) = normalise_keyboard_keys(&[], 9);
+        assert!(keys_out2.is_empty());
+        assert_eq!(
+            root_out2, 69,
+            "pitch-class root 9 should be shifted to A4 (69)"
+        );
+    }
+
+    #[test]
+    fn normalise_keyboard_keys_empty_slice_absolute_root_unchanged() {
+        // A root_key >= 12 is not shifted, even when keys is empty.
+        let (keys_out, root_out) = normalise_keyboard_keys(&[], 60);
+        assert!(keys_out.is_empty());
+        assert_eq!(root_out, 60, "absolute root_key must not be shifted");
     }
 }
