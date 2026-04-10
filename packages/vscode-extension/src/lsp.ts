@@ -14,7 +14,7 @@ import {
   ServerOptions,
   TransportKind,
 } from 'vscode-languageclient/node';
-import { resolveLspBinary } from './platform';
+import { resolveLspBinary } from './platform.js';
 
 let client: LanguageClient | undefined;
 

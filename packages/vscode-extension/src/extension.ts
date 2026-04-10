@@ -12,9 +12,9 @@
  */
 
 import * as vscode from 'vscode';
-import { startLspClient, stopLspClient } from './lsp';
-import { notifyDocumentChanged, disposeAll } from './preview';
-import { registerOpenPreview, registerOpenPreviewToSide, registerTransposeUp, registerTransposeDown, registerConvertTo } from './commands';
+import { startLspClient, stopLspClient } from './lsp.js';
+import { notifyDocumentChanged, disposeAll } from './preview.js';
+import { registerOpenPreview, registerOpenPreviewToSide, registerTransposeUp, registerTransposeDown, registerConvertTo } from './commands.js';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   // Start the LSP client (gracefully degraded if binary not found).

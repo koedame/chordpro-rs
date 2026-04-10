@@ -77,6 +77,20 @@ test('isWasmRenderModule: rejects empty object', () => {
   assert.equal(isWasmRenderModule({}), false);
 });
 
+test('isWasmRenderModule: rejects undefined', () => {
+  assert.equal(isWasmRenderModule(undefined), false);
+});
+
+test('isWasmRenderModule: rejects object where render_text is not a function', () => {
+  const mod = { render_html: () => '', render_text: 42, render_pdf: () => new Uint8Array(0) };
+  assert.equal(isWasmRenderModule(mod), false);
+});
+
+test('isWasmRenderModule: rejects object where render_pdf is not a function', () => {
+  const mod = { render_html: () => '', render_text: () => '', render_pdf: null };
+  assert.equal(isWasmRenderModule(mod), false);
+});
+
 // ── defaultExportPath ─────────────────────────────────────────────────────────
 
 test('defaultExportPath: replaces .cho with .html', () => {
