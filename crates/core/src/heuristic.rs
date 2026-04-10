@@ -42,6 +42,8 @@ pub enum InputFormat {
     ChordPro,
     /// The input is a plain chord+lyrics sheet.
     PlainChordLyrics,
+    /// The input is ABC notation.
+    Abc,
     /// The format could not be determined.
     Unknown,
 }
@@ -238,6 +240,23 @@ impl PlainTextImporter {
         });
         if has_inline_chords {
             return InputFormat::ChordPro;
+        }
+
+        // ABC notation: at least one `X:` reference-number field followed by
+        // digits (the mandatory field that begins every ABC tune).
+        let has_abc_header = lines.iter().any(|l| {
+            let t = l.trim_start();
+            if let Some(rest) = t.strip_prefix("X:") {
+                rest.trim_start()
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_digit())
+            } else {
+                false
+            }
+        });
+        if has_abc_header {
+            return InputFormat::Abc;
         }
 
         // Plain chord+lyrics: at least two chord lines.

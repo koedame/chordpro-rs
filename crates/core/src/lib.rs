@@ -1,5 +1,6 @@
 //! ChordPro parser, AST definitions, and transforms.
 
+pub mod abc_importer;
 pub mod ast;
 pub mod chord;
 pub mod chord_diagram;
@@ -21,6 +22,7 @@ pub mod transpose;
 pub mod voicings;
 
 // Re-export key types for convenience.
+pub use abc_importer::convert_abc;
 pub use chord::{Accidental, ChordDetail, ChordQuality, Note, parse_chord};
 pub use chord_diagram::{canonical_chord_name, resolve_diagrams_instrument};
 // Aliased as `format_chordpro` to avoid ambiguity with the `format!` macro at

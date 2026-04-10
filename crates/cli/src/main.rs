@@ -85,22 +85,23 @@ enum Commands {
         check: bool,
     },
 
-    /// Convert a plain-text chord+lyrics sheet to ChordPro format.
+    /// Convert a plain-text chord+lyrics sheet or ABC notation file to ChordPro format.
     ///
     /// Reads plain-text files where chord names appear on their own lines
-    /// directly above the corresponding lyric lines, and converts them to
-    /// ChordPro (`.cho`) format.  The output is written to stdout unless
-    /// `--output` is given.
+    /// directly above the corresponding lyric lines, or ABC notation files
+    /// (`.abc`), and converts them to ChordPro (`.cho`) format.  The output
+    /// is written to stdout unless `--output` is given.
     ///
-    /// Auto-detection is used by default.  Pass `--from plaintext` to force
-    /// conversion even when the heuristic is uncertain.
+    /// Auto-detection is used by default.  Pass `--from plaintext` or
+    /// `--from abc` to force a specific conversion.
     Convert {
         /// Input file(s) to convert. Use '-' to read from stdin.
         #[arg(required = true)]
         files: Vec<String>,
 
         /// Input format. `auto` detects the format automatically;
-        /// `plaintext` forces plain chord+lyrics conversion.
+        /// `plaintext` forces plain chord+lyrics conversion;
+        /// `abc` forces ABC notation conversion.
         #[arg(long, default_value = "auto")]
         from: ConvertFrom,
 
@@ -117,6 +118,8 @@ enum ConvertFrom {
     Auto,
     /// Force plain chord+lyrics conversion.
     Plaintext,
+    /// Force ABC notation conversion.
+    Abc,
 }
 
 /// Supported output formats.
@@ -449,7 +452,9 @@ fn run_fmt(files: &[String], check: bool) -> ExitCode {
 /// * `1` — at least one I/O error occurred or a file was skipped because its
 ///   format could not be detected.
 fn run_convert(files: &[String], from: ConvertFrom, output_path: Option<&str>) -> ExitCode {
-    use chordsketch_core::{InputFormat, convert_plain_text, detect_format, song_to_chordpro};
+    use chordsketch_core::{
+        InputFormat, convert_abc, convert_plain_text, detect_format, song_to_chordpro,
+    };
 
     let mut had_error = false;
     let mut combined = String::new();
@@ -474,43 +479,61 @@ fn run_convert(files: &[String], from: ConvertFrom, output_path: Option<&str>) -
             }
         };
 
-        let should_convert = match from {
-            ConvertFrom::Plaintext => true,
+        // Determine which conversion to apply.
+        enum Action {
+            Plaintext,
+            Abc,
+            Passthrough,
+            Skip,
+        }
+
+        let action = match from {
+            ConvertFrom::Plaintext => Action::Plaintext,
+            ConvertFrom::Abc => Action::Abc,
             ConvertFrom::Auto => {
                 let fmt = detect_format(&input);
                 match fmt {
-                    InputFormat::PlainChordLyrics => true,
-                    InputFormat::ChordPro => {
-                        // Already ChordPro — pass through unchanged.
-                        if !combined.is_empty() {
-                            combined.push_str("{new_song}\n");
-                        }
-                        combined.push_str(&input);
-                        continue;
-                    }
-                    InputFormat::Unknown => {
-                        let label = if file == "-" {
-                            "<stdin>"
-                        } else {
-                            file.as_str()
-                        };
-                        eprintln!(
-                            "warning: {label}: format could not be detected; \
-                             use --from plaintext to force conversion"
-                        );
-                        had_error = true;
-                        continue;
-                    }
+                    InputFormat::PlainChordLyrics => Action::Plaintext,
+                    InputFormat::Abc => Action::Abc,
+                    InputFormat::ChordPro => Action::Passthrough,
+                    InputFormat::Unknown => Action::Skip,
                 }
             }
         };
 
-        if should_convert {
-            if !combined.is_empty() {
-                combined.push_str("{new_song}\n");
+        match action {
+            Action::Plaintext => {
+                if !combined.is_empty() {
+                    combined.push_str("{new_song}\n");
+                }
+                let song = convert_plain_text(&input);
+                combined.push_str(&song_to_chordpro(&song));
             }
-            let song = convert_plain_text(&input);
-            combined.push_str(&song_to_chordpro(&song));
+            Action::Abc => {
+                if !combined.is_empty() {
+                    combined.push_str("{new_song}\n");
+                }
+                combined.push_str(&convert_abc(&input));
+            }
+            Action::Passthrough => {
+                // Already ChordPro — pass through unchanged.
+                if !combined.is_empty() {
+                    combined.push_str("{new_song}\n");
+                }
+                combined.push_str(&input);
+            }
+            Action::Skip => {
+                let label = if file == "-" {
+                    "<stdin>"
+                } else {
+                    file.as_str()
+                };
+                eprintln!(
+                    "warning: {label}: format could not be detected; \
+                     use --from plaintext or --from abc to force conversion"
+                );
+                had_error = true;
+            }
         }
     }
 
