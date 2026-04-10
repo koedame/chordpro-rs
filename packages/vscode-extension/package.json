@@ -119,7 +119,7 @@
             "Open the preview in plain text mode."
           ],
           "default": "html",
-          "description": "Default view mode for new ChordSketch preview panels. Persisted state from a previous session always takes priority."
+          "description": "Default view mode when opening a new ChordSketch preview panel. Takes effect only when no persisted state exists for that panel (first open or after state is cleared). Changes to this setting require opening a new preview to take effect."
         }
       }
     }
