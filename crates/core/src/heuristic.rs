@@ -65,9 +65,29 @@ pub enum InputFormat {
 pub struct PlainTextImporter {
     /// Minimum fraction of whitespace-separated tokens that must be valid chord
     /// names for a line to be classified as a chord line. Default: `0.5`.
+    ///
+    /// **Valid range: `[0.0, 1.0]`.**
+    /// - `0.0` — every non-empty, non-punctuated line is classified as a chord
+    ///   line regardless of content.
+    /// - `1.0` — all tokens must be valid chord names for the line to qualify.
+    /// - Values above `1.0` disable chord-line detection entirely (the ratio of
+    ///   chord tokens can never exceed `1.0`).
+    /// - Negative values behave like `0.0`.
+    ///
+    /// Prefer [`PlainTextImporter::with_thresholds`] to construct an importer
+    /// with validated values.
     pub chord_threshold: f64,
     /// Minimum number of chord tokens required to classify a line as a chord
     /// line. Default: `2`.
+    ///
+    /// **Valid range: `>= 1`.**
+    /// Setting this to `0` disables the minimum-count guard: any non-empty,
+    /// non-punctuated line that meets [`chord_threshold`][Self::chord_threshold]
+    /// will be classified as a chord line, even if it contains only a single
+    /// token.
+    ///
+    /// Prefer [`PlainTextImporter::with_thresholds`] to construct an importer
+    /// with validated values.
     pub min_chord_tokens: usize,
 }
 
@@ -85,6 +105,42 @@ impl PlainTextImporter {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a new importer with explicit threshold values, returning an
+    /// error string if any value is out of its valid range.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if:
+    /// - `chord_threshold` is not in `[0.0, 1.0]`
+    /// - `min_chord_tokens` is `0`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use chordsketch_core::heuristic::PlainTextImporter;
+    ///
+    /// let importer = PlainTextImporter::with_thresholds(0.75, 3).unwrap();
+    /// assert_eq!(importer.chord_threshold, 0.75);
+    /// assert_eq!(importer.min_chord_tokens, 3);
+    ///
+    /// assert!(PlainTextImporter::with_thresholds(1.5, 2).is_err());
+    /// assert!(PlainTextImporter::with_thresholds(0.5, 0).is_err());
+    /// ```
+    pub fn with_thresholds(chord_threshold: f64, min_chord_tokens: usize) -> Result<Self, String> {
+        if !(0.0..=1.0).contains(&chord_threshold) {
+            return Err(format!(
+                "chord_threshold must be in [0.0, 1.0], got {chord_threshold}"
+            ));
+        }
+        if min_chord_tokens == 0 {
+            return Err("min_chord_tokens must be >= 1".to_string());
+        }
+        Ok(Self {
+            chord_threshold,
+            min_chord_tokens,
+        })
     }
 
     /// Returns `true` if `line` appears to be a chord line.
