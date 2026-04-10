@@ -95,10 +95,12 @@ export async function startLspClient(context: vscode.ExtensionContext): Promise<
   await client.start();
 }
 
-/** Stops the LSP client gracefully. */
+/** Stops the LSP client gracefully and resets the not-found channel reference. */
 export async function stopLspClient(): Promise<void> {
   if (client) {
     await client.stop();
     client = undefined;
   }
+  // Reset so the next activation registers a fresh channel in the new context.
+  notFoundChannel = undefined;
 }

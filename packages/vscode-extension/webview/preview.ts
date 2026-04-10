@@ -26,6 +26,20 @@ const vscode = acquireVsCodeApi();
 /** Message types received from the extension host. */
 type ExtToWebview = { type: 'update'; text: string };
 
+/**
+ * Type guard for messages received from the extension host.
+ *
+ * Validates the shape of `event.data` before field access so that unknown
+ * or malformed messages are silently ignored rather than causing TypeErrors.
+ */
+function isExtToWebview(raw: unknown): raw is ExtToWebview {
+  if (typeof raw !== 'object' || raw === null) {
+    return false;
+  }
+  const r = raw as Record<string, unknown>;
+  return r['type'] === 'update' && typeof r['text'] === 'string';
+}
+
 const loadingEl = document.getElementById('loading') as HTMLDivElement;
 const errorEl = document.getElementById('error') as HTMLDivElement;
 const previewFrame = document.getElementById('preview-frame') as HTMLIFrameElement;
@@ -97,6 +111,7 @@ function renderPreview(text: string): void {
   }
 
   try {
+    // TODO(Phase B): call render_html_with_options with transpose options instead of render_html.
     const html = render_html(text);
     hideError();
     previewFrame.srcdoc = wrapHtml(html);
@@ -112,7 +127,6 @@ async function main(): Promise<void> {
   // on the <script> tag because document.currentScript is null for ES modules.
   const wasmUri =
     document.querySelector<HTMLMetaElement>('meta[name="chordsketch-wasm-uri"]')?.content ?? '';
-  // TODO(Phase B): use render_html_with_options here for transpose controls.
 
   try {
     if (wasmUri) {
@@ -129,9 +143,12 @@ async function main(): Promise<void> {
 
   // Listen for messages from the extension host.
   window.addEventListener('message', (event: MessageEvent) => {
-    const msg = event.data as ExtToWebview;
-    if (msg.type === 'update') {
-      renderPreview(msg.text);
+    if (!isExtToWebview(event.data)) {
+      // Unknown or malformed message — silently ignore.
+      return;
+    }
+    if (event.data.type === 'update') {
+      renderPreview(event.data.text);
     }
   });
 

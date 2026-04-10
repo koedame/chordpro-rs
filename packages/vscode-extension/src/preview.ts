@@ -126,9 +126,9 @@ class PreviewPanel {
       } else if (raw.type === 'error') {
         // The WebView surfaces render errors; they are also displayed inline
         // in the panel so we only log here and don't show a notification.
+        // The channel lifetime tracks this panel — it is disposed in dispose().
         if (!this.outputChannel) {
           this.outputChannel = vscode.window.createOutputChannel('ChordSketch Preview');
-          this.context.subscriptions.push(this.outputChannel);
         }
         this.outputChannel.appendLine(`Preview render error: ${raw.message}`);
       }
@@ -174,12 +174,14 @@ class PreviewPanel {
     void this.panel.webview.postMessage(msg);
   }
 
-  /** Disposes the panel and clears any pending debounce timer. */
+  /** Disposes the panel, its output channel, and any pending debounce timer. */
   dispose(): void {
     if (this.debounceTimer !== undefined) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = undefined;
     }
+    this.outputChannel?.dispose();
+    this.outputChannel = undefined;
     this.panel.dispose();
   }
 
