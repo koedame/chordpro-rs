@@ -250,6 +250,40 @@ class PreviewPanel {
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: var(--vscode-font-family, sans-serif); height: 100vh; display: flex; flex-direction: column; }
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 4px 8px;
+      background: var(--vscode-editor-background, #1e1e1e);
+      border-bottom: 1px solid var(--vscode-editorGroup-border, #444);
+      flex-shrink: 0;
+    }
+    #toolbar .view-btn {
+      background: transparent;
+      border: 1px solid var(--vscode-button-secondaryBackground, #555);
+      color: var(--vscode-foreground, #ccc);
+      padding: 2px 10px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      border-radius: 3px;
+      font-family: inherit;
+    }
+    #toolbar .view-btn.active {
+      background: var(--vscode-button-background, #0078d4);
+      color: var(--vscode-button-foreground, #fff);
+      border-color: var(--vscode-button-background, #0078d4);
+    }
+    #toolbar .view-btn:not(.active):hover {
+      background: var(--vscode-button-secondaryHoverBackground, #3a3a3a);
+    }
+    /* Toolbar is disabled until WASM finishes loading so that clicking
+       buttons before init completes is not possible. The script removes
+       the 'disabled' class after a successful init(). */
+    #toolbar.disabled {
+      pointer-events: none;
+      opacity: 0.4;
+    }
     #loading {
       padding: 1rem;
       color: var(--vscode-descriptionForeground);
@@ -272,9 +306,26 @@ class PreviewPanel {
       display: none;
       background: white;
     }
+    #text-frame {
+      flex: 1;
+      display: none;
+      padding: 1.5rem;
+      overflow: auto;
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: var(--vscode-editor-font-size, 13px);
+      line-height: 1.5;
+      background: var(--vscode-editor-background, #1e1e1e);
+      color: var(--vscode-editor-foreground, #d4d4d4);
+      white-space: pre;
+      word-break: normal;
+    }
   </style>
 </head>
 <body>
+  <div id="toolbar" class="disabled">
+    <button id="btn-html" class="view-btn active" title="HTML preview">HTML</button>
+    <button id="btn-text" class="view-btn" title="Plain text preview">Plain text</button>
+  </div>
   <div id="loading">Initializing ChordSketch preview…</div>
   <div id="error"></div>
   <iframe
@@ -282,6 +333,7 @@ class PreviewPanel {
     sandbox="allow-popups allow-popups-to-escape-sandbox"
     title="ChordPro preview"
   ></iframe>
+  <pre id="text-frame" aria-label="Plain text preview"></pre>
   <script nonce="${nonce}" src="${scriptUri}" type="module"></script>
 </body>
 </html>`;
