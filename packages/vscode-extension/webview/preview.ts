@@ -274,9 +274,19 @@ async function main(): Promise<void> {
   // bypass the runtime invariants enforced by adjustTranspose().
   const saved = safeGetState();
   if (saved.mode !== undefined) {
+    // Persisted state takes priority over the default-mode setting.
     viewMode = saved.mode;
-    syncButtonStates();
+  } else {
+    // No persisted state — fall back to the chordsketch.preview.defaultMode
+    // setting injected by the extension host as a <meta> element.
+    const metaMode = document.querySelector<HTMLMetaElement>(
+      'meta[name="chordsketch-default-mode"]',
+    )?.content;
+    if (metaMode === 'html' || metaMode === 'text') {
+      viewMode = metaMode;
+    }
   }
+  syncButtonStates();
   if (saved.transpose !== undefined) {
     transpose = saved.transpose;
     transposeLabel.textContent = formatTranspose(transpose);

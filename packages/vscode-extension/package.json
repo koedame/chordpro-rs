@@ -110,6 +110,16 @@
           "type": "string",
           "default": "",
           "description": "Path to the chordsketch-lsp binary. If empty, the extension looks on the system PATH first, then falls back to the bundled binary (if present)."
+        },
+        "chordsketch.preview.defaultMode": {
+          "type": "string",
+          "enum": ["html", "text"],
+          "enumDescriptions": [
+            "Open the preview in HTML rendering mode.",
+            "Open the preview in plain text mode."
+          ],
+          "default": "html",
+          "description": "Default view mode for new ChordSketch preview panels. Persisted state from a previous session always takes priority."
         }
       }
     }
