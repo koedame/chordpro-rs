@@ -93,6 +93,8 @@ class PreviewPanel {
   private pendingText: string | undefined;
   /** Lazily created output channel for surfacing render errors from this panel. */
   private outputChannel: vscode.OutputChannel | undefined;
+  /** Set to true once the panel is disposed so stale timer callbacks are no-ops. */
+  private disposed = false;
 
   constructor(context: vscode.ExtensionContext, document: vscode.TextDocument) {
     this.context = context;
@@ -126,7 +128,8 @@ class PreviewPanel {
       } else if (raw.type === 'error') {
         // The WebView surfaces render errors; they are also displayed inline
         // in the panel so we only log here and don't show a notification.
-        // The channel lifetime tracks this panel — it is disposed in dispose().
+        // The channel lifetime tracks this panel — disposed in onDidDispose (tab
+        // close) and in dispose() (extension deactivation via disposeAll()).
         if (!this.outputChannel) {
           this.outputChannel = vscode.window.createOutputChannel('ChordSketch Preview');
         }
@@ -136,9 +139,10 @@ class PreviewPanel {
 
     // Remove this panel from the map when the user closes it, and clean up
     // associated resources immediately so they do not outlive the panel tab.
-    // The outputChannel?.dispose() + = undefined pattern ensures double-dispose
-    // is safe when disposeAll() later calls dispose() on the same instance.
+    // Setting disposed=true before clearTimeout guards against a stale timer
+    // callback that may already be queued when onDidDispose fires.
     this.panel.onDidDispose(() => {
+      this.disposed = true;
       panels.delete(this.document.uri.toString());
       if (this.debounceTimer !== undefined) {
         clearTimeout(this.debounceTimer);
@@ -170,7 +174,7 @@ class PreviewPanel {
     }
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = undefined;
-      if (this.pendingText !== undefined) {
+      if (this.pendingText !== undefined && !this.disposed) {
         this.sendUpdate(this.pendingText);
         this.pendingText = undefined;
       }
@@ -185,6 +189,7 @@ class PreviewPanel {
 
   /** Disposes the panel, its output channel, and any pending debounce timer. */
   dispose(): void {
+    this.disposed = true;
     if (this.debounceTimer !== undefined) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = undefined;
