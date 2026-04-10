@@ -128,6 +128,7 @@ impl PlainTextImporter {
     /// assert!(PlainTextImporter::with_thresholds(1.5, 2).is_err());
     /// assert!(PlainTextImporter::with_thresholds(0.5, 0).is_err());
     /// ```
+    #[must_use = "this `Result` should be handled; use `.unwrap()` or `?` to apply the thresholds"]
     pub fn with_thresholds(chord_threshold: f64, min_chord_tokens: usize) -> Result<Self, String> {
         if !(0.0..=1.0).contains(&chord_threshold) {
             return Err(format!(
