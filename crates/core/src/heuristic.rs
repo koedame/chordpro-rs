@@ -205,6 +205,15 @@ impl PlainTextImporter {
         // `parse_section_header` already classifies it that way during
         // conversion. This prevents single-letter key indicators like `[C]`
         // or `[Am]` from triggering a false ChordPro classification.
+        //
+        // Known limitation (issue #1304): a directive-free ChordPro file that
+        // uses *only* whole-line bracket chords (e.g. `[Am]` alone on its own
+        // line immediately before a lyric) will be classified as `Unknown`
+        // rather than `ChordPro`, because such lines are indistinguishable
+        // from plain-text key/section labels without lookahead context that
+        // would risk introducing new false positives. Files with at least one
+        // `{directive}` or one mid-line inline chord (e.g., `Hello [Am]world`)
+        // are not affected.
         let has_inline_chords = lines.iter().any(|l| {
             let trimmed = l.trim();
             // Skip whole-line brackets: `[content]` where content has no nested `[`.
@@ -895,6 +904,21 @@ mod tests {
         // on its own, but a mid-line inline chord on another line does.
         let input = "[Verse]\nHello [Am]world\n";
         assert_eq!(detect_format(input), InputFormat::ChordPro);
+    }
+
+    #[test]
+    fn known_limitation_whole_line_chord_only_chordpro_returns_unknown() {
+        // A directive-free ChordPro file that uses ONLY whole-line bracket chords
+        // (each chord on its own line before a lyric) is indistinguishable from
+        // a plain-text file with key/section labels, so detect_format returns
+        // Unknown rather than ChordPro. This is a documented trade-off — see
+        // issue #1304 and the comment in detect_format above `has_inline_chords`.
+        //
+        // Files with at least one directive or one mid-line inline chord are
+        // correctly identified as ChordPro (see `detects_chordpro_from_directives`
+        // and `detects_inline_chord_in_line_still_chordpro`).
+        let input = "[Am]\nThis is a lyric line\n[G]\nAnother lyric line\n";
+        assert_eq!(detect_format(input), InputFormat::Unknown);
     }
 
     #[test]
