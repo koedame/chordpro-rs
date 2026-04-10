@@ -573,6 +573,17 @@ fn end_directive_for_section(canonical: &str) -> Directive {
 /// chord line. Text that precedes the first chord is emitted in a leading
 /// chord-free segment.
 fn pair_chords_with_lyric(positions: &[(usize, String)], lyric: &str) -> LyricsLine {
+    // Fast path: no chord positions — return the lyric as a single plain segment.
+    if positions.is_empty() {
+        return LyricsLine {
+            segments: vec![LyricsSegment {
+                chord: None,
+                text: lyric.to_string(),
+                spans: vec![],
+            }],
+        };
+    }
+
     // Work in terms of char indices for correctness with multi-byte text, but
     // chord positions from `chord_positions` are byte offsets into the ASCII
     // chord line. Because chord lines are expected to be ASCII (chord names),
@@ -606,7 +617,7 @@ fn pair_chords_with_lyric(positions: &[(usize, String)], lyric: &str) -> LyricsL
         let text_end = if let Some((next_col, _)) = positions.get(i + 1) {
             clamp_to_lyric(*next_col)
         } else {
-            lyric_len
+            lyric_len // last chord gets all remaining lyric text
         };
 
         // Any lyric text before this chord position (after the cursor) without
@@ -630,27 +641,7 @@ fn pair_chords_with_lyric(positions: &[(usize, String)], lyric: &str) -> LyricsL
         cursor = text_end.min(lyric_len);
     }
 
-    // Remaining lyric text after all chord positions.
-    if cursor < lyric_len {
-        if let Some(last) = segments.last_mut() {
-            last.text.push_str(&lyric[cursor..]);
-        } else {
-            segments.push(LyricsSegment {
-                chord: None,
-                text: lyric[cursor..].to_string(),
-                spans: vec![],
-            });
-        }
-    }
-
-    if segments.is_empty() {
-        segments.push(LyricsSegment {
-            chord: None,
-            text: lyric.to_string(),
-            spans: vec![],
-        });
-    }
-
+    // positions was non-empty, so segments is non-empty and cursor == lyric_len.
     LyricsLine { segments }
 }
 
