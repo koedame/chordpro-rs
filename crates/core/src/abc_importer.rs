@@ -1148,4 +1148,18 @@ mod tests {
             "text inside braces must be preserved (braces stripped), got: {out}"
         );
     }
+
+    #[test]
+    fn orphaned_lyric_brace_only_emits_no_blank_line() {
+        // A w: line containing only braces sanitizes to an empty string and
+        // must not produce a blank line in the output.
+        let input = "X:1\nT:T\nK:C\nw:{}\n";
+        let out = convert_abc(input);
+        // The header block ends with "\n\n"; the brace-only lyric must not
+        // append an additional "\n" that would produce "\n\n\n".
+        assert!(
+            !out.ends_with("\n\n\n"),
+            "brace-only orphaned lyric must not emit an extra blank line, got: {out:?}"
+        );
+    }
 }
