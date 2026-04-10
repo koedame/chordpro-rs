@@ -154,7 +154,7 @@ fn convert_tune(input: &str) -> String {
                 }
                 'T' => title = Some(value.to_string()),
                 'C' => composer = Some(value.to_string()),
-                'Q' => tempo = Some(extract_tempo_bpm(value)),
+                'Q' => tempo = extract_tempo_bpm(value),
                 'K' => {
                     if in_header {
                         // K: is the last required header field; emit directives now.
@@ -242,15 +242,20 @@ fn parse_field_line(line: &str) -> Option<(char, &str)> {
 ///
 /// Handles bare numbers (`"120"`), note-length annotations (`"1/4=120"`),
 /// and tempos with text labels (`"1/4=120 Allegro"`).
-fn extract_tempo_bpm(value: &str) -> String {
-    if let Some(pos) = value.find('=') {
-        value[pos + 1..]
-            .split_whitespace()
-            .next()
-            .unwrap_or(value)
-            .to_string()
+///
+/// Returns `None` if no numeric BPM can be extracted (e.g. `"Q:Allegro"` or
+/// `"Q:1/4=Allegro"`), so the caller can omit the `{tempo}` directive rather
+/// than emitting a non-numeric value that would be invalid ChordPro.
+fn extract_tempo_bpm(value: &str) -> Option<String> {
+    let candidate = if let Some(pos) = value.find('=') {
+        value[pos + 1..].split_whitespace().next().unwrap_or("")
     } else {
-        value.split_whitespace().next().unwrap_or(value).to_string()
+        value.split_whitespace().next().unwrap_or("")
+    };
+    if !candidate.is_empty() && candidate.bytes().all(|b| b.is_ascii_digit()) {
+        Some(candidate.to_string())
+    } else {
+        None
     }
 }
 
@@ -339,13 +344,15 @@ fn flush_block(music_lines: &[String], w_lines: &[String], out: &mut String) {
         return;
     }
 
-    // Use the first w: line (multiple w: lines = multiple verses; future
-    // enhancement could output all verses).
-    let syllables = parse_abc_lyrics(&w_lines[0]);
-    let line = build_chordpro_line(&chord_at_note, &syllables);
-    if !line.trim().is_empty() {
-        out.push_str(&line);
-        out.push('\n');
+    // Emit all w: lines as separate ChordPro lyric lines.  Each line
+    // represents one verse sung over the same melody.
+    for w_line in w_lines {
+        let syllables = parse_abc_lyrics(w_line);
+        let line = build_chordpro_line(&chord_at_note, &syllables);
+        if !line.trim().is_empty() {
+            out.push_str(&line);
+            out.push('\n');
+        }
     }
 }
 
@@ -738,17 +745,32 @@ mod tests {
 
     #[test]
     fn tempo_bare_number() {
-        assert_eq!(extract_tempo_bpm("120"), "120");
+        assert_eq!(extract_tempo_bpm("120"), Some("120".to_string()));
     }
 
     #[test]
     fn tempo_note_length() {
-        assert_eq!(extract_tempo_bpm("1/4=120"), "120");
+        assert_eq!(extract_tempo_bpm("1/4=120"), Some("120".to_string()));
     }
 
     #[test]
     fn tempo_with_label() {
-        assert_eq!(extract_tempo_bpm("1/4=140 Allegro"), "140");
+        assert_eq!(
+            extract_tempo_bpm("1/4=140 Allegro"),
+            Some("140".to_string())
+        );
+    }
+
+    #[test]
+    fn tempo_text_only_returns_none() {
+        // "Q:Allegro" has no numeric BPM — must not emit {tempo: Allegro}.
+        assert_eq!(extract_tempo_bpm("Allegro"), None);
+    }
+
+    #[test]
+    fn tempo_note_length_text_only_returns_none() {
+        // "Q:1/4=Allegro" — after '=' the token is non-numeric.
+        assert_eq!(extract_tempo_bpm("1/4=Allegro"), None);
     }
 
     // --- extract_chords_and_notes ---
@@ -1021,6 +1043,47 @@ mod tests {
         assert!(
             out.contains("[Amtitle: evil]"),
             "sanitized chord name should be present, got: {out}"
+        );
+    }
+
+    // --- non-numeric tempo (issue #1339) ---
+
+    #[test]
+    fn convert_tempo_text_only_omitted() {
+        // Q:Allegro — no numeric BPM, so {tempo} must not be emitted.
+        let input = "X:1\nT:T\nQ:Allegro\nK:C\n";
+        let out = convert_abc(input);
+        assert!(
+            !out.contains("{tempo:"),
+            "non-numeric tempo must not produce a {{tempo}} directive, got: {out}"
+        );
+    }
+
+    #[test]
+    fn convert_tempo_note_length_text_omitted() {
+        // Q:1/4=Allegro — after '=' the token is non-numeric.
+        let input = "X:1\nT:T\nQ:1/4=Allegro\nK:C\n";
+        let out = convert_abc(input);
+        assert!(
+            !out.contains("{tempo:"),
+            "non-numeric tempo must not produce a {{tempo}} directive, got: {out}"
+        );
+    }
+
+    // --- multiple w: verses (issue #1340) ---
+
+    #[test]
+    fn convert_multi_verse_emits_all_verses() {
+        // Two w: lines for the same music block — both verses must appear in output.
+        let input = "X:1\nT:T\nK:C\n\"C\" C D E F|\nw:First verse here\nw:Second verse here\n";
+        let out = convert_abc(input);
+        assert!(
+            out.contains("First"),
+            "first verse must be present, got: {out}"
+        );
+        assert!(
+            out.contains("Second"),
+            "second verse must be present, got: {out}"
         );
     }
 }
