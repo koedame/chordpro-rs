@@ -1,0 +1,31 @@
+name: Check Action Pins
+
+# Verify that all GitHub Actions 'uses:' references in workflow files are
+# pinned to an immutable SHA (40-char git commit SHA or docker sha256 digest).
+# Mutable tags (@v3, @main) are rejected.
+#
+# This is a global-property check: any workflow file in the repo could
+# introduce an unpinned reference, so we run on every PR regardless of which
+# files it touches — no paths: filter. Same reasoning applies to push: main.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-action-pins-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  check-action-pins:
+    name: Verify all action refs are SHA-pinned
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Check action pins
+        run: ./scripts/check-action-pins.sh .github

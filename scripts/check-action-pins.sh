@@ -19,14 +19,14 @@ FOUND=0
 while IFS= read -r -d '' file; do
   while IFS= read -r line; do
     # Match "uses: owner/repo@REF" or "uses: docker://image@REF"
-    if echo "$line" | grep -qE '^\s*uses:\s+[^@]+@[^#[:space:]]+'; then
-      ref=$(echo "$line" | sed -E 's/.*@([^# ]+).*/\1/')
+    if printf '%s\n' "$line" | grep -qE '^\s*uses:\s+[^@]+@[^#[:space:]]+'; then
+      ref=$(printf '%s\n' "$line" | sed -E 's/.*@([^# ]+).*/\1/')
       # Accept a 40-char git commit SHA
-      if echo "$ref" | grep -qE '^[0-9a-f]{40}$'; then
+      if printf '%s\n' "$ref" | grep -qE '^[0-9a-f]{40}$'; then
         continue
       fi
       # Accept a Docker image digest: sha256:<64-char hex>
-      if echo "$ref" | grep -qE '^sha256:[0-9a-f]{64}$'; then
+      if printf '%s\n' "$ref" | grep -qE '^sha256:[0-9a-f]{64}$'; then
         continue
       fi
       echo "NOT SHA-PINNED: $file"
