@@ -272,7 +272,10 @@ function setViewMode(mode: ViewMode): void {
  * the same chord output since the renderer reduces modulo 12 internally.
  * The clamp prevents the label from growing without bound on repeated clicks.
  *
- * Called only after WASM has successfully loaded.
+ * May be called before WASM has loaded (e.g., via a `transpose` message sent
+ * by the extension host during the init window). In that case `renderPreview`
+ * exits early at the `wasmReady` guard without calling any WASM export; the
+ * updated `transpose` value is applied on the next render after init completes.
  */
 function adjustTranspose(delta: -1 | 1): void {
   const next = transpose + delta;
