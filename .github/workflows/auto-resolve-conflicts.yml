@@ -19,7 +19,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Request resolution for conflicted PRs
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           github-token: ${{ secrets.CLAUDE_PAT }}
           script: |

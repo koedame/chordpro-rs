@@ -20,6 +20,7 @@ promptly.
 | New workflow or process introduced | `.claude/rules/` — add new file |
 | Existing rule no longer applies | Remove or update the relevant `.claude/rules/` file |
 | Dependency policy changed | `CLAUDE.md` Dependency Policy section |
+| Public function signature or behavior changed | Doc comment on the changed item — verify examples, parameter descriptions, and return-value semantics still match the new implementation |
 
 ## Phase Completion Review
 
@@ -35,3 +36,6 @@ one scheduled (non-event-driven) documentation checkpoint.
   history for that.
 - If a trigger applies but the change is trivial (e.g., a typo fix), it may be batched
   with the next documentation PR rather than requiring its own.
+- `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS="-D warnings"` is enforced in
+  CI. Broken intra-doc links, invalid doc-test examples, and rustdoc warnings all fail
+  the build. Fix them in the same PR that changes the code.

@@ -75,6 +75,22 @@ All review findings must be:
    enumeration are not acceptable. Every finding must be enumerable and
    traceable.
 
+### Duplicate Prevention
+
+Before creating an issue, search existing open issues to avoid filing the same finding
+twice. This is especially important during automated reviews, where the same code smell
+can be reported across multiple review cycles.
+
+```bash
+# Search by filename, function name, or error keyword
+gh issue list -S "keyword" --state open -R koedame/chordsketch
+```
+
+- If an equivalent open issue already exists, add a comment to it with any new
+  context rather than opening a new issue.
+- If a duplicate is found after creation, close the newer one as a duplicate and
+  link it to the existing issue.
+
 ### Creating Sub-Issue Relationships
 
 ```bash

@@ -1,6 +1,6 @@
 //! ChordPro source formatter.
 //!
-//! The [`format`] function normalizes ChordPro text to a canonical style:
+//! The [`format()`] function normalizes ChordPro text to a canonical style:
 //! directive names are expanded to their canonical form, spacing inside
 //! directives is normalized, chord spelling is canonicalized, and blank lines
 //! between sections are made consistent.
@@ -18,7 +18,7 @@
 use crate::ast::DirectiveKind;
 use crate::chord::parse_chord;
 
-/// Options that control which normalizations [`format`] applies.
+/// Options that control which normalizations [`format()`] applies.
 #[derive(Debug, Clone)]
 pub struct FormatOptions {
     /// Expand directive name aliases to their canonical long form.
