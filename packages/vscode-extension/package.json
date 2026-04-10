@@ -69,6 +69,10 @@
       {
         "command": "chordsketch.transposeDown",
         "title": "ChordSketch: Transpose Down"
+      },
+      {
+        "command": "chordsketch.convertTo",
+        "title": "ChordSketch: Export As…"
       }
     ],
     "menus": {
@@ -94,6 +98,10 @@
         },
         {
           "command": "chordsketch.transposeDown",
+          "when": "editorLangId == chordpro"
+        },
+        {
+          "command": "chordsketch.convertTo",
           "when": "editorLangId == chordpro"
         }
       ]

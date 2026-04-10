@@ -56,6 +56,27 @@ if (fs.existsSync(wasmSrc)) {
   console.warn('         Run `npm install` in packages/vscode-extension/ to fetch @chordsketch/wasm.');
 }
 
+// Copy the WASM Node.js CJS build for the extension host (convertTo command).
+// The files are NOT bundled by esbuild — they are loaded at runtime via createRequire
+// so that the module's own __dirname resolves to dist/node/ where the .wasm binary lives.
+const nodeDir = path.join(here, 'dist', 'node');
+fs.mkdirSync(nodeDir, { recursive: true });
+// Write a package.json declaring CJS type so Node resolves the .js as CommonJS.
+fs.writeFileSync(path.join(nodeDir, 'package.json'), JSON.stringify({ type: 'commonjs' }, null, 2) + '\n');
+const wasmNodeFiles = ['chordsketch_wasm.js', 'chordsketch_wasm_bg.wasm'];
+for (const file of wasmNodeFiles) {
+  const npmSrc = path.join(here, 'node_modules', '@chordsketch', 'wasm', 'node', file);
+  const localSrc = path.join(repoRoot, 'packages', 'npm', 'node', file);
+  const src = fs.existsSync(npmSrc) ? npmSrc : localSrc;
+  if (fs.existsSync(src)) {
+    fs.copyFileSync(src, path.join(nodeDir, file));
+    console.log(`Copied ${path.relative(here, src)} → dist/node/${file}`);
+  } else {
+    console.warn(`WARNING: dist/node/${file} not found in node_modules or local build.`);
+    console.warn('         Run `npm install` in packages/vscode-extension/ to fetch @chordsketch/wasm.');
+  }
+}
+
 /** @type {esbuild.BuildOptions} */
 const extensionBuild = {
   entryPoints: ['src/extension.ts'],
