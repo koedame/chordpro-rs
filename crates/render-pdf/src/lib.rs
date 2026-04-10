@@ -1316,19 +1316,8 @@ fn render_keyboard_diagram_pdf(
     }
 
     // Normalise pitch-class keys (0–11) to octave 4.
-    let (keys, root) = {
-        if voicing.keys.iter().all(|&k| k < 12) {
-            let k: Vec<u8> = voicing.keys.iter().map(|&k| k.saturating_add(60)).collect();
-            let r = if voicing.root_key < 12 {
-                voicing.root_key.saturating_add(60)
-            } else {
-                voicing.root_key
-            };
-            (k, r)
-        } else {
-            (voicing.keys.clone(), voicing.root_key)
-        }
-    };
+    let (keys, root) =
+        chordsketch_core::chord_diagram::normalise_keyboard_keys(&voicing.keys, voicing.root_key);
 
     let min_key = *keys.iter().min().unwrap_or(&60);
     let max_key = *keys.iter().max().unwrap_or(&71);

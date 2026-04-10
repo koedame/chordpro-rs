@@ -1,7 +1,12 @@
-//! Built-in chord voicing database for guitar and ukulele.
+//! Built-in chord voicing database for guitar, ukulele, and piano/keyboard.
 //!
-//! Provides 96 pre-defined chord voicings (60 guitar + 36 ukulele) stored as compile-time static
-//! data — no external files, no runtime I/O. The lookup priority is:
+//! Provides 156 pre-defined chord voicings:
+//! - 60 guitar voicings (5 families × 12 roots)
+//! - 36 ukulele voicings (3 families × 12 roots)
+//! - 60 keyboard/piano voicings (5 families × 12 roots: major, minor, dom7, maj7, min7)
+//!
+//! All data is stored as compile-time static data — no external files, no runtime I/O.
+//! The lookup priority is:
 //!
 //! 1. `{define}` in the song file (handled by the parser/AST)
 //! 2. User `chordsketch.json` (future — not yet implemented)
@@ -700,7 +705,9 @@ pub fn ukulele_voicing(chord_name: &str) -> Option<DiagramData> {
 /// - `defines` — list of `(name, raw)` pairs from `{define}` directives.
 ///   Obtain via [`Song::fretted_defines`](crate::ast::Song::fretted_defines).
 /// - `instrument` — `"guitar"` or `"ukulele"` (case-insensitive). Anything else
-///   falls back to guitar.
+///   falls back to guitar. **Do not pass `"piano"` here**; the renderers branch
+///   on the instrument before calling this function, routing piano to
+///   [`lookup_keyboard_voicing`] instead.
 /// - `frets_shown` — number of fret rows to display in the diagram.
 #[must_use]
 pub fn lookup_diagram(
