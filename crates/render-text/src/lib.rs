@@ -206,29 +206,58 @@ fn render_song_impl(
         }
     }
 
-    // Auto-inject ASCII diagram block when {diagrams} was seen.
+    // Auto-inject ASCII diagram block when {diagrams} (or {diagrams: guitar/ukulele/piano}) was seen.
     if let Some(ref instrument) = auto_diagrams_instrument {
-        let frets_shown = _config
-            .get_path("diagrams.frets")
-            .as_f64()
-            .map_or(chordsketch_core::chord_diagram::DEFAULT_FRETS_SHOWN, |n| {
-                (n as usize).max(1)
-            });
-        let defines = song.fretted_defines();
-        let diagrams: Vec<_> = song
-            .used_chord_names()
-            .into_iter()
-            .filter_map(|name| {
-                chordsketch_core::lookup_diagram(&name, &defines, instrument, frets_shown)
-            })
-            .collect();
-        if !diagrams.is_empty() {
-            output.push(String::new());
-            output.push("[Chord Diagrams]".to_string());
-            for diagram in &diagrams {
+        if instrument == "piano" {
+            // Plain-text rendering of keyboard diagrams is not supported; emit a note
+            // listing the chord names so the reader knows which chords are in use.
+            let kbd_defines = song.keyboard_defines();
+            let voicings: Vec<_> = song
+                .used_chord_names()
+                .into_iter()
+                .filter_map(|name| chordsketch_core::lookup_keyboard_voicing(&name, &kbd_defines))
+                .collect();
+            if !voicings.is_empty() {
                 output.push(String::new());
-                for diagram_line in chordsketch_core::chord_diagram::render_ascii(diagram).lines() {
-                    output.push(diagram_line.to_string());
+                output.push("[Chord Diagrams]".to_string());
+                for voicing in &voicings {
+                    output.push(format!(
+                        "  {}: keys {}",
+                        voicing.title(),
+                        voicing
+                            .keys
+                            .iter()
+                            .map(|k| k.to_string())
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ));
+                }
+            }
+        } else {
+            let frets_shown = _config
+                .get_path("diagrams.frets")
+                .as_f64()
+                .map_or(chordsketch_core::chord_diagram::DEFAULT_FRETS_SHOWN, |n| {
+                    (n as usize).max(1)
+                });
+            let defines = song.fretted_defines();
+            let diagrams: Vec<_> = song
+                .used_chord_names()
+                .into_iter()
+                .filter_map(|name| {
+                    chordsketch_core::lookup_diagram(&name, &defines, instrument, frets_shown)
+                })
+                .collect();
+            if !diagrams.is_empty() {
+                output.push(String::new());
+                output.push("[Chord Diagrams]".to_string());
+                for diagram in &diagrams {
+                    output.push(String::new());
+                    for diagram_line in
+                        chordsketch_core::chord_diagram::render_ascii(diagram).lines()
+                    {
+                        output.push(diagram_line.to_string());
+                    }
                 }
             }
         }
@@ -1243,6 +1272,19 @@ mod delegate_tests {
             !output.contains("[Chord Diagrams]"),
             "{{diagrams: off}} should suppress ASCII diagram block"
         );
+    }
+
+    #[test]
+    fn test_diagrams_piano_auto_inject_text() {
+        let output = render("{diagrams: piano}\n[Am]Hello [C]world");
+        assert!(
+            output.contains("[Chord Diagrams]"),
+            "piano instrument should include Chord Diagrams header"
+        );
+        // Text renderer emits chord name + key numbers (no ASCII art for piano).
+        assert!(output.contains("Am:"), "Am entry expected");
+        assert!(output.contains("C:"), "C entry expected");
+        assert!(output.contains("keys"), "key list label expected");
     }
 
     #[test]

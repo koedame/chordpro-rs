@@ -1375,6 +1375,12 @@ fn render_keyboard_diagram_pdf(
         (10, 5.6), // A#
     ];
 
+    // Colors used for highlighting keys.
+    const ROOT_BLUE: (f32, f32, f32) = (0.102, 0.373, 0.706); // dark blue: root key
+    const CHORD_BLUE: (f32, f32, f32) = (0.290, 0.565, 0.886); // medium blue: chord tone
+    const WHITE_KEY: (f32, f32, f32) = (1.0, 1.0, 1.0); // unlit white key
+    const DARK_KEY: (f32, f32, f32) = (0.133, 0.133, 0.133); // unlit black key
+
     // Draw white keys
     for oct in 0..num_octaves {
         let oct_midi = start_midi.saturating_add((oct * 12) as u8);
@@ -1386,16 +1392,12 @@ fn render_keyboard_diagram_pdf(
             let is_root = highlighted && midi == root;
             // PDF bottom-up: key bottom is kbd_top_y - white_h
             let y_bottom = kbd_top_y - white_h;
-            // Colors: root = dark blue, chord tone = medium blue, neutral = white
-            const ROOT_BLUE: (f32, f32, f32) = (0.102, 0.373, 0.706);
-            const CHORD_BLUE: (f32, f32, f32) = (0.290, 0.565, 0.886);
-            const WHITE: (f32, f32, f32) = (1.0, 1.0, 1.0);
             let color = if is_root {
                 ROOT_BLUE
             } else if highlighted {
                 CHORD_BLUE
             } else {
-                WHITE
+                WHITE_KEY
             };
             doc.filled_rect_color(x, y_bottom, white_w - 0.5, white_h, color);
             doc.rect_stroke(x, y_bottom, white_w - 0.5, white_h, 0.3);
@@ -1412,11 +1414,10 @@ fn render_keyboard_diagram_pdf(
             let highlighted = keys.contains(&midi);
             let is_root = highlighted && midi == root;
             let y_bottom = kbd_top_y - black_h;
-            const DARK_KEY: (f32, f32, f32) = (0.133, 0.133, 0.133);
             let color = if is_root {
-                (0.102, 0.373, 0.706)
+                ROOT_BLUE
             } else if highlighted {
-                (0.290, 0.565, 0.886)
+                CHORD_BLUE
             } else {
                 DARK_KEY
             };

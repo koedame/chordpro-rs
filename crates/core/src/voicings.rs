@@ -1121,6 +1121,13 @@ pub fn keyboard_voicing(chord_name: &str) -> Option<KeyboardVoicing> {
 /// - `chord_name` — chord name as it appears in the lyrics (e.g., `"Am"`, `"Cmaj7"`).
 /// - `keyboard_defines` — list of `(name, keys)` pairs from keyboard `{define}`
 ///   directives. Obtain via [`Song::keyboard_defines`](crate::ast::Song::keyboard_defines).
+///
+/// # Root key convention
+///
+/// When a voicing is constructed from a song-level `{define}` entry, the
+/// **first key in the `keys` list** is treated as the root key. Song authors
+/// should list the root note first (e.g., `{define: Am keys 57 60 64}` where
+/// 57 = A3 is the root). Built-in voicings always have the root first.
 #[must_use]
 pub fn lookup_keyboard_voicing(
     chord_name: &str,
