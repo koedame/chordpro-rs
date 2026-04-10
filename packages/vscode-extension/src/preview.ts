@@ -134,9 +134,18 @@ class PreviewPanel {
       }
     });
 
-    // Remove this panel from the map when the user closes it.
+    // Remove this panel from the map when the user closes it, and clean up
+    // associated resources immediately so they do not outlive the panel tab.
+    // The outputChannel?.dispose() + = undefined pattern ensures double-dispose
+    // is safe when disposeAll() later calls dispose() on the same instance.
     this.panel.onDidDispose(() => {
       panels.delete(this.document.uri.toString());
+      if (this.debounceTimer !== undefined) {
+        clearTimeout(this.debounceTimer);
+        this.debounceTimer = undefined;
+      }
+      this.outputChannel?.dispose();
+      this.outputChannel = undefined;
     });
   }
 
