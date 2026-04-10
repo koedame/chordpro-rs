@@ -345,7 +345,7 @@ fn musescore_cmd() -> Option<&'static str> {
 
 /// Returns `true` if MuseScore (`mscore` or `musescore`) is available.
 ///
-/// The result is cached at the process level; see [`musescore_cmd`].
+/// The result is cached at the process level.
 #[must_use]
 pub fn has_musescore() -> bool {
     musescore_cmd().is_some()

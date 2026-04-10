@@ -9,6 +9,25 @@
   - **Acceptance Criteria**: Checkboxes for done-ness
   - **Phase**: Which roadmap phase this belongs to
 
+## Duplicate Prevention
+
+Before creating a new issue, search existing open and closed issues for the same
+root cause:
+
+```bash
+gh issue list -R koedame/chordsketch --state all --search "<keyword>"
+```
+
+If a duplicate exists:
+- If it is **open**: add a comment linking the new reproduction case; do not create a
+  new issue.
+- If it is **closed**: reopen with a comment describing the regression, or create a new
+  issue that explicitly references the closed one and explains why it is a distinct
+  recurrence.
+
+Duplicate issues waste triage time and fragment the discussion. The PR that fixes a
+bug should close all linked issues.
+
 ## Issue Labels
 
 | Category | Labels |
