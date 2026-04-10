@@ -34,7 +34,7 @@ while IFS= read -r -d '' file; do
       FOUND=1
     fi
   done < "$file"
-done < <(find "$WORKFLOWS_DIR" -name '*.yml' -print0)
+done < <(find "$WORKFLOWS_DIR" \( -name '*.yml' -o -name '*.yaml' \) -print0)
 
 if [ "$FOUND" -eq 1 ]; then
   echo ""
