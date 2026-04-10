@@ -9,6 +9,7 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import * as path from 'path';
+import { resolveDefaultMode } from './config.js';
 
 /** Message types sent from the extension host to the WebView. */
 type ExtToWebview = { type: 'update'; text: string } | { type: 'transpose'; delta: 1 | -1 };
@@ -268,7 +269,7 @@ class PreviewPanel {
     const rawMode = vscode.workspace
       .getConfiguration('chordsketch')
       .get<string>('preview.defaultMode', 'html');
-    const defaultMode: 'html' | 'text' = rawMode === 'text' ? 'text' : 'html';
+    const defaultMode = resolveDefaultMode(rawMode);
 
     // cspSource includes the extension's own dist/webview/ origin.
     const csp = webview.cspSource;
