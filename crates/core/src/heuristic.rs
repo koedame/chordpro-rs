@@ -659,8 +659,8 @@ fn pair_chords_with_lyric(positions: &[(usize, String)], lyric: &str) -> LyricsL
 // ---------------------------------------------------------------------------
 
 /// Strips `{` and `}` from a string so it is safe to embed as a ChordPro
-/// directive value.  ChordPro has no escape mechanism inside directive values,
-/// so brace characters would produce malformed output.
+/// directive name or value.  ChordPro has no escape mechanism inside directive
+/// names or values, so brace characters would produce malformed output.
 fn sanitize_directive_value(s: &str) -> std::borrow::Cow<'_, str> {
     if s.contains('{') || s.contains('}') {
         std::borrow::Cow::Owned(s.replace(['{', '}'], ""))
