@@ -147,7 +147,7 @@ async function main(): Promise<void> {
       // Unknown or malformed message — silently ignore.
       return;
     }
-    // isExtToWebview already asserts type === 'update'; no inner dispatch needed.
+    // isExtToWebview guarantees type === 'update'; no inner dispatch needed.
     renderPreview(event.data.text);
   });
 
