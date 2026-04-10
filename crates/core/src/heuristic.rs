@@ -134,7 +134,22 @@ impl PlainTextImporter {
         // ChordPro inline chord notation: `[Am]`, `[G7]`, etc.
         // Distinguish from plain-text section labels like `[Verse]` or `[Chorus 2]`
         // by checking whether the content inside `[...]` is a valid chord name.
+        //
+        // A whole-line bracket (the trimmed line is exactly `[content]`) is
+        // treated as a section header — not inline chord notation — because
+        // `parse_section_header` already classifies it that way during
+        // conversion. This prevents single-letter key indicators like `[C]`
+        // or `[Am]` from triggering a false ChordPro classification.
         let has_inline_chords = lines.iter().any(|l| {
+            let trimmed = l.trim();
+            // Skip whole-line brackets: `[content]` where content has no nested `[`.
+            if trimmed.starts_with('[')
+                && trimmed.ends_with(']')
+                && trimmed.len() >= 3
+                && !trimmed[1..trimmed.len() - 1].contains('[')
+            {
+                return false;
+            }
             let mut rest: &str = l;
             while let Some(open) = rest.find('[') {
                 let after = &rest[open + 1..];
@@ -776,6 +791,25 @@ mod tests {
         // as ChordPro inline chord notation.
         let input = "[Verse]\nG  D\nHere I am\nEm  C\nWondering\n\n[Chorus]\nC  G\nLala\n";
         assert_eq!(detect_format(input), InputFormat::PlainChordLyrics);
+    }
+
+    #[test]
+    fn detects_single_letter_section_label_not_chordpro() {
+        // A whole-line `[C]` is a key/section label in plain-text chord
+        // sheets, not ChordPro inline chord notation. Issue #1278.
+        let input = "[C]\nG  D\nHere I am\nEm  C\nWondering\n";
+        assert_eq!(detect_format(input), InputFormat::PlainChordLyrics);
+
+        // Same for other single-letter keys that are valid chord names.
+        let input_am = "[Am]\nG  D  Em\nHello world again now\n";
+        assert_eq!(detect_format(input_am), InputFormat::PlainChordLyrics);
+    }
+
+    #[test]
+    fn detects_inline_chord_in_line_still_chordpro() {
+        // `[C]` embedded mid-line (not the whole line) is inline chord notation.
+        assert_eq!(detect_format("[C]Hello world"), InputFormat::ChordPro);
+        assert_eq!(detect_format("Hello [Am]world"), InputFormat::ChordPro);
     }
 
     #[test]
