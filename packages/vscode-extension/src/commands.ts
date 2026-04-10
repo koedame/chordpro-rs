@@ -53,12 +53,16 @@ export function registerOpenPreviewToSide(
 
 /**
  * Increments the transpose offset of the active document's preview panel by
- * +1 semitone. No-op if no preview panel is open for the active document.
+ * +1 semitone. No-op if no ChordPro preview panel is open for the active
+ * document. The `when` clause in `package.json` hides this command from the
+ * command palette when a non-ChordPro file is focused, but programmatic
+ * invocation (e.g. keyboard shortcuts without a `when` guard) can still reach
+ * the handler — the `languageId` check here provides the same defence.
  */
 export function registerTransposeUp(): vscode.Disposable {
   return vscode.commands.registerCommand('chordsketch.transposeUp', () => {
     const editor = vscode.window.activeTextEditor;
-    if (editor) {
+    if (editor && editor.document.languageId === 'chordpro') {
       notifyTranspose(editor.document.uri.toString(), 1);
     }
   });
@@ -66,12 +70,14 @@ export function registerTransposeUp(): vscode.Disposable {
 
 /**
  * Decrements the transpose offset of the active document's preview panel by
- * −1 semitone. No-op if no preview panel is open for the active document.
+ * −1 semitone. No-op if no ChordPro preview panel is open for the active
+ * document. The `languageId` guard mirrors `registerTransposeUp` to prevent
+ * an unexpected transpose action when a non-ChordPro editor is focused.
  */
 export function registerTransposeDown(): vscode.Disposable {
   return vscode.commands.registerCommand('chordsketch.transposeDown', () => {
     const editor = vscode.window.activeTextEditor;
-    if (editor) {
+    if (editor && editor.document.languageId === 'chordpro') {
       notifyTranspose(editor.document.uri.toString(), -1);
     }
   });
