@@ -869,6 +869,23 @@ mod tests {
     }
 
     #[test]
+    fn detects_multi_bracket_line_as_chordpro() {
+        // `[Am][G]` on a single line has inner content `Am][G` which contains `[`,
+        // so the whole-line guard does NOT trigger. The scan finds `[Am]` → ChordPro.
+        assert_eq!(detect_format("[Am][G]"), InputFormat::ChordPro);
+        // Three brackets also triggers correctly.
+        assert_eq!(detect_format("[C][G][Am]"), InputFormat::ChordPro);
+    }
+
+    #[test]
+    fn detects_mixed_section_label_and_inline_chord_as_chordpro() {
+        // A whole-line section label `[Verse]` does NOT trigger ChordPro detection
+        // on its own, but a mid-line inline chord on another line does.
+        let input = "[Verse]\nHello [Am]world\n";
+        assert_eq!(detect_format(input), InputFormat::ChordPro);
+    }
+
+    #[test]
     fn detects_unknown_for_pure_lyrics() {
         let input = "Hello beautiful world\nOnce upon a time\nSomething happened here";
         assert_eq!(detect_format(input), InputFormat::Unknown);
