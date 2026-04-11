@@ -257,6 +257,219 @@ class VerifyChannelTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIn("group:artifact", result.detail)
 
+    # ----------------------------------------------------------------
+    # Per-kind mocked tests for the 6 checkers that previously had no
+    # unit coverage. Regression guard for silent URL-construction or
+    # response-parsing breaks. See #1516.
+    # ----------------------------------------------------------------
+
+    def test_docker_hub_match_no_double_v_prefix(self) -> None:
+        """Regression test for #1512: Docker Hub returns `name: v0.2.0` (with
+        the `v` already), so `observed` must not add another `v`."""
+        channel = _fake_channel(kind="docker-hub", package="koedame/chordsketch")
+        with patch(
+            "check_release_channels._http_get_json",
+            return_value={"name": "v0.2.0"},
+        ) as mock_http:
+            result = check_release_channels.verify_channel(channel, "v0.2.0", force_stale=False)
+        self.assertTrue(result.ok, f"expected OK, got {result}")
+        self.assertEqual(result.observed, "v0.2.0")  # NOT "vv0.2.0"
+        self.assertEqual(
+            mock_http.call_args.args[0],
+            "https://hub.docker.com/v2/repositories/koedame/chordsketch/tags/v0.2.0/",
+        )
+
+    def test_docker_hub_mismatch(self) -> None:
+        channel = _fake_channel(kind="docker-hub", package="koedame/chordsketch")
+        with patch(
+            "check_release_channels._http_get_json",
+            return_value={"name": "v0.1.9"},
+        ):
+            result = check_release_channels.verify_channel(channel, "v0.2.0", force_stale=False)
+        self.assertFalse(result.ok)
+        self.assertIn("tag mismatch", result.detail)
+
+    def test_vscode_marketplace_match(self) -> None:
+        channel = _fake_channel(
+            kind="vscode-marketplace", package="koedame.chordsketch"
+        )
+        fake_payload = {
+            "results": [
+                {
+                    "extensions": [
+                        {
+                            "versions": [
+                                {"version": "0.2.0"},
+                                {"version": "0.1.0"},
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+
+        # The Marketplace checker uses urlopen directly (POST), not
+        # _http_get_json, so patch the module-level symbol.
+        class _FakeResponse:
+            def __init__(self, body):
+                self._body = body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                import json as _json
+
+                return _json.dumps(self._body).encode("utf-8")
+
+        with patch(
+            "check_release_channels.urllib.request.urlopen",
+            return_value=_FakeResponse(fake_payload),
+        ):
+            result = check_release_channels.verify_channel(
+                channel, "v0.2.0", force_stale=False
+            )
+        self.assertTrue(result.ok, f"expected OK, got {result}")
+        self.assertEqual(result.observed, "0.2.0")
+
+    def test_vscode_marketplace_no_results(self) -> None:
+        channel = _fake_channel(
+            kind="vscode-marketplace", package="koedame.chordsketch"
+        )
+
+        class _FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"results": []}'
+
+        with patch(
+            "check_release_channels.urllib.request.urlopen",
+            return_value=_FakeResponse(),
+        ):
+            result = check_release_channels.verify_channel(
+                channel, "v0.2.0", force_stale=False
+            )
+        self.assertFalse(result.ok)
+        self.assertIn("no results", result.detail)
+
+    def test_homebrew_tap_match(self) -> None:
+        channel = _fake_channel(kind="homebrew-tap", package="chordsketch")
+        formula = """class Chordsketch < Formula
+  desc "ChordPro tool"
+  homepage "https://example.com"
+  version "0.2.0"
+  sha256 "abc"
+end
+"""
+        with patch(
+            "check_release_channels._http_get_text",
+            return_value=formula,
+        ) as mock_http:
+            result = check_release_channels.verify_channel(
+                channel, "v0.2.0", force_stale=False
+            )
+        self.assertTrue(result.ok, f"expected OK, got {result}")
+        self.assertEqual(result.observed, "0.2.0")
+        self.assertEqual(
+            mock_http.call_args.args[0],
+            "https://raw.githubusercontent.com/koedame/homebrew-tap/main/Formula/chordsketch.rb",
+        )
+
+    def test_homebrew_tap_no_version_line(self) -> None:
+        channel = _fake_channel(kind="homebrew-tap", package="chordsketch")
+        with patch(
+            "check_release_channels._http_get_text",
+            return_value="class Chordsketch < Formula\nend\n",
+        ):
+            result = check_release_channels.verify_channel(
+                channel, "v0.2.0", force_stale=False
+            )
+        self.assertFalse(result.ok)
+        self.assertIn("no version line", result.detail)
+
+    def test_scoop_bucket_match(self) -> None:
+        channel = _fake_channel(kind="scoop-bucket", package="chordsketch")
+        manifest = '{"version": "0.2.0", "architecture": {}}'
+        with patch(
+            "check_release_channels._http_get_text",
+            return_value=manifest,
+        ) as mock_http:
+            result = check_release_channels.verify_channel(
+                channel, "v0.2.0", force_stale=False
+            )
+        self.assertTrue(result.ok, f"expected OK, got {result}")
+        self.assertEqual(result.observed, "0.2.0")
+        self.assertEqual(
+            mock_http.call_args.args[0],
+            "https://raw.githubusercontent.com/koedame/scoop-bucket/main/bucket/chordsketch.json",
+        )
+
+    def test_rubygems_match(self) -> None:
+        channel = _fake_channel(kind="rubygems", package="chordsketch")
+        with patch(
+            "check_release_channels._http_get_json",
+            return_value={"version": "0.2.0"},
+        ) as mock_http:
+            result = check_release_channels.verify_channel(
+                channel, "v0.2.0", force_stale=False
+            )
+        self.assertTrue(result.ok, f"expected OK, got {result}")
+        self.assertEqual(result.observed, "0.2.0")
+        self.assertEqual(
+            mock_http.call_args.args[0],
+            "https://rubygems.org/api/v1/versions/chordsketch/latest.json",
+        )
+
+    def test_maven_central_match(self) -> None:
+        channel = _fake_channel(
+            kind="maven-central", package="io.github.koedame:chordsketch"
+        )
+        with patch(
+            "check_release_channels._http_get_json",
+            return_value={
+                "response": {
+                    "docs": [
+                        {"latestVersion": "0.2.0"},
+                    ]
+                }
+            },
+        ) as mock_http:
+            result = check_release_channels.verify_channel(
+                channel, "v0.2.0", force_stale=False
+            )
+        self.assertTrue(result.ok, f"expected OK, got {result}")
+        self.assertEqual(result.observed, "0.2.0")
+        called_url = mock_http.call_args.args[0]
+        # The solrsearch query must URL-encode the AND+group+artifact
+        # expression correctly so ":" and spaces round-trip through
+        # maven's search index.
+        self.assertIn(
+            "q=g%3Aio.github.koedame%20AND%20a%3Achordsketch",
+            called_url,
+        )
+
+    def test_maven_central_not_found(self) -> None:
+        channel = _fake_channel(
+            kind="maven-central", package="io.github.koedame:chordsketch"
+        )
+        with patch(
+            "check_release_channels._http_get_json",
+            return_value={"response": {"docs": []}},
+        ):
+            result = check_release_channels.verify_channel(
+                channel, "v0.2.0", force_stale=False
+            )
+        self.assertFalse(result.ok)
+        self.assertIn("not found on Maven Central", result.detail)
+
 
 if __name__ == "__main__":
     unittest.main()

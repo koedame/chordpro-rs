@@ -210,6 +210,49 @@ class CheckRunTests(unittest.TestCase):
             rc = check_version_consistency.run(root, allowlist_path)
             self.assertEqual(rc, 1)
 
+    def test_wrong_current_value_is_not_reported_as_stale(self) -> None:
+        """Regression test for #1513.
+
+        When an allowlist entry has a wrong `current_value` but the source
+        is still drifting, the entry is load-bearing (just inaccurate) —
+        it must be reported as a drift but NOT also as a stale entry. The
+        misleading "no matching source found — the drift has been
+        resolved" message would have told maintainers to remove the
+        entry (wrong action) when they should update `current_value`
+        (right action).
+        """
+        from io import StringIO
+        from contextlib import redirect_stdout
+
+        with TemporaryDirectory() as td:
+            root = Path(td)
+            _build_repo(root, npm_version="0.1.5")
+            allowlist_path = root / "version-skew-allowlist.toml"
+            _write_allowlist(
+                allowlist_path,
+                [
+                    {
+                        "file": "packages/npm/package.json",
+                        "field": "version",
+                        "current_value": "0.1.4",  # wrong — source is 0.1.5
+                        "reason": "test fixture",
+                        "expires_at": "never",
+                        "tracking_issue": "9999",
+                    }
+                ],
+            )
+            buf = StringIO()
+            with redirect_stdout(buf):
+                rc = check_version_consistency.run(root, allowlist_path)
+            output = buf.getvalue()
+            self.assertEqual(rc, 1)
+            # The drift message must fire.
+            self.assertIn("says current_value='0.1.4' but actual value is '0.1.5'", output)
+            # The stale-entry message must NOT fire — the entry is still
+            # load-bearing.
+            self.assertNotIn("stale allowlist entry", output)
+            self.assertNotIn("drift has been resolved", output)
+
     def test_stale_allowlist_entry_fails(self) -> None:
         with TemporaryDirectory() as td:
             root = Path(td)

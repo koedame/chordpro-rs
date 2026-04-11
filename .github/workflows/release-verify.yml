@@ -35,13 +35,20 @@ on:
         type: string
         default: ""
 
+# Workflow-level permissions default to `contents: read`; only the `summary`
+# job below escalates to `contents: write` for `gh release edit`. Per #1514
+# (defense-in-depth): restricting write access to the one job that actually
+# needs it limits the blast radius of any compromised step in `collect-channels`
+# or `verify`, both of which only need read access to the checked-out tree.
 permissions:
-  contents: write   # needed to append `## Channel Verification` to the release body
+  contents: read
 
 jobs:
   collect-channels:
     name: Load channel manifest
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       channels: ${{ steps.read.outputs.channels }}
       tag: ${{ steps.tag.outputs.tag }}
@@ -91,6 +98,8 @@ jobs:
     name: Verify ${{ matrix.channel }}
     needs: collect-channels
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       # Intentionally not fail-fast: we want every channel to report its
       # status even when one of them is already red, so the summary job has

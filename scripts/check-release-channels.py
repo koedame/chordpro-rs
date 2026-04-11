@@ -89,8 +89,12 @@ def _http_head_ok(url: str) -> bool:
     try:
         with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:  # noqa: S310
             return resp.status in (200, 206)
-    except urllib.error.HTTPError as exc:
-        return exc.code in (200, 206)
+    except urllib.error.HTTPError:
+        # urllib raises HTTPError only for 4xx/5xx responses; 2xx responses
+        # go through the `with` block above. Any HTTPError we see here is
+        # therefore a non-success status and should report the URL as
+        # unreachable. See #1515.
+        return False
     except urllib.error.URLError:
         return False
 
@@ -147,8 +151,11 @@ def _check_docker_hub(channel: Channel, version: str) -> CheckResult:
         payload = _http_get_json(url)
     except Exception as exc:  # noqa: BLE001
         return _error(channel, version, f"Docker Hub API error: {exc}")
+    # Docker Hub's tag API returns `"name": "v0.2.0"` — the value already
+    # carries the `v` prefix, so `observed` must use it as-is. A previous
+    # f"v{name}" produced `vv0.2.0` in the display table. See #1512.
     name = str(payload.get("name") or "<missing>")
-    observed = f"v{name}" if name != "<missing>" else name
+    observed = name
     if name == f"v{version}":
         return CheckResult(
             channel_id=channel.id,

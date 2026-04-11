@@ -314,15 +314,31 @@ def check(
       - an allowlist entry matches its (file, field) AND the entry's
         `current_value` matches the source's `value`.
 
-    An allowlist entry is stale if no source has its (file, field) key. A
-    stale entry must be removed — maintainers forgetting to remove entries
-    is exactly what the tracking_issue discipline exists to prevent, but
-    this catches the residual case where the entry is no longer load-bearing.
+    An allowlist entry is "load-bearing" if the source it covers is
+    currently drifting (whether or not `current_value` is up to date —
+    a wrong `current_value` is still a drift, and the entry still has a
+    role to play). "Stale" means not load-bearing:
+
+      - the (file, field) no longer exists in the repo (file renamed
+        or removed), OR
+      - the source exists but no longer drifts (the underlying problem
+        was resolved without also retiring the entry).
+
+    Crucially, the case where an entry exists AND the source still drifts
+    but `current_value` is wrong is NOT stale — the entry is load-bearing,
+    just needs updating. That case is surfaced as a drift with a message
+    that tells the maintainer exactly what to do, and must not also fire
+    the stale-entry message (which would tell them to remove the entry
+    instead — the wrong action). See #1513.
     """
     drifts: list[Drift] = []
 
     by_key: dict[tuple[str, str], AllowlistEntry] = {_key(e): e for e in allowlist}
-    matched_keys: set[tuple[str, str]] = set()
+
+    # Keys whose source is currently drifting. An allowlist entry is
+    # load-bearing iff its key is in this set — a clean, non-drifting
+    # source makes any entry pointing at it stale.
+    load_bearing_keys: set[tuple[str, str]] = set()
 
     for source in sources:
         expected = _expected_for(source, canonical)
@@ -350,6 +366,11 @@ def check(
             )
             continue
 
+        # An entry exists for a drifting source — it IS load-bearing, even
+        # if `current_value` is stale. Whether the entry is accurate is a
+        # separate check below.
+        load_bearing_keys.add(key)
+
         if entry.current_value != source.value:
             drifts.append(
                 Drift(
@@ -365,9 +386,7 @@ def check(
             )
             continue
 
-        matched_keys.add(key)
-
-    stale_entries = [entry for entry in allowlist if _key(entry) not in matched_keys]
+    stale_entries = [entry for entry in allowlist if _key(entry) not in load_bearing_keys]
     return drifts, stale_entries
 
 
