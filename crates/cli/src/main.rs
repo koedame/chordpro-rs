@@ -477,11 +477,11 @@ fn run_convert(
     to: Option<ConvertTo>,
     output_path: Option<&str>,
 ) -> ExitCode {
+    use chordsketch_convert_musicxml::{from_musicxml, to_musicxml};
     use chordsketch_core::{
         InputFormat, convert_abc, convert_plain_text, detect_format, parse_lenient,
         song_to_chordpro,
     };
-    use chordsketch_convert_musicxml::{from_musicxml, to_musicxml};
 
     // --- Export path: ChordPro → MusicXML -----------------------------------
     if let Some(ConvertTo::Musicxml) = to {
@@ -593,7 +593,11 @@ fn run_convert(
                 match from_musicxml(&input) {
                     Ok(song) => combined.push_str(&song_to_chordpro(&song)),
                     Err(e) => {
-                        let label = if file == "-" { "<stdin>" } else { file.as_str() };
+                        let label = if file == "-" {
+                            "<stdin>"
+                        } else {
+                            file.as_str()
+                        };
                         eprintln!("error: {label}: {e}");
                         had_error = true;
                     }
