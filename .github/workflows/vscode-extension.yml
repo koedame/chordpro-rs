@@ -97,14 +97,18 @@ jobs:
     name: Publish to VS Code Marketplace
     needs: [build]
     runs-on: ubuntu-latest
-    # Publish only on version tag pushes or when workflow_dispatch supplies a tag.
+    # Publish only on GitHub Release (published) events or when workflow_dispatch supplies a tag.
     #
     # Prerequisites (one-time human setup before this job can succeed):
     #   1. Register publisher "koedame" at https://marketplace.visualstudio.com/manage
     #   2. Generate a Personal Access Token (PAT) with "Marketplace (Publish)" scope
     #      at https://dev.azure.com/koedame/_usersSettings/tokens
-    #   3. Add the PAT as repository secret VSCE_PAT in
-    #      https://github.com/koedame/chordsketch/settings/secrets/actions
+    #   3. Add the PAT as repository secret VSCE_PAT in the vscode-marketplace environment:
+    #      https://github.com/koedame/chordsketch/settings/environments
+    #   4. Create the "vscode-marketplace" environment in repo settings (step 3 above)
+    environment:
+      name: vscode-marketplace
+      url: https://marketplace.visualstudio.com/items?itemName=koedame.chordsketch
     if: >-
       github.event_name == 'release' ||
       (github.event_name == 'workflow_dispatch' && inputs.tag != '')
