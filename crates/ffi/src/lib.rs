@@ -82,7 +82,7 @@ fn flush_warnings<T>(result: RenderResult<T>) -> T {
 /// diagnostics, call [`validate()`] before or after rendering.
 ///
 /// Render warnings (e.g. transpose saturation, chorus recall limits) are
-/// forwarded to stderr via [`flush_warnings`].
+/// forwarded to stderr via `flush_warnings`.
 pub fn parse_and_render_text(
     input: String,
     config_json: Option<String>,
@@ -106,7 +106,7 @@ pub fn parse_and_render_text(
 /// diagnostics, call [`validate()`] before or after rendering.
 ///
 /// Render warnings (e.g. transpose saturation, chorus recall limits) are
-/// forwarded to stderr via [`flush_warnings`].
+/// forwarded to stderr via `flush_warnings`.
 pub fn parse_and_render_html(
     input: String,
     config_json: Option<String>,
@@ -130,7 +130,7 @@ pub fn parse_and_render_html(
 /// diagnostics, call [`validate()`] before or after rendering.
 ///
 /// Render warnings (e.g. transpose saturation, chorus recall limits) are
-/// forwarded to stderr via [`flush_warnings`].
+/// forwarded to stderr via `flush_warnings`.
 pub fn parse_and_render_pdf(
     input: String,
     config_json: Option<String>,
