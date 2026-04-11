@@ -3,6 +3,11 @@ name: VS Code Extension
 on:
   push:
     branches: [main]
+    # Tag pushes trigger the publish job below.
+    # Note: GitHub evaluates the paths filter for both branches and tags.
+    # If a tag push does not touch these paths, use workflow_dispatch with
+    # the `tag` input to trigger publishing manually.
+    tags: ["v*"]
     paths:
       - "packages/vscode-extension/**"
       - "syntaxes/**"
@@ -13,6 +18,12 @@ on:
       - "syntaxes/**"
       - ".github/workflows/vscode-extension.yml"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (e.g. v0.1.0). Leave blank to run CI on HEAD without publishing."
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -23,6 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -80,3 +93,46 @@ jobs:
           name: chordsketch-vsix
           path: packages/vscode-extension/*.vsix
           if-no-files-found: error
+
+  publish:
+    name: Publish to VS Code Marketplace
+    needs: [build]
+    runs-on: ubuntu-latest
+    # Publish only on version tag pushes or when workflow_dispatch supplies a tag.
+    #
+    # Prerequisites (one-time human setup before this job can succeed):
+    #   1. Register publisher "koedame" at https://marketplace.visualstudio.com/manage
+    #   2. Generate a Personal Access Token (PAT) with "Marketplace (Publish)" scope
+    #      at https://dev.azure.com/koedame/_usersSettings/tokens
+    #   3. Add the PAT as repository secret VSCE_PAT in
+    #      https://github.com/koedame/chordsketch/settings/secrets/actions
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && inputs.tag != '')
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: packages/vscode-extension/package-lock.json
+
+      - name: Install dependencies (for vsce)
+        run: npm ci
+        working-directory: packages/vscode-extension
+
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: chordsketch-vsix
+          path: packages/vscode-extension/
+
+      - name: Publish to Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: ./node_modules/.bin/vsce publish --packagePath *.vsix --pat "$VSCE_PAT"
+        working-directory: packages/vscode-extension
