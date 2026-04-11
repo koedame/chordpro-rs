@@ -255,28 +255,26 @@ fn write_measure(measure: &Measure, number: usize, out: &mut String) {
     for (chord_name, lyric_text) in &measure.notes {
         // Harmony element
         if let Some(chord) = chord_name {
-            if let Some((root_step, root_alter, kind_content, kind_text, bass)) =
-                chord_to_musicxml(chord)
-            {
+            if let Some(c) = chord_to_musicxml(chord) {
                 out.push_str("      <harmony>\n");
                 out.push_str("        <root>\n");
                 out.push_str(&format!(
                     "          <root-step>{}</root-step>\n",
-                    xml_escape(root_step)
+                    xml_escape(c.root_step)
                 ));
-                if root_alter != 0 {
+                if c.root_alter != 0 {
                     out.push_str(&format!(
                         "          <root-alter>{}</root-alter>\n",
-                        root_alter
+                        c.root_alter
                     ));
                 }
                 out.push_str("        </root>\n");
                 out.push_str(&format!(
                     "        <kind text=\"{}\">{}</kind>\n",
-                    xml_escape(kind_text),
-                    xml_escape(kind_content)
+                    xml_escape(&c.kind_text),
+                    xml_escape(c.kind_content)
                 ));
-                if let Some((bass_step, bass_alter)) = bass {
+                if let Some((bass_step, bass_alter)) = c.bass {
                     out.push_str("        <bass>\n");
                     out.push_str(&format!(
                         "          <bass-step>{}</bass-step>\n",
@@ -320,43 +318,41 @@ fn write_measure(measure: &Measure, number: usize, out: &mut String) {
 // Chord encoding
 // ---------------------------------------------------------------------------
 
-/// Convert a ChordPro chord name to MusicXML components.
+/// Parsed components of a chord for MusicXML output.
+struct ChordXml {
+    root_step: &'static str,
+    root_alter: i32,
+    kind_content: &'static str,
+    /// The `text` attribute for `<kind>` — the ChordPro chord suffix.
+    kind_text: String,
+    bass: Option<(&'static str, i32)>,
+}
+
+/// Convert a ChordPro chord name into [`ChordXml`] components.
 ///
-/// Returns `(root_step, root_alter, kind_content, kind_text, bass)` or `None`
-/// if the chord cannot be parsed.
-///
-/// - `root_step`: note letter ("C", "D", ..., "B")
-/// - `root_alter`: semitone offset (1 = sharp, -1 = flat, 0 = natural)
-/// - `kind_content`: MusicXML kind element text content ("major", "minor", ...)
-/// - `kind_text`: the `text` attribute for the kind element (ChordPro suffix)
-/// - `bass`: optional `(bass_step, bass_alter)` for slash chords
-#[allow(clippy::type_complexity)]
-fn chord_to_musicxml(
-    chord_name: &str,
-) -> Option<(
-    &'static str,
-    i32,
-    &'static str,
-    &'static str,
-    Option<(&'static str, i32)>,
-)> {
+/// Returns `None` if the chord string cannot be parsed.
+fn chord_to_musicxml(chord_name: &str) -> Option<ChordXml> {
     let detail = parse_chord(chord_name)?;
 
-    let root_step: &'static str = note_to_step(detail.root);
+    let root_step = note_to_step(detail.root);
     let root_alter = acciental_to_alter(detail.root_accidental);
 
     let ext = detail.extension.as_deref().unwrap_or("");
     let (kind_content, kind_text) = quality_ext_to_kind(detail.quality, ext);
 
     let bass = if let Some((bass_note, bass_acc)) = detail.bass_note {
-        let bs: &'static str = note_to_step(bass_note);
-        let ba = acciental_to_alter(bass_acc);
-        Some((bs, ba))
+        Some((note_to_step(bass_note), acciental_to_alter(bass_acc)))
     } else {
         None
     };
 
-    Some((root_step, root_alter, kind_content, kind_text, bass))
+    Some(ChordXml {
+        root_step,
+        root_alter,
+        kind_content,
+        kind_text,
+        bass,
+    })
 }
 
 fn note_to_step(note: chordsketch_core::chord::Note) -> &'static str {
@@ -382,47 +378,46 @@ fn acciental_to_alter(acc: Option<chordsketch_core::chord::Accidental>) -> i32 {
 }
 
 /// Map (quality, extension) → (kind_content, kind_text_attr).
+///
+/// Returns the MusicXML `<kind>` element content and the `text` attribute value.
+/// The `text` attribute is returned as an owned `String` to avoid memory leaks
+/// for uncommon extensions that are not in the static lookup table.
 fn quality_ext_to_kind(
     quality: chordsketch_core::chord::ChordQuality,
     ext: &str,
-) -> (&'static str, &'static str) {
+) -> (&'static str, String) {
     use chordsketch_core::chord::ChordQuality;
 
     match (quality, ext) {
-        (ChordQuality::Major, "") => ("major", ""),
-        (ChordQuality::Minor, "") => ("minor", "m"),
-        (ChordQuality::Major, "7") => ("dominant", "7"),
-        (ChordQuality::Major, "maj7") | (ChordQuality::Major, "M7") => ("major-seventh", "maj7"),
-        (ChordQuality::Minor, "7") => ("minor-seventh", "m7"),
-        (ChordQuality::Diminished, "") => ("diminished", "dim"),
-        (ChordQuality::Diminished, "7") => ("diminished-seventh", "dim7"),
-        (ChordQuality::Augmented, "") => ("augmented", "aug"),
-        (ChordQuality::Major, "m7b5") | (ChordQuality::Minor, "7b5") => ("half-diminished", "m7b5"),
-        (ChordQuality::Major, "6") => ("major-sixth", "6"),
-        (ChordQuality::Minor, "6") => ("minor-sixth", "m6"),
-        (ChordQuality::Major, "9") => ("dominant-ninth", "9"),
-        (ChordQuality::Major, "maj9") => ("major-ninth", "maj9"),
-        (ChordQuality::Minor, "9") => ("minor-ninth", "m9"),
-        (ChordQuality::Major, "sus4") => ("suspended-fourth", "sus4"),
-        (ChordQuality::Major, "sus2") => ("suspended-second", "sus2"),
-        (ChordQuality::Major, "11") => ("dominant-11th", "11"),
-        (ChordQuality::Major, "13") => ("dominant-13th", "13"),
-        (ChordQuality::Major, "5") => ("power", "5"),
-        // Fall back to "other" with the raw extension as display text
-        (ChordQuality::Major, e) => ("other", e_to_static(e)),
-        (ChordQuality::Minor, e) => ("other", e_to_static(e)),
-        (ChordQuality::Diminished, _) => ("diminished", "dim"),
-        (ChordQuality::Augmented, _) => ("augmented", "aug"),
+        (ChordQuality::Major, "") => ("major", String::new()),
+        (ChordQuality::Minor, "") => ("minor", "m".to_string()),
+        (ChordQuality::Major, "7") => ("dominant", "7".to_string()),
+        (ChordQuality::Major, "maj7") | (ChordQuality::Major, "M7") => {
+            ("major-seventh", "maj7".to_string())
+        }
+        (ChordQuality::Minor, "7") => ("minor-seventh", "m7".to_string()),
+        (ChordQuality::Diminished, "") => ("diminished", "dim".to_string()),
+        (ChordQuality::Diminished, "7") => ("diminished-seventh", "dim7".to_string()),
+        (ChordQuality::Augmented, "") => ("augmented", "aug".to_string()),
+        (ChordQuality::Major, "m7b5") | (ChordQuality::Minor, "7b5") => {
+            ("half-diminished", "m7b5".to_string())
+        }
+        (ChordQuality::Major, "6") => ("major-sixth", "6".to_string()),
+        (ChordQuality::Minor, "6") => ("minor-sixth", "m6".to_string()),
+        (ChordQuality::Major, "9") => ("dominant-ninth", "9".to_string()),
+        (ChordQuality::Major, "maj9") => ("major-ninth", "maj9".to_string()),
+        (ChordQuality::Minor, "9") => ("minor-ninth", "m9".to_string()),
+        (ChordQuality::Major, "sus4") => ("suspended-fourth", "sus4".to_string()),
+        (ChordQuality::Major, "sus2") => ("suspended-second", "sus2".to_string()),
+        (ChordQuality::Major, "11") => ("dominant-11th", "11".to_string()),
+        (ChordQuality::Major, "13") => ("dominant-13th", "13".to_string()),
+        (ChordQuality::Major, "5") => ("power", "5".to_string()),
+        // Fall back to "other" with the raw extension as display text.
+        // Owned String avoids any memory leak — no Box::leak needed.
+        (ChordQuality::Major, e) | (ChordQuality::Minor, e) => ("other", e.to_string()),
+        (ChordQuality::Diminished, _) => ("diminished", "dim".to_string()),
+        (ChordQuality::Augmented, _) => ("augmented", "aug".to_string()),
     }
-}
-
-/// Leak a string slice into a `&'static str`.
-///
-/// This is only called for chord extensions that are not covered by the
-/// static table above. The leaked string is small and the number of distinct
-/// extensions per song is bounded.
-fn e_to_static(s: &str) -> &'static str {
-    Box::leak(s.to_string().into_boxed_str())
 }
 
 // ---------------------------------------------------------------------------
@@ -431,8 +426,12 @@ fn e_to_static(s: &str) -> &'static str {
 
 /// Convert a ChordPro key string to a (fifths, mode) pair.
 fn key_to_fifths(key: &str) -> (i32, &'static str) {
-    let is_minor = key.ends_with('m') && key.len() > 1;
-    let root = if is_minor { &key[..key.len() - 1] } else { key };
+    // Use strip_suffix to avoid byte-indexing into potentially multi-byte strings.
+    let root = key
+        .strip_suffix('m')
+        .filter(|r| !r.is_empty())
+        .unwrap_or(key);
+    let is_minor = root.len() < key.len();
 
     let fifths = match root {
         "Cb" | "C♭" => -7,

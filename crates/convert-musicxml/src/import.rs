@@ -125,9 +125,14 @@ fn convert_score(score: &Element) -> Result<Song, ImportError> {
             }
             if !capo_emitted {
                 if let Some(capo_text) = attrs.text_at(&["capo"]) {
-                    if !capo_text.is_empty() && capo_text != "0" {
-                        emit_directive(&mut song.lines, "capo", Some(capo_text));
-                        capo_emitted = true;
+                    // Validate: capo must be a non-negative integer in [1, 24].
+                    // Values outside this range are silently ignored — a capo
+                    // of 0 means "no capo" and > 24 is beyond any real guitar fret.
+                    if let Ok(capo_val) = capo_text.trim().parse::<u8>() {
+                        if (1..=24).contains(&capo_val) {
+                            emit_directive(&mut song.lines, "capo", Some(capo_text.trim()));
+                            capo_emitted = true;
+                        }
                     }
                 }
             }
@@ -145,13 +150,15 @@ fn convert_score(score: &Element) -> Result<Song, ImportError> {
 
         // --- directions (tempo, rehearsal marks) ----------------------------
         for direction in measure.children_named("direction") {
-            // Tempo
+            // Tempo — validate that the value is a positive finite number before storing.
             if !tempo_emitted {
                 if let Some(sound) = direction.child("sound") {
                     if let Some(tempo) = sound.attr("tempo") {
-                        if !tempo.is_empty() {
-                            song.metadata.tempo = Some(tempo.to_string());
-                            tempo_emitted = true;
+                        if let Ok(bpm) = tempo.trim().parse::<f64>() {
+                            if bpm > 0.0 && bpm.is_finite() {
+                                song.metadata.tempo = Some(tempo.trim().to_string());
+                                tempo_emitted = true;
+                            }
                         }
                     }
                 }
@@ -187,13 +194,15 @@ fn convert_score(score: &Element) -> Result<Song, ImportError> {
                 }
             }
 
-            // Bare <sound tempo="..."> inside <direction>
+            // Bare <sound tempo="..."> inside <direction> (second position)
             if let Some(sound) = direction.child("sound") {
                 if !tempo_emitted {
                     if let Some(tempo) = sound.attr("tempo") {
-                        if !tempo.is_empty() {
-                            song.metadata.tempo = Some(tempo.to_string());
-                            tempo_emitted = true;
+                        if let Ok(bpm) = tempo.trim().parse::<f64>() {
+                            if bpm > 0.0 && bpm.is_finite() {
+                                song.metadata.tempo = Some(tempo.trim().to_string());
+                                tempo_emitted = true;
+                            }
                         }
                     }
                 }
