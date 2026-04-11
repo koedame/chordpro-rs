@@ -29,6 +29,11 @@ packages/npm/node/
 node_modules/
 packages/playground/dist/
 
+# napi-rs prebuilt binaries and lock files (local build/publish artifacts)
+crates/napi/**/*.node
+crates/napi/package-lock.json
+crates/napi/npm/*/package-lock.json
+
 # Tools
 .serena/
 
