@@ -116,6 +116,23 @@ jobs:
           Add-MpPreference -ExclusionPath "$env:USERPROFILE\.cargo"
           Add-MpPreference -ExclusionPath "$env:USERPROFILE\.rustup"
 
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      # Cache the workspace target/ directory between runs. Unlike sccache (which
+      # caches individual compilation-unit outputs and is still invoked via
+      # RUSTC_WRAPPER), Swatinem/rust-cache allows cargo to skip the rustc
+      # invocation entirely for unchanged crates on a warm cache hit.
+      #
+      # Investigation (#1464) found that 30 compilation units consistently miss
+      # sccache on every Windows run — including documentation-only commits —
+      # because those units depend on UniFFI build.rs generated code with
+      # environment-specific paths that differ between runner instances.
+      # Those 30 misses account for ~390 of the ~420s build time.
+      # Caching target/ avoids recompiling those 30 units on warm runs.
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: python-x86_64-pc-windows-msvc
+
       - uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1
         with:
           command: build
