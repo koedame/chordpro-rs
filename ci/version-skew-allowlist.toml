@@ -50,6 +50,25 @@ expires_at = "first successful Marketplace publish"
 tracking_issue = "1508"
 
 # ----------------------------------------------------------------
+# readme-smoke.yml hardcoded npm pin
+# ----------------------------------------------------------------
+
+[[allowed_skews]]
+file = ".github/workflows/readme-smoke.yml"
+field = "npm install @chordsketch/wasm pin"
+current_value = "0.1.1"
+reason = """
+The smoke-test job installs @chordsketch/wasm@0.1.1 by literal pin. The npm
+package version was bumped to 0.2.0 in packages/npm/package.json in the
+same PR (#1518), but the pin in readme-smoke.yml can only advance once
+0.2.0 is actually published to npm (which happens when the v0.2.0 tag is
+cut and the publish workflow runs). This entry retires in the post-release
+PR that flips the pin to 0.2.0.
+"""
+expires_at = "first @chordsketch/wasm@0.2.0 npm publish"
+tracking_issue = "1509"
+
+# ----------------------------------------------------------------
 # readme-smoke.yml library-smoke caret constraint
 # ----------------------------------------------------------------
 
