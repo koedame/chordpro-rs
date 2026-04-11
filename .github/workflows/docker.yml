@@ -22,6 +22,19 @@ jobs:
   docker:
     name: Build and push Docker image
     runs-on: ubuntu-latest
+    # Scopes DOCKERHUB_TOKEN and DOCKERHUB_USERNAME to this environment,
+    # consistent with python.yml (pypi), ruby.yml (rubygems),
+    # kotlin.yml (maven-central), vscode-extension.yml (vscode-marketplace),
+    # and npm-publish.yml (npm).
+    # GHCR push uses GITHUB_TOKEN (automatic — not environment-scoped).
+    #
+    # One-time human setup: create the "docker-hub" environment at
+    #   https://github.com/koedame/chordsketch/settings/environments
+    # and move DOCKERHUB_USERNAME and DOCKERHUB_TOKEN from repository
+    # secrets to environment secrets.
+    environment:
+      name: docker-hub
+      url: https://hub.docker.com/r/koedame/chordsketch
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
