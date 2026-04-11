@@ -92,6 +92,7 @@ jobs:
           name: chordsketch-vsix
           path: packages/vscode-extension/*.vsix
           if-no-files-found: error
+          retention-days: 7
 
   publish:
     name: Publish to VS Code Marketplace

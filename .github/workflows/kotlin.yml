@@ -97,6 +97,7 @@ jobs:
             target/${{ matrix.target }}/release/libchordsketch_ffi.so
             target/${{ matrix.target }}/release/libchordsketch_ffi.dylib
             target/${{ matrix.target }}/release/chordsketch_ffi.dll
+          retention-days: 7
 
   generate-and-test:
     name: Generate bindings and test
@@ -143,6 +144,7 @@ jobs:
         with:
           name: kotlin-bindings
           path: packages/kotlin/lib/src/main/kotlin/uniffi/
+          retention-days: 7
 
   publish:
     name: Publish to Maven Central

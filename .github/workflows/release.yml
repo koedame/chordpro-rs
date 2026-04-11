@@ -106,6 +106,7 @@ jobs:
         with:
           name: ${{ matrix.target }}
           path: ${{ env.ARCHIVE }}
+          retention-days: 7
 
   release:
     name: Create Release

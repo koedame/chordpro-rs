@@ -141,6 +141,7 @@ jobs:
         with:
           name: napi-${{ matrix.target }}
           path: crates/napi/*.node
+          retention-days: 7
 
   lint:
     name: Lint

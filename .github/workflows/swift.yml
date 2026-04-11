@@ -196,12 +196,14 @@ jobs:
         with:
           name: xcframework
           path: chordsketch-xcframework.zip
+          retention-days: 7
 
       - name: Upload Swift source
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: swift-source
           path: generated/chordsketch.swift
+          retention-days: 7
 
   publish:
     name: Publish XCFramework
