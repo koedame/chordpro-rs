@@ -1,0 +1,227 @@
+name: Release verify
+
+# Post-release channel rollup — queries every distribution registry and turns
+# red if any channel is stale, missing, or its public-visibility contract is
+# broken. Mirrors the "Input-side env guard" pattern (check-env-secrets.py) by
+# closing the loop on the output side: if a publish job was silently skipped
+# due to a missing environment, its channel shows up red here instead of
+# silently succeeding at release time.
+#
+# Runs on:
+#   - release: types: [published] — automatically after a release is cut
+#   - workflow_dispatch — manual re-verify or red-path dry-run
+#
+# The `force_stale_channel` dispatch input satisfies the A.dry-run bullet
+# from issue #1506: forcing any channel to report a synthetic stale version
+# MUST turn the rollup red, proving the rollup actually fails loud when it
+# should.
+#
+# The summary job appends (or replaces in-place) a `## Channel Verification`
+# section to the release body, so a human inspecting the release tag sees
+# the status without having to navigate to Actions.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to verify (e.g., v0.2.0). Defaults to the most recent published release if omitted."
+        required: false
+        type: string
+      force_stale_channel:
+        description: "Force this channel id to report stale (red-path dry-run test). Leave empty for normal verification."
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write   # needed to append `## Channel Verification` to the release body
+
+jobs:
+  collect-channels:
+    name: Load channel manifest
+    runs-on: ubuntu-latest
+    outputs:
+      channels: ${{ steps.read.outputs.channels }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Determine tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "release" ]; then
+            tag="$RELEASE_TAG"
+          elif [ -n "${INPUT_TAG:-}" ]; then
+            tag="$INPUT_TAG"
+          else
+            tag=$(gh release list -R "$GITHUB_REPOSITORY" --limit 1 --json tagName -q '.[0].tagName')
+          fi
+          if [ -z "$tag" ]; then
+            echo "::error::no tag could be determined"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Verifying tag: $tag"
+
+      - name: Extract channel ids from manifest
+        id: read
+        run: |
+          set -euo pipefail
+          python3 -c '
+          import json
+          import sys
+          sys.path.insert(0, "scripts")
+          from _release_channels import load_channels
+          ids = [c.id for c in load_channels()]
+          print(json.dumps(ids))
+          ' > /tmp/channels.json
+          channels=$(cat /tmp/channels.json)
+          echo "channels=$channels" >> "$GITHUB_OUTPUT"
+          echo "Loaded $(jq length /tmp/channels.json) channels"
+
+  verify:
+    name: Verify ${{ matrix.channel }}
+    needs: collect-channels
+    runs-on: ubuntu-latest
+    strategy:
+      # Intentionally not fail-fast: we want every channel to report its
+      # status even when one of them is already red, so the summary job has
+      # the full picture.
+      fail-fast: false
+      matrix:
+        channel: ${{ fromJson(needs.collect-channels.outputs.channels) }}
+    continue-on-error: true   # summary job enforces aggregate red status
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Check channel
+        env:
+          TAG: ${{ needs.collect-channels.outputs.tag }}
+          FORCE_STALE: ${{ inputs.force_stale_channel }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/verify-results
+          out=/tmp/verify-results/${{ matrix.channel }}.txt
+          if python3 scripts/check-release-channels.py \
+              --tag "$TAG" \
+              --channel "${{ matrix.channel }}" \
+              --force-stale "${FORCE_STALE:-}" > "$out" 2>&1; then
+            echo "status=ok" >> "$GITHUB_ENV"
+          else
+            echo "status=fail" >> "$GITHUB_ENV"
+          fi
+          cat "$out"
+
+      - name: Upload result
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verify-${{ matrix.channel }}
+          path: /tmp/verify-results/${{ matrix.channel }}.txt
+          retention-days: 7
+          if-no-files-found: error
+
+  summary:
+    name: Rollup summary
+    needs: [collect-channels, verify]
+    runs-on: ubuntu-latest
+    # Run even if some verify matrix cells failed — that is exactly the case
+    # we need to aggregate and post back to the release body.
+    if: always()
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Download all verify results
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: verify-results
+          pattern: verify-*
+          merge-multiple: true
+
+      - name: Build status table and enforce aggregate red
+        id: build
+        env:
+          TAG: ${{ needs.collect-channels.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          # Build a markdown table from the per-channel result files.
+          # Each file's first line is `OK <id> ...` or `FAIL <id> ...`.
+          {
+            echo "| Channel | Status | Observed | Expected |"
+            echo "|---|---|---|---|"
+            any_fail=0
+            for f in verify-results/*.txt; do
+              [ -f "$f" ] || continue
+              first=$(head -n1 "$f")
+              status=$(echo "$first" | awk '{print $1}')
+              channel=$(echo "$first" | awk '{print $2}')
+              observed=$(echo "$first" | grep -oE 'observed=[^ ]+' | cut -d= -f2- || echo "?")
+              expected=$(echo "$first" | grep -oE 'expected=[^ ]+' | cut -d= -f2- || echo "?")
+              icon="✅"
+              if [ "$status" != "OK" ]; then
+                icon="❌"
+                any_fail=1
+              fi
+              echo "| $channel | $icon $status | \`$observed\` | \`$expected\` |"
+            done
+            echo ""
+            echo "_Tag: \`$TAG\` — verified by [.github/workflows/release-verify.yml](../blob/main/.github/workflows/release-verify.yml)._"
+          } > /tmp/channel-verification.md
+          cat /tmp/channel-verification.md
+          echo "any_fail=$any_fail" >> "$GITHUB_OUTPUT"
+
+      - name: Append to release body (idempotent)
+        if: needs.collect-channels.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.collect-channels.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Skip for workflow_dispatch with no real tag (should never happen
+          # because collect-channels already guarded, but double-check).
+          if ! gh release view "$TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "release $TAG not found — skipping body update"
+            exit 0
+          fi
+
+          # Read the current body, strip any previous verification section
+          # between the start/end markers, then re-append the fresh table.
+          current=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json body -q .body)
+          trimmed=$(printf '%s\n' "$current" | python3 -c '
+          import sys
+          import re
+          text = sys.stdin.read()
+          text = re.sub(
+              r"\n?<!-- chordsketch-verify-start -->.*?<!-- chordsketch-verify-end -->\n?",
+              "",
+              text,
+              flags=re.DOTALL,
+          )
+          sys.stdout.write(text.rstrip() + "\n")
+          ')
+          verification=$(cat /tmp/channel-verification.md)
+          {
+            printf '%s\n\n' "$trimmed"
+            printf '<!-- chordsketch-verify-start -->\n'
+            printf '## Channel Verification\n\n'
+            printf '%s\n' "$verification"
+            printf '<!-- chordsketch-verify-end -->\n'
+          } > /tmp/new-body.md
+
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes-file /tmp/new-body.md
+
+      - name: Fail the job if any channel was red
+        if: steps.build.outputs.any_fail == '1'
+        run: |
+          echo "::error::one or more channels failed verification — see the table above and the release body"
+          exit 1
