@@ -227,7 +227,7 @@ jobs:
             tag="$INPUT_TAG"
           fi
           expected="${tag#v}"
-          actual=$(grep '^version = ' crates/ffi/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          actual=$(grep -m 1 '^version = ' crates/ffi/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
           if [ "$actual" != "$expected" ]; then
             echo "::error::crates/ffi/Cargo.toml version=$actual but release tag is $expected"
             exit 1
