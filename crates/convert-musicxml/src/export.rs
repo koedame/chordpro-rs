@@ -127,20 +127,16 @@ fn build_measures(song: &Song) -> Vec<Measure> {
     for line in &song.lines {
         match line {
             Line::Lyrics(ll) => {
-                // Each lyrics line → one measure
-                if !current.notes.is_empty() || first_measure {
-                    // Flush if there's content already
-                    if !current.notes.is_empty() {
-                        if let Some(label) = section_name.take() {
-                            current.section_label = Some(label);
-                        }
-                        measures.push(current);
-                        current = Measure::default();
-                        first_measure = false;
-                    }
+                // Each lyrics line → one measure. Flush any buffered content.
+                if !current.notes.is_empty() {
+                    measures.push(current);
+                    current = Measure::default();
+                    first_measure = false;
                 }
 
-                // Apply pending section label
+                // Apply pending section label to the NEW current measure so
+                // the rehearsal mark is emitted at the start of the section,
+                // not at the end of the preceding one.
                 if let Some(label) = section_name.take() {
                     current.section_label = Some(label);
                 }
@@ -570,5 +566,63 @@ mod tests {
     fn key_to_fifths_minor() {
         assert_eq!(key_to_fifths("Am"), (3, "minor"));
         assert_eq!(key_to_fifths("Em"), (4, "minor"));
+    }
+
+    /// Regression test: section label must appear on the first measure of the
+    /// section it names, not on the last measure of the preceding section.
+    ///
+    /// Before the fix, `build_measures` consumed `section_name` during the
+    /// flush of the previous measure, so the rehearsal mark was attached to
+    /// the wrong measure.
+    #[test]
+    fn section_label_on_correct_measure() {
+        use chordsketch_core::ast::{Chord, Directive, Line, LyricsLine, LyricsSegment};
+
+        let mut song = Song::new();
+
+        // Verse section with one lyrics line
+        song.lines.push(Line::Directive(Directive::with_value(
+            "start_of_verse",
+            "Verse 1",
+        )));
+        let mut verse_line = LyricsLine::new();
+        verse_line.segments = vec![LyricsSegment::new(Some(Chord::new("C")), "verse ")];
+        song.lines.push(Line::Lyrics(verse_line));
+        song.lines
+            .push(Line::Directive(Directive::name_only("end_of_verse")));
+
+        // Chorus section with one lyrics line
+        song.lines.push(Line::Directive(Directive::with_value(
+            "start_of_chorus",
+            "Chorus",
+        )));
+        let mut chorus_line = LyricsLine::new();
+        chorus_line.segments = vec![LyricsSegment::new(Some(Chord::new("G")), "chorus ")];
+        song.lines.push(Line::Lyrics(chorus_line));
+        song.lines
+            .push(Line::Directive(Directive::name_only("end_of_chorus")));
+
+        let xml = to_musicxml(&song);
+
+        // The "Chorus" rehearsal mark must appear AFTER the verse chord (C),
+        // not before it. Verify the ordering of tokens in the output.
+        let verse_pos = xml
+            .find("<root-step>C</root-step>")
+            .expect("C chord not found");
+        let chorus_mark_pos = xml
+            .find("<rehearsal>Chorus</rehearsal>")
+            .expect("Chorus rehearsal mark not found");
+        let chorus_chord_pos = xml
+            .find("<root-step>G</root-step>")
+            .expect("G chord not found");
+
+        assert!(
+            chorus_mark_pos > verse_pos,
+            "Chorus rehearsal mark should come after the verse chord"
+        );
+        assert!(
+            chorus_mark_pos < chorus_chord_pos,
+            "Chorus rehearsal mark should come before the chorus chord"
+        );
     }
 }
