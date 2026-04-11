@@ -56,7 +56,8 @@ every code snippet that includes a version number.
 | Registry | Badge | Placeholder |
 |----------|-------|-------------|
 | Maven Central | `[![Maven Central](https://img.shields.io/maven-central/v/me.koeda/chordsketch)](https://central.sonatype.com/artifact/me.koeda/chordsketch)` | `VERSION` in all three Gradle/Maven snippets |
-| Swift Package Index | `[![GitHub Release](https://img.shields.io/github/v/release/koedame/chordsketch)](https://github.com/koedame/chordsketch/releases/latest)` | Keep the numeric version in `.from:` but add inline comment `// replace with the latest release tag` and a note above the snippet |
+| Swift Package Index | `[![GitHub Release](https://img.shields.io/github/v/release/koedame/chordsketch)](https://github.com/koedame/chordsketch/releases/latest)` | Keep the numeric version in `.from:` but add inline comment `// replace with the latest release tag` and a version-agnostic note above the snippet (do not quote a specific version number in the prose) |
+| crates.io | `[![crates.io](https://img.shields.io/crates/v/CRATE-NAME)](https://crates.io/crates/CRATE-NAME)` | `VERSION` |
 | npm (if version is shown) | `[![npm](https://img.shields.io/npm/v/@chordsketch/wasm)](https://www.npmjs.com/package/@chordsketch/wasm)` | `VERSION` |
 | PyPI (if version is shown) | `[![PyPI](https://img.shields.io/pypi/v/chordsketch)](https://pypi.org/project/chordsketch/)` | `VERSION` |
 

@@ -15,7 +15,8 @@ Supports macOS 12+ and iOS 15+.
 
 [![GitHub Release](https://img.shields.io/github/v/release/koedame/chordsketch)](https://github.com/koedame/chordsketch/releases/latest)
 
-Replace `"0.2.0"` in the snippet below with the [latest release tag](https://github.com/koedame/chordsketch/releases/latest)
+Replace the version string in the snippet below with the
+[latest release tag](https://github.com/koedame/chordsketch/releases/latest)
 shown in the badge above.
 
 Add the package to your `Package.swift`:
