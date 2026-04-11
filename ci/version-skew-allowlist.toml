@@ -30,25 +30,6 @@
 #   tracking_issue — GitHub issue number, as a string or integer
 
 # ----------------------------------------------------------------
-# npm @chordsketch/wasm patch-skew from workspace
-# ----------------------------------------------------------------
-
-[[allowed_skews]]
-file = "packages/npm/package.json"
-field = "version"
-current_value = "0.1.1"
-reason = """
-@chordsketch/wasm is allowed to patch-skew from the workspace version for
-packaging-only fixes, per docs/releasing.md §Version Skew. The dual-package
-(web/node) fix shipped as 0.1.1 while the crate stayed at 0.1.0; at the next
-workspace release this re-syncs. The WASM `version()` function returns the
-Rust crate version (compiled into the .wasm binary), not the npm wrapper
-version, so consumers that inspect `version()` still see a coherent value.
-"""
-expires_at = "next workspace-wide release (re-sync target)"
-tracking_issue = "1507"
-
-# ----------------------------------------------------------------
 # VS Code extension lagging until first Marketplace publish
 # ----------------------------------------------------------------
 
@@ -67,25 +48,6 @@ succeeds.
 """
 expires_at = "first successful Marketplace publish"
 tracking_issue = "1508"
-
-# ----------------------------------------------------------------
-# readme-smoke.yml hardcoded npm pin
-# ----------------------------------------------------------------
-
-[[allowed_skews]]
-file = ".github/workflows/readme-smoke.yml"
-field = "npm install @chordsketch/wasm pin"
-current_value = "0.1.1"
-reason = """
-The smoke-test job at lines ~195-204 of readme-smoke.yml installs
-@chordsketch/wasm@0.1.1 by literal pin. This tracks the npm package version
-above, which is itself patch-skewed. The README sync check
-(readme-sync.yml) does not catch drift here because the version string lives
-only inside this shell heredoc. When the npm allowlist entry above is
-retired, this one retires in the same PR.
-"""
-expires_at = "npm allowlist entry is retired"
-tracking_issue = "1509"
 
 # ----------------------------------------------------------------
 # readme-smoke.yml library-smoke caret constraint
