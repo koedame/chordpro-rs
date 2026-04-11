@@ -151,6 +151,18 @@ jobs:
     if: |
       startsWith(github.ref, 'refs/tags/v') ||
       (github.event_name == 'workflow_dispatch' && inputs.tag != '')
+    # Scopes the four signing and publishing secrets to this environment,
+    # matching the pattern used in python.yml (pypi), ruby.yml (rubygems),
+    # and vscode-extension.yml (vscode-marketplace).
+    #
+    # One-time human setup: create the "maven-central" environment at
+    #   https://github.com/koedame/chordsketch/settings/environments
+    # and move CENTRAL_PORTAL_USERNAME, CENTRAL_PORTAL_PASSWORD,
+    # GPG_SIGNING_KEY, GPG_SIGNING_PASSWORD from repository secrets to
+    # environment secrets.
+    environment:
+      name: maven-central
+      url: https://repo1.maven.org/maven2/io/github/koedame/chordsketch/
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
