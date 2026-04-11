@@ -37,7 +37,8 @@ function getExportChannel(context: vscode.ExtensionContext): vscode.OutputChanne
   }
   // exportOutputChannel is guaranteed non-undefined: it was either non-undefined
   // on entry or just assigned in the branch above.
-  return commandState.exportOutputChannel as vscode.OutputChannel;
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  return commandState.exportOutputChannel!;
 }
 
 /**
@@ -78,7 +79,8 @@ function loadWasmRender(extensionPath: string): WasmRenderModule {
     commandState.wasmRenderCache = mod;
   }
   // wasmRenderCache is guaranteed non-undefined here.
-  return commandState.wasmRenderCache as WasmRenderModule;
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  return commandState.wasmRenderCache!;
 }
 
 /**
