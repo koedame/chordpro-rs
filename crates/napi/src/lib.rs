@@ -236,11 +236,14 @@ mod tests {
         let result = chordsketch_core::parse_multi_lenient(MINIMAL_INPUT);
         let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();
         assert!(!songs.is_empty());
-        let text = chordsketch_render_text::render_songs_with_transpose(
+        // Use render_songs_with_warnings to match the code path used by the NAPI
+        // binding's do_render_string (via flush_warnings).
+        let text = chordsketch_render_text::render_songs_with_warnings(
             &songs,
             0,
             &chordsketch_core::config::Config::defaults(),
-        );
+        )
+        .output;
         assert!(!text.is_empty());
         assert!(text.contains("Test"));
     }
@@ -249,11 +252,14 @@ mod tests {
     fn test_render_html_returns_content() {
         let result = chordsketch_core::parse_multi_lenient(MINIMAL_INPUT);
         let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();
-        let html = chordsketch_render_html::render_songs_with_transpose(
+        // Use render_songs_with_warnings to match the code path used by the NAPI
+        // binding's do_render_string (via flush_warnings).
+        let html = chordsketch_render_html::render_songs_with_warnings(
             &songs,
             0,
             &chordsketch_core::config::Config::defaults(),
-        );
+        )
+        .output;
         assert!(!html.is_empty());
         assert!(html.contains("Test"));
     }
@@ -262,11 +268,14 @@ mod tests {
     fn test_render_pdf_returns_bytes() {
         let result = chordsketch_core::parse_multi_lenient(MINIMAL_INPUT);
         let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();
-        let bytes = chordsketch_render_pdf::render_songs_with_transpose(
+        // Use render_songs_with_warnings to match the code path used by the NAPI
+        // binding's do_render_bytes (via flush_warnings).
+        let bytes = chordsketch_render_pdf::render_songs_with_warnings(
             &songs,
             0,
             &chordsketch_core::config::Config::defaults(),
-        );
+        )
+        .output;
         assert!(!bytes.is_empty());
         assert!(bytes.starts_with(b"%PDF"));
     }

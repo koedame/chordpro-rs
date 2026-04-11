@@ -3,6 +3,8 @@
 //! Exposes ChordPro parsing and rendering (text, HTML, PDF) to Python,
 //! Swift, Kotlin, and Ruby via [UniFFI](https://mozilla.github.io/uniffi-rs/).
 
+use chordsketch_core::render_result::RenderResult;
+
 uniffi::include_scaffolding!("chordsketch");
 
 /// Errors returned by the FFI layer.
@@ -59,11 +61,28 @@ fn parse_songs(input: &str) -> Result<Vec<chordsketch_core::ast::Song>, ChordSke
     Ok(songs)
 }
 
+/// Forward each warning in a [`RenderResult`] to `eprintln!` and unwrap the output.
+///
+/// UniFFI-based consumers (Python, Swift, Kotlin, Ruby) receive output via their
+/// language binding. Render warnings — such as transpose saturation or chorus
+/// recall limits — are forwarded to `process.stderr` / `sys.stderr` / the
+/// platform's standard error stream. This matches the NAPI binding's pattern.
+/// See #1541.
+fn flush_warnings<T>(result: RenderResult<T>) -> T {
+    for w in &result.warnings {
+        eprintln!("chordsketch: {w}");
+    }
+    result.output
+}
+
 /// Parse ChordPro input and render as plain text.
 ///
 /// Parse warnings are silently discarded — the lenient parser produces a
 /// best-effort result even when the input contains errors. To retrieve
 /// diagnostics, call [`validate()`] before or after rendering.
+///
+/// Render warnings (e.g. transpose saturation, chorus recall limits) are
+/// forwarded to stderr via [`flush_warnings`].
 pub fn parse_and_render_text(
     input: String,
     config_json: Option<String>,
@@ -71,10 +90,12 @@ pub fn parse_and_render_text(
 ) -> Result<String, ChordSketchError> {
     let config = resolve_config(config_json)?;
     let songs = parse_songs(&input)?;
-    Ok(chordsketch_render_text::render_songs_with_transpose(
-        &songs,
-        transpose.unwrap_or(0),
-        &config,
+    Ok(flush_warnings(
+        chordsketch_render_text::render_songs_with_warnings(
+            &songs,
+            transpose.unwrap_or(0),
+            &config,
+        ),
     ))
 }
 
@@ -83,6 +104,9 @@ pub fn parse_and_render_text(
 /// Parse warnings are silently discarded — the lenient parser produces a
 /// best-effort result even when the input contains errors. To retrieve
 /// diagnostics, call [`validate()`] before or after rendering.
+///
+/// Render warnings (e.g. transpose saturation, chorus recall limits) are
+/// forwarded to stderr via [`flush_warnings`].
 pub fn parse_and_render_html(
     input: String,
     config_json: Option<String>,
@@ -90,10 +114,12 @@ pub fn parse_and_render_html(
 ) -> Result<String, ChordSketchError> {
     let config = resolve_config(config_json)?;
     let songs = parse_songs(&input)?;
-    Ok(chordsketch_render_html::render_songs_with_transpose(
-        &songs,
-        transpose.unwrap_or(0),
-        &config,
+    Ok(flush_warnings(
+        chordsketch_render_html::render_songs_with_warnings(
+            &songs,
+            transpose.unwrap_or(0),
+            &config,
+        ),
     ))
 }
 
@@ -102,6 +128,9 @@ pub fn parse_and_render_html(
 /// Parse warnings are silently discarded — the lenient parser produces a
 /// best-effort result even when the input contains errors. To retrieve
 /// diagnostics, call [`validate()`] before or after rendering.
+///
+/// Render warnings (e.g. transpose saturation, chorus recall limits) are
+/// forwarded to stderr via [`flush_warnings`].
 pub fn parse_and_render_pdf(
     input: String,
     config_json: Option<String>,
@@ -109,10 +138,8 @@ pub fn parse_and_render_pdf(
 ) -> Result<Vec<u8>, ChordSketchError> {
     let config = resolve_config(config_json)?;
     let songs = parse_songs(&input)?;
-    Ok(chordsketch_render_pdf::render_songs_with_transpose(
-        &songs,
-        transpose.unwrap_or(0),
-        &config,
+    Ok(flush_warnings(
+        chordsketch_render_pdf::render_songs_with_warnings(&songs, transpose.unwrap_or(0), &config),
     ))
 }
 
