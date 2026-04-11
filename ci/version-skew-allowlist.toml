@@ -1,0 +1,109 @@
+# Version skew allowlist.
+#
+# Consumed by `scripts/check-version-consistency.py` and enforced via the
+# `version-consistency` job in `.github/workflows/ci.yml`.
+#
+# Each `[[allowed_skews]]` entry declares that a specific (file, field) is
+# intentionally out of sync with the canonical workspace crate version, plus
+# the rationale, the condition that retires the entry, and the GitHub issue
+# tracking that retirement.
+#
+# EVERY ENTRY MUST HAVE A NON-EMPTY `tracking_issue` FIELD. The check script
+# fails validation if any entry is missing it. This rule exists because the
+# user explicitly asked: "allowlistの更新を忘れないように skip してるやつは 1
+# つずつ issue にしておいてね" (issue #1506). No skip without a paper trail.
+#
+# Removal discipline: the PR that meets an entry's `expires_at` condition MUST
+# remove the entry AND close the tracking issue in the same diff. The check
+# script also errors on "stale" entries (entries that no longer match any real
+# source) so you can't forget to remove one.
+#
+# Schema:
+#   file           — repo-relative path of the drifting source
+#   field          — human-readable label within the file (must match the
+#                    `field` emitted by check-version-consistency.py for the
+#                    source; see the Source extractors in that script)
+#   current_value  — the literal string currently observed at that location
+#   reason         — why this skew is tolerated (multi-line OK)
+#   expires_at     — the condition that retires the entry (free-form but
+#                    human-actionable)
+#   tracking_issue — GitHub issue number, as a string or integer
+
+# ----------------------------------------------------------------
+# npm @chordsketch/wasm patch-skew from workspace
+# ----------------------------------------------------------------
+
+[[allowed_skews]]
+file = "packages/npm/package.json"
+field = "version"
+current_value = "0.1.1"
+reason = """
+@chordsketch/wasm is allowed to patch-skew from the workspace version for
+packaging-only fixes, per docs/releasing.md §Version Skew. The dual-package
+(web/node) fix shipped as 0.1.1 while the crate stayed at 0.1.0; at the next
+workspace release this re-syncs. The WASM `version()` function returns the
+Rust crate version (compiled into the .wasm binary), not the npm wrapper
+version, so consumers that inspect `version()` still see a coherent value.
+"""
+expires_at = "next workspace-wide release (re-sync target)"
+tracking_issue = "1507"
+
+# ----------------------------------------------------------------
+# VS Code extension lagging until first Marketplace publish
+# ----------------------------------------------------------------
+
+[[allowed_skews]]
+file = "packages/vscode-extension/package.json"
+field = "version"
+current_value = "0.1.0"
+reason = """
+The VS Code extension is pinned at 0.1.0 until the first successful
+Marketplace publish. The `vscode-marketplace` environment was never created,
+so the publish job has been silently skipped on every run since #1352 (see
+issue #1506 Background §1). Bumping the package version before the first
+publish would create a confusing "0.2.0 was never published" gap in the
+Marketplace history. This entry retires the moment the first publish
+succeeds.
+"""
+expires_at = "first successful Marketplace publish"
+tracking_issue = "1508"
+
+# ----------------------------------------------------------------
+# readme-smoke.yml hardcoded npm pin
+# ----------------------------------------------------------------
+
+[[allowed_skews]]
+file = ".github/workflows/readme-smoke.yml"
+field = "npm install @chordsketch/wasm pin"
+current_value = "0.1.1"
+reason = """
+The smoke-test job at lines ~195-204 of readme-smoke.yml installs
+@chordsketch/wasm@0.1.1 by literal pin. This tracks the npm package version
+above, which is itself patch-skewed. The README sync check
+(readme-sync.yml) does not catch drift here because the version string lives
+only inside this shell heredoc. When the npm allowlist entry above is
+retired, this one retires in the same PR.
+"""
+expires_at = "npm allowlist entry is retired"
+tracking_issue = "1509"
+
+# ----------------------------------------------------------------
+# readme-smoke.yml library-smoke caret constraint
+# ----------------------------------------------------------------
+
+[[allowed_skews]]
+file = ".github/workflows/readme-smoke.yml"
+field = "library-smoke caret constraint (^major.minor)"
+current_value = "0.1"
+reason = """
+The library-smoke job at lines ~440-451 of readme-smoke.yml uses caret
+constraints (chordsketch-core = "^0.1", chordsketch-render-text = "^0.1")
+when resolving against crates.io. Cargo `^0.1` means `>=0.1.0, <0.2.0`.
+Even though the workspace has moved to 0.2.0 locally, the last version
+published to crates.io is still 0.1.x, so this caret correctly pins to
+what is actually resolvable from the registry. When the first 0.2.x
+release is published to crates.io, flip both constraints to "^0.2" in the
+same PR and retire this allowlist entry.
+"""
+expires_at = "first 0.2.x crates.io publish"
+tracking_issue = "1510"

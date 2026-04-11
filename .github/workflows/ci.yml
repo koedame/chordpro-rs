@@ -60,6 +60,30 @@ jobs:
         env:
           RUSTDOCFLAGS: "-D warnings"
 
+  version-consistency:
+    name: Version consistency
+    # Enforces that every versioned manifest (workspace crates, the npm,
+    # vscode-extension, and napi package.json files, and the hardcoded pins
+    # inside readme-smoke.yml) is either aligned with the canonical workspace
+    # crate version or has an explicit entry in
+    # ci/version-skew-allowlist.toml. Every allowlist entry must reference a
+    # tracking issue so skews cannot silently rot. See #1506.
+    #
+    # Intentionally Python-only, no cargo invocation — runs in ~2-3 seconds,
+    # gives near-instant feedback on PRs that forget to bump a manifest.
+    # No rust-cache entry is needed (per .claude/rules/ci-parallelization.md
+    # §2: the job does not compile Rust).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Run consistency check
+        run: python3 scripts/check-version-consistency.py
+
+      - name: Unit tests
+        run: |
+          python3 -m unittest scripts/test_check_version_consistency.py scripts/test_check_release_channels.py
+
   test:
     name: Test (${{ matrix.os }}, ${{ matrix.rust }})
     runs-on: ${{ matrix.os }}
