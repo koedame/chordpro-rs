@@ -141,9 +141,12 @@ pub fn invoke_abc2svg(abc_content: &str) -> Result<String, String> {
 /// Strip dangerous JavaScript directives from ABC notation content.
 ///
 /// abc2svg supports embedded JavaScript via `%%beginjs`/`%%endjs` blocks and
-/// `%%javascript` directives. When processing untrusted `.cho` files, these
-/// directives could allow arbitrary code execution in the Node.js runtime.
-/// This function removes such directives to prevent code injection.
+/// `%%javascript` directives. `%%js` is an undocumented but observed shorthand
+/// for `%%javascript` found in some abc2svg examples; it is stripped
+/// preemptively as defense-in-depth (see #1551). When processing untrusted
+/// `.cho` files, these directives could allow arbitrary code execution in the
+/// Node.js runtime. This function removes such directives to prevent code
+/// injection.
 fn sanitize_abc_content(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
     let mut in_js_block = false;
@@ -166,6 +169,15 @@ fn sanitize_abc_content(input: &str) -> String {
         // %%javascript <code> is a single-line JS directive (case-insensitive).
         if trimmed.len() >= 12 && trimmed[..12].eq_ignore_ascii_case("%%javascript") {
             let after = &trimmed[12..];
+            if after.is_empty() || after.starts_with(' ') || after.starts_with('\t') {
+                continue;
+            }
+        }
+
+        // %%js <code> is an undocumented shorthand for %%javascript observed in
+        // some abc2svg examples. Strip it as defense-in-depth (#1551).
+        if trimmed.len() >= 4 && trimmed[..4].eq_ignore_ascii_case("%%js") {
+            let after = &trimmed[4..];
             if after.is_empty() || after.starts_with(' ') || after.starts_with('\t') {
                 continue;
             }
@@ -289,9 +301,10 @@ pub fn invoke_lilypond(ly_content: &str) -> Result<String, String> {
     let ly_path = tmp_dir.join("input.ly");
     let output_prefix = tmp_dir.join("output");
 
-    std::fs::write(&ly_path, &sanitized).map_err(|e| {
+    // Use create_new(true) / O_EXCL to prevent a TOCTOU race between the
+    // freshly created directory and the file write inside it.
+    write_temp_file_exclusive(&ly_path, &sanitized).inspect_err(|_| {
         let _ = std::fs::remove_dir_all(&tmp_dir);
-        format!("failed to write temp file: {e}")
     })?;
 
     // Use -dsafe to sandbox Lilypond's embedded Scheme interpreter,
@@ -500,9 +513,10 @@ pub fn invoke_musescore(musicxml_content: &str) -> Result<String, String> {
     let input_path = tmp_dir.join("input.xml");
     let output_svg = tmp_dir.join("output.svg");
 
-    std::fs::write(&input_path, &sanitized).map_err(|e| {
+    // Use create_new(true) / O_EXCL to prevent a TOCTOU race between the
+    // freshly created directory and the file write inside it.
+    write_temp_file_exclusive(&input_path, &sanitized).inspect_err(|_| {
         let _ = std::fs::remove_dir_all(&tmp_dir);
-        format!("failed to write temp file: {e}")
     })?;
 
     let result = Command::new(cmd_name)
@@ -745,6 +759,42 @@ mod tests {
         let input = "X:1\n%%javascriptfoo bar\nK:C\n";
         let result = super::sanitize_abc_content(input);
         assert!(result.contains("%%javascriptfoo"));
+    }
+
+    #[test]
+    fn sanitize_abc_strips_js_shorthand_directive() {
+        // %%js is an undocumented shorthand for %%javascript; strip it as
+        // defense-in-depth (#1551).
+        let input = "X:1\nK:C\n%%js require('child_process').exec('id')\nCDEF|\n";
+        let result = super::sanitize_abc_content(input);
+        assert_eq!(result, "X:1\nK:C\nCDEF|");
+        assert!(!result.contains("%%js"));
+        assert!(!result.contains("child_process"));
+    }
+
+    #[test]
+    fn sanitize_abc_js_case_insensitive() {
+        // %%JS and %%Js variants should be stripped.
+        let input = "X:1\n%%JS alert(1)\nK:C\n";
+        let result = super::sanitize_abc_content(input);
+        assert_eq!(result, "X:1\nK:C");
+
+        let input = "X:1\n%%Js alert(1)\nK:C\n";
+        let result = super::sanitize_abc_content(input);
+        assert_eq!(result, "X:1\nK:C");
+
+        // Bare %%js without code
+        let input = "X:1\n%%js\nK:C\n";
+        let result = super::sanitize_abc_content(input);
+        assert_eq!(result, "X:1\nK:C");
+    }
+
+    #[test]
+    fn sanitize_abc_does_not_strip_js_prefix_in_other_words() {
+        // %%json is NOT a %%js directive (no space/tab/end after "%%js").
+        let input = "X:1\n%%json {\"key\": \"value\"}\nK:C\n";
+        let result = super::sanitize_abc_content(input);
+        assert!(result.contains("%%json"));
     }
 
     #[test]
