@@ -114,6 +114,7 @@ jobs:
         run: |
           Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE
           Add-MpPreference -ExclusionPath "$env:USERPROFILE\.cargo"
+          Add-MpPreference -ExclusionPath "$env:USERPROFILE\.rustup"
 
       - uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1
         with:
