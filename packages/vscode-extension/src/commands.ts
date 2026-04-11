@@ -48,6 +48,18 @@ function getExportChannel(context: vscode.ExtensionContext): vscode.OutputChanne
 let wasmRenderCache: WasmRenderModule | undefined;
 
 /**
+ * Resets all module-level singletons so that a subsequent re-activation within
+ * the same VS Code host process (e.g., after `Developer: Restart Extension Host`)
+ * creates fresh instances rather than reusing disposed/stale ones.
+ *
+ * Must be called from `deactivate()` in `extension.ts`.
+ */
+export function resetCommandSingletons(): void {
+  exportOutputChannel = undefined;
+  wasmRenderCache = undefined;
+}
+
+/**
  * Loads the `@chordsketch/wasm` Node.js CJS build from the extension's own
  * `dist/node/` directory.
  *

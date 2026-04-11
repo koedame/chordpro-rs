@@ -14,7 +14,7 @@
 import * as vscode from 'vscode';
 import { startLspClient, stopLspClient } from './lsp.js';
 import { notifyDocumentChanged, disposeAll } from './preview.js';
-import { registerOpenPreview, registerOpenPreviewToSide, registerTransposeUp, registerTransposeDown, registerConvertTo } from './commands.js';
+import { registerOpenPreview, registerOpenPreviewToSide, registerTransposeUp, registerTransposeDown, registerConvertTo, resetCommandSingletons } from './commands.js';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   // Start the LSP client (gracefully degraded if binary not found).
@@ -51,4 +51,5 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 export async function deactivate(): Promise<void> {
   disposeAll();
   await stopLspClient();
+  resetCommandSingletons();
 }
