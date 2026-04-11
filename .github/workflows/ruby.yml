@@ -91,6 +91,7 @@ jobs:
         with:
           name: native-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/${{ matrix.lib }}
+          retention-days: 7
 
   generate-and-test:
     name: Generate bindings and test
