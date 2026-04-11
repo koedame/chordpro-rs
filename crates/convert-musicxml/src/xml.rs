@@ -73,9 +73,22 @@ impl Element {
 // Parser
 // ---------------------------------------------------------------------------
 
+/// Maximum XML element nesting depth accepted by the parser.
+///
+/// Deeply nested documents are rejected with an error rather than overflowing
+/// the Rust call stack. Legitimate MusicXML files are shallow (typically under
+/// 20 levels); 200 is a generous ceiling that still prevents unbounded recursion
+/// from adversarial input.
+const MAX_DEPTH: usize = 200;
+
 /// Parse an XML string into an element tree.
 ///
 /// Returns the root element, or an error message if parsing fails.
+///
+/// # Errors
+///
+/// Returns an error if the XML is malformed or if the element nesting depth
+/// exceeds [`MAX_DEPTH`].
 pub(crate) fn parse(xml: &str) -> Result<Element, String> {
     let mut p = Parser {
         src: xml.as_bytes(),
@@ -84,7 +97,7 @@ pub(crate) fn parse(xml: &str) -> Result<Element, String> {
     p.skip_bom();
     p.skip_prolog()?;
     p.skip_whitespace_and_comments()?;
-    p.parse_element()
+    p.parse_element(0)
 }
 
 struct Parser<'a> {
@@ -234,7 +247,13 @@ impl<'a> Parser<'a> {
     // --- main parser -------------------------------------------------------
 
     /// Parse an element: `<name attrs> children </name>` or `<name attrs/>`.
-    fn parse_element(&mut self) -> Result<Element, String> {
+    ///
+    /// `depth` is the current nesting level (0 for the root element).
+    /// Returns an error if `depth` reaches [`MAX_DEPTH`].
+    fn parse_element(&mut self, depth: usize) -> Result<Element, String> {
+        if depth >= MAX_DEPTH {
+            return Err(format!("XML nesting depth limit of {} exceeded", MAX_DEPTH));
+        }
         self.skip_whitespace_and_comments()?;
 
         // Consume `<`
@@ -282,7 +301,7 @@ impl<'a> Parser<'a> {
         self.expect(b">")?;
 
         // Read children
-        let (text, children) = self.parse_children(&raw_name)?;
+        let (text, children) = self.parse_children(&raw_name, depth)?;
 
         Ok(Element {
             name,
@@ -360,8 +379,15 @@ impl<'a> Parser<'a> {
 
     /// Parse children of an element with tag `parent_raw_name`.
     ///
+    /// `depth` is the nesting level of the *parent* element; child elements are
+    /// parsed at `depth + 1`.
+    ///
     /// Returns `(text_content, child_elements)`.
-    fn parse_children(&mut self, parent_raw_name: &str) -> Result<(String, Vec<Element>), String> {
+    fn parse_children(
+        &mut self,
+        parent_raw_name: &str,
+        depth: usize,
+    ) -> Result<(String, Vec<Element>), String> {
         let parent_local = local_name(parent_raw_name);
         let mut text = String::new();
         let mut children = Vec::new();
@@ -436,7 +462,7 @@ impl<'a> Parser<'a> {
 
             // Child element
             if self.peek() == Some(b'<') {
-                let child = self.parse_element()?;
+                let child = self.parse_element(depth + 1)?;
                 children.push(child);
                 continue;
             }
@@ -751,6 +777,39 @@ mod tests {
         let input = "&".repeat(1000);
         let output = decode_entities(&input);
         assert_eq!(output, input);
+    }
+
+    #[test]
+    fn parse_depth_limit_rejected() {
+        // Build an XML document with MAX_DEPTH + 1 levels of nesting.
+        // The parser must return an error rather than overflowing the call stack.
+        let open: String = (0..=MAX_DEPTH).map(|i| format!("<a{i}>")).collect();
+        let close: String = (0..=MAX_DEPTH).rev().map(|i| format!("</a{i}>")).collect();
+        let doc = format!("{open}{close}");
+        let result = parse(&doc);
+        assert!(
+            result.is_err(),
+            "expected depth-limit error but got Ok for {}-level nesting",
+            MAX_DEPTH + 1
+        );
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("depth limit"),
+            "error message should mention depth limit: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_depth_at_limit_accepted() {
+        // MAX_DEPTH levels of nesting (indices 0..MAX_DEPTH-1 are depths 0 to 199) must succeed.
+        let open: String = (0..MAX_DEPTH).map(|i| format!("<a{i}>")).collect();
+        let close: String = (0..MAX_DEPTH).rev().map(|i| format!("</a{i}>")).collect();
+        let doc = format!("{open}{close}");
+        assert!(
+            parse(&doc).is_ok(),
+            "expected Ok for {}-level nesting but got an error",
+            MAX_DEPTH
+        );
     }
 
     #[test]
