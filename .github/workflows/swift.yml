@@ -71,6 +71,7 @@ jobs:
           name: swift-lib-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/libchordsketch_ffi.a
           retention-days: 1
+          if-no-files-found: error
 
       # The dylib is only produced for the macOS target and is only needed in
       # the assemble job to let uniffi-bindgen extract the library metadata.
@@ -81,6 +82,7 @@ jobs:
           name: swift-dylib-aarch64-apple-darwin
           path: target/aarch64-apple-darwin/release/libchordsketch_ffi.dylib
           retention-days: 1
+          if-no-files-found: error
 
   # Download the 5 static libraries and dylib built in parallel above, then
   # assemble the XCFramework, generate Swift bindings, and run swift test.
