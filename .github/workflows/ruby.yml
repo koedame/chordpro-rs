@@ -283,7 +283,30 @@ jobs:
         with:
           ruby-version: "3.3"
 
+      - name: Detect OIDC availability
+        # Probes whether GitHub is providing OIDC tokens for this job run.
+        # ACTIONS_ID_TOKEN_REQUEST_URL is set when `id-token: write` is in
+        # effect. If absent, the OIDC exchange in configure-rubygems-credentials
+        # would fail; surfacing the skip here as a warning keeps the job exit-0
+        # (consistent with the continue-on-error intent) while making it
+        # visible in the run log.
+        #
+        # Limitation: this probe cannot detect a misconfigured RubyGems trusted
+        # publisher — that failure occurs inside the OIDC exchange within the
+        # rubygems action and would still be absorbed by continue-on-error.
+        # See #1445.
+        id: oidc
+        shell: bash
+        run: |
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::GitHub OIDC token endpoint is unavailable; skipping RubyGems publish. Check that the environment exists and id-token: write permission is effective. See #1445."
+          fi
+
       - name: Configure RubyGems trusted publisher credentials
+        if: steps.oidc.outputs.available == 'true'
         # Exchanges the GitHub Actions OIDC token for a short-lived
         # RubyGems API key and writes it to ~/.gem/credentials, which
         # `gem push` will pick up automatically. This action is the same
@@ -293,6 +316,7 @@ jobs:
         uses: rubygems/configure-rubygems-credentials@bc6dd217f8a4f919d6835fcfefd470ef821f5c44 # v1.0.0
 
       - name: Build and push gem
+        if: steps.oidc.outputs.available == 'true'
         working-directory: packages/ruby
         run: |
           gem build chordsketch.gemspec

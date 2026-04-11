@@ -190,7 +190,30 @@ jobs:
           merge-multiple: true
           path: dist
 
+      - name: Detect OIDC availability
+        # Probes whether GitHub is providing OIDC tokens for this job run.
+        # ACTIONS_ID_TOKEN_REQUEST_URL is set when `id-token: write` is in
+        # effect. If absent, maturin upload would fail with an auth error;
+        # surfacing the skip here as a warning keeps the job exit-0
+        # (consistent with the continue-on-error intent) while making it
+        # visible in the run log.
+        #
+        # Limitation: this probe cannot detect a misconfigured PyPI trusted
+        # publisher — that failure occurs inside the OIDC exchange within
+        # maturin upload and would still be absorbed by continue-on-error.
+        # See #1445.
+        id: oidc
+        shell: bash
+        run: |
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::GitHub OIDC token endpoint is unavailable; skipping PyPI publish. Check that the environment exists and id-token: write permission is effective. See #1445."
+          fi
+
       - uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1
+        if: steps.oidc.outputs.available == 'true'
         with:
           command: upload
           args: --non-interactive --skip-existing dist/*
