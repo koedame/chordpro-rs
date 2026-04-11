@@ -2,7 +2,7 @@
 
 ## Versioning Policy
 
-All eight Rust crates in the workspace share the same version number and are
+All ten Rust crates in the workspace share the same version number and are
 bumped in lockstep. This project follows [Semantic Versioning](https://semver.org/):
 
 - **Major** (1.0.0) — breaking API changes
@@ -23,7 +23,47 @@ re-syncs at the next workspace-wide release.
 
 ## Release Checklist
 
-1. **Update version** in all `Cargo.toml` files:
+### Pre-release sanity
+
+Before starting the bump in Step 1, verify the release-time infrastructure
+is healthy. Any gap here would silently break a channel and be discovered
+at post-release verification rather than before the tag is cut.
+
+1. **Every expected secret exists.** Cross-reference
+   `ci/release-channels.toml`'s `required_secrets` against the repo secret
+   list:
+   ```bash
+   gh secret list -R koedame/chordsketch
+   ```
+   Every secret listed in `required_secrets` (any field) must appear.
+2. **Every referenced environment exists.** The silent VS Code Marketplace
+   skip happened because the `vscode-marketplace` environment was never
+   created. Guard against a recurrence:
+   ```bash
+   gh api repos/koedame/chordsketch/environments --jq '.environments[].name'
+   ```
+   Every `environment:` name used in a publish job (`npm`, `docker-hub`,
+   `vscode-marketplace`, `pypi`, `rubygems`, `maven-central`, `napi`) must
+   appear in the output.
+3. **`ci.yml` and `readme-smoke.yml` are green on the target commit.** The
+   release workflow builds from that commit, so a red CI is a release
+   blocker:
+   ```bash
+   gh run list --branch main --workflow ci.yml -R koedame/chordsketch --limit 1
+   gh run list --branch main --workflow readme-smoke.yml -R koedame/chordsketch --limit 1
+   ```
+4. **The version-consistency check is green.** This catches any manifest
+   that has drifted from the canonical workspace version without an
+   explicit allowlist entry:
+   ```bash
+   python3 scripts/check-version-consistency.py
+   ```
+
+### Checklist
+
+1. **Update version** in every versioned manifest:
+
+   Workspace Cargo.toml files (all ten crates):
    - `crates/core/Cargo.toml`
    - `crates/render-text/Cargo.toml`
    - `crates/render-html/Cargo.toml`
@@ -32,7 +72,34 @@ re-syncs at the next workspace-wide release.
    - `crates/wasm/Cargo.toml`
    - `crates/ffi/Cargo.toml`
    - `crates/napi/Cargo.toml`
-   - Update inter-crate dependency versions to match
+   - `crates/lsp/Cargo.toml`
+   - `crates/convert-musicxml/Cargo.toml`
+   - Update inter-crate dependency `version = ` fields to match.
+
+   Non-Rust manifests:
+   - `packages/npm/package.json` (unless an allowlisted patch skew applies
+     — see `ci/version-skew-allowlist.toml`)
+   - `packages/vscode-extension/package.json` (once the first Marketplace
+     publish has succeeded and its allowlist entry has been retired)
+   - `crates/napi/package.json` — both the main package and the per-platform
+     manifests under `crates/napi/npm/<triple>/package.json`
+
+   Hardcoded pins in CI:
+   - `.github/workflows/readme-smoke.yml` ~line 204:
+     `npm install '@chordsketch/wasm@<version>'`
+   - `.github/workflows/readme-smoke.yml` ~lines 450–451:
+     `chordsketch-core = "^<major>.<minor>"` and the matching
+     `chordsketch-render-text` pin
+
+   Allowlist (if applicable):
+   - If this release re-syncs any drift, remove the corresponding entries
+     from `ci/version-skew-allowlist.toml` **and close their tracking
+     issues in the same commit**. Leaving stale entries causes
+     `check-version-consistency.py` to fail (which is the point — you
+     can't forget).
+
+   Sanity: run `python3 scripts/check-version-consistency.py` after the
+   edit. It must exit 0 before you commit.
 
 2. **Update CHANGELOG.md**: change `## [X.Y.Z] - Unreleased` to
    `## [X.Y.Z] - YYYY-MM-DD` and add a new `## [Unreleased]` section above.
@@ -101,16 +168,24 @@ has its own automation, secret, and verification path. The
 end-to-end after each release as the single source of truth for "is the
 project's promised distribution actually working right now".
 
+This table is the **human-readable view** of `ci/release-channels.toml`.
+When adding a new channel, update both.
+
 | Channel | Identifier | Trigger | Required secret(s) | Verified by |
 |---|---|---|---|---|
 | crates.io | `chordsketch` (CLI) + 4 lib crates | manual `cargo publish` (Step 6) | maintainer's `~/.cargo/credentials` | `cargo-install` job |
 | GitHub Releases | binary archives | `release.yml` on tag push | `GITHUB_TOKEN` | `source-build` job |
 | GHCR | `ghcr.io/koedame/chordsketch` | `docker.yml` on `release: published` | `GITHUB_TOKEN` (push), org policy must allow public packages | `docker-ghcr` job |
 | Docker Hub | `docker.io/koedame/chordsketch` | `docker.yml` on `release: published` | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | `docker-hub` job |
-| npm | `@chordsketch/wasm` | `npm-publish.yml` `workflow_dispatch` (Step 7) | `NPM_TOKEN` (Granular Token, see quirks) | `npm-wasm` job |
+| npm (wasm) | `@chordsketch/wasm` | `npm-publish.yml` `workflow_dispatch` (Step 7) | `NPM_TOKEN` (Granular Token, see quirks) | `npm-wasm` job |
+| npm (napi) | `@chordsketch/node` + 5 prebuilt platform packages | `napi.yml` on `release: published` | `NPM_TOKEN` | `napi-node` job |
 | Homebrew tap | `koedame/tap/chordsketch` | `post-release.yml` on `release: published` | `TAP_GITHUB_TOKEN` | `homebrew` job |
 | Scoop bucket | `koedame/scoop-bucket/chordsketch` | `post-release.yml` on `release: published` | `TAP_GITHUB_TOKEN` | `scoop` job |
 | winget | `koedame.chordsketch` | manual PR to `microsoft/winget-pkgs` (Step 8) | none (uses your `gh` token to fork+push) | `winget` job |
+| VS Code Marketplace | `koedame.chordsketch` | `vscode-extension.yml` on `release: published` | `VSCE_PAT` (PAT, Marketplace Publish scope) | `vscode-marketplace` rollup entry |
+| PyPI | `chordsketch` | `python.yml` on tag push | none (OIDC trusted publisher) | `pypi` rollup entry |
+| RubyGems | `chordsketch` | `ruby.yml` on tag push | none (OIDC trusted publisher) | `rubygems` rollup entry |
+| Maven Central | `io.github.koedame:chordsketch` | `kotlin.yml` on tag push | `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `SIGNING_KEY`, `SIGNING_PASSWORD` | `maven-central` rollup entry |
 | from source | `git clone` + `cargo install --path crates/cli` | always available | none | `source-build` job |
 | Library Usage (Rust) | crates.io snippet from README | implicit via crates.io | none | `library-smoke` job |
 
@@ -194,7 +269,33 @@ After the release workflow completes and the GitHub Release is published:
       koedame.chordsketch` becomes available within minutes. The next
       `readme-smoke.yml` run will turn the `winget (Windows)` job green.
 
-5. **Manual verification** — confirm every documented install path works for
+5. **Automated channel rollup** — `.github/workflows/release-verify.yml`
+   runs automatically on `release: published`, queries every registry
+   listed in `ci/release-channels.toml`, and appends a
+   `## Channel Verification` section to the release body. Wait for that
+   workflow to complete, then read the appended table on the GitHub Release
+   page:
+
+   ```bash
+   gh release view vX.Y.Z -R koedame/chordsketch --web
+   ```
+
+   Every row must be green. Any ❌ is a release blocker: open a follow-up
+   issue tagged with the failing channel and either fix it or mark the
+   channel as an explicit `skip` in `ci/release-channels.toml` with a
+   `skip_reason`. Do **not** close the release milestone until every row
+   is resolved.
+
+   Red-path dry-run: to confirm the rollup actually fails loudly when it
+   should, trigger it manually with a forced-stale channel and verify the
+   job turns red:
+
+   ```bash
+   gh workflow run release-verify.yml -R koedame/chordsketch \
+     -f tag=vX.Y.Z -f force_stale_channel=crates-io-cli
+   ```
+
+6. **Manual verification** — confirm every documented install path works for
    end users. Easiest: trigger `readme-smoke.yml` via `workflow_dispatch` and
    confirm every job is green. `gh workflow run` does not print the run id,
    so resolve it from the workflow's most recent run before passing it to
@@ -382,3 +483,194 @@ the `gh issue` calls failed with `fatal: not a git repository`. This means
 **no auto-tracking issues were created for any failure between those two
 PRs**. Going forward, expect the rolling tracking issue titled "README
 install smoke tests are failing" to actually be maintained.
+
+## Version Skew Allowlist Procedure
+
+`ci/version-skew-allowlist.toml` declares intentional drifts between the
+canonical workspace crate version and specific manifests or pins in the
+repo. The `version-consistency` CI job enforces that every versioned file
+either matches canonical or has an entry here. This section describes the
+lifecycle of an allowlist entry.
+
+### When to add an entry
+
+Add an entry only when:
+
+1. A channel is **unpublished** and its package version is intentionally
+   lagging until the first publish (e.g., the VS Code Marketplace case).
+2. A package needs a **patch-only bump** for a packaging-only fix while the
+   underlying library remains unchanged (e.g., `@chordsketch/wasm` dual-
+   package fix).
+3. A CI pin references a version that is **not yet resolvable from the
+   registry** (e.g., `readme-smoke.yml` caret constraints point at what
+   crates.io actually serves, which lags workspace during the bump-then-
+   publish window).
+
+**Do not** add an entry to hide a legitimate mistake (forgot to bump, copy-
+paste error). Fix the source instead.
+
+### How to add an entry
+
+1. **File a `type:tracking` issue first.** The issue body must state:
+   - Which file/field is drifting and why
+   - What condition retires the skew
+   - The plan for the PR that performs the retirement
+
+   Labels: `type:tracking`, `size:small`, plus `blocked` if the retirement
+   is waiting on independent work (e.g., first-time Marketplace publish).
+
+2. **Add the allowlist entry** with all required fields:
+   - `file` and `field` must match the labels emitted by
+     `scripts/check-version-consistency.py` for the drifting source.
+     Easiest: run the script, see it fail, copy the `(file, field)` pair
+     from the error message.
+   - `current_value` must exactly equal the literal string the source has
+     right now.
+   - `reason` must explain why the skew is tolerated. Multi-line OK.
+   - `expires_at` must describe the condition that retires the entry in
+     human-actionable terms (e.g., "first 0.2.x crates.io publish").
+   - `tracking_issue` must be the GitHub issue number from step 1. A
+     missing or empty `tracking_issue` fails the check script — this is
+     the guardrail that prevents forgotten skips.
+
+3. **Verify the check now passes**:
+   ```bash
+   python3 scripts/check-version-consistency.py
+   ```
+
+### How to retire an entry
+
+When a condition like "next workspace release" or "first Marketplace
+publish" is met, **the same PR that fulfils the condition must also
+remove the allowlist entry AND close the tracking issue**. The check
+script reports stale entries (entries that no longer match any real
+source) as errors, so a half-finished retirement cannot silently slip
+through.
+
+Closing the tracking issue should reference the PR that fulfils the
+condition so the rationale trail is navigable.
+
+## When to update `README.md` `## Installation`
+
+The project's contract with end users is `README.md ## Installation`. Any
+change to a documented install method is a user-visible release-blocking
+event. This section is enforced via `.claude/rules/readme-sync.md`.
+
+Specifically:
+
+- **New channel added.** Every add requires three concurrent touches in
+  the same PR:
+  1. `README.md` gets a new subsection under `## Installation`.
+  2. `.github/snapshots/readme-commands.txt` is regenerated via
+     `python3 scripts/extract-readme-commands.py > .github/snapshots/readme-commands.txt`.
+  3. A new smoke job is added to `.github/workflows/readme-smoke.yml`
+     that exercises the documented command(s) against the actual binary
+     produced by the install (not just `--version`; include a real render
+     assertion via the `cli-render-smoke` composite action).
+  4. A new `[[channels]]` entry is added to `ci/release-channels.toml`
+     so the post-release rollup covers it.
+
+- **Channel removed.** Same three touches, but each is a deletion:
+  remove the README subsection, regenerate the snapshot, delete the
+  smoke job, and delete the `ci/release-channels.toml` entry (or mark
+  it `expected_version = "skip"` with a `skip_reason` if removal is
+  temporary).
+
+- **Channel renamed.** Treat it as "remove old + add new" in the same
+  PR.
+
+Snapshot drift without corresponding smoke coverage defeats the purpose
+of the rule. `readme-sync.yml` fails the PR if the snapshot is touched
+without human attention, so a silent rename cannot sneak through.
+
+## napi distribution (`@chordsketch/node`)
+
+`@chordsketch/node` is the native Node.js addon built via napi-rs. It is
+shipped as **six** npm packages in the napi-rs prebuilt-binary layout:
+
+- `@chordsketch/node` — pure-JS resolver package that loads the right
+  platform binary at runtime
+- `@chordsketch/node-linux-x64-gnu`
+- `@chordsketch/node-linux-arm64-gnu`
+- `@chordsketch/node-darwin-x64`
+- `@chordsketch/node-darwin-arm64`
+- `@chordsketch/node-win32-x64-msvc`
+
+All six must be published at the same version on every release, or the
+resolver package's `optionalDependencies` will fail to install on the
+affected platform. The `napi-node` rollup entry in
+`ci/release-channels.toml` verifies every one of the six against the git
+tag at release time.
+
+### First-time manual publish
+
+Because `NPM_TOKEN` in CI cannot create new packages in the
+`@chordsketch` scope (see "npm publish via CI cannot create new packages"
+quirk above), the **first publish of each of the six packages must be
+done manually from a maintainer's local checkout**. After the first
+publish, subsequent version bumps go through the CI publish job in
+`.github/workflows/napi.yml`.
+
+Procedure (from a clean local checkout of the target tag):
+
+```bash
+cd crates/napi
+
+# Install napi-rs CLI (matches devDependencies in crates/napi/package.json).
+npm install
+
+# Build every supported target. This requires cross-compilers; easier to
+# download the artifacts from the corresponding napi.yml run instead.
+gh run download -R koedame/chordsketch \
+  -D /tmp/napi-artifacts \
+  $(gh run list -R koedame/chordsketch --workflow=napi.yml --branch vX.Y.Z \
+      --limit 1 --json databaseId -q '.[0].databaseId')
+
+# Move each downloaded .node into its platform directory under npm/.
+# (The directory layout is created by `napi create-npm-dirs`; see
+# crates/napi/npm/ in the committed tree.)
+for triple in linux-x64-gnu linux-arm64-gnu darwin-x64 darwin-arm64 win32-x64-msvc; do
+  cp /tmp/napi-artifacts/napi-${triple}/*.node npm/${triple}/
+done
+
+# Authenticate as the npm account that owns @chordsketch.
+npm whoami
+
+# Publish the FIVE platform packages FIRST. Order within this group
+# doesn't matter, but all five must succeed before the resolver.
+for triple in linux-x64-gnu linux-arm64-gnu darwin-x64 darwin-arm64 win32-x64-msvc; do
+  (cd npm/${triple} && npm publish --access public)
+done
+
+# Publish the main resolver package LAST. Its `optionalDependencies`
+# field references the five platform packages, so it must be published
+# after them or installs will fail with ENOENT.
+napi prepublish --skip-gh-release --tagstyle npm
+npm publish --access public
+```
+
+After the first successful manual publish, future releases are automatic
+via `napi.yml`'s publish job (no human action required unless that job
+fails and fallback to manual is needed).
+
+### Why the decision to ship napi (vs. defer)
+
+`crates/napi` predates the current release-discipline work: the Rust code
+and the `napi build` pipeline were already in place, but no publish job
+existed and no `@chordsketch/node` package had ever been claimed on npm.
+During #1506 the decision was to ship rather than defer, because:
+
+1. `@chordsketch/wasm` already serves Node.js via its `node` export
+   condition, so the native addon is purely a performance improvement
+   — but leaving the code unpublished creates a "code exists, no one can
+   use it" state that future contributors would find confusing.
+2. The first-publish-is-manual constraint is identical to the one already
+   accepted for `@chordsketch/wasm`, so there is no new operational cost.
+3. Registering the six package names on npm now prevents a future squat
+   attack on `@chordsketch/node-*`.
+
+If subsequent napi publishes become problematic and the maintenance cost
+exceeds the value, the channel can be downgraded by flipping every napi
+entry in `ci/release-channels.toml` to `expected_version = "skip"` with a
+`skip_reason` — that is the supported way to pause a channel without
+deleting its infrastructure.

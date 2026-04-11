@@ -37,6 +37,13 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
+      - name: Check required secrets present
+        # Fails fast when NPM_TOKEN is missing so "environment missing →
+        # silent skip" turns into a loud, diagnosable error. See #1506.
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: python3 scripts/check-env-secrets.py --channel npm-wasm
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:

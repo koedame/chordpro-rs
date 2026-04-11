@@ -259,6 +259,18 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Check required secrets present
+        # PyPI uses trusted publishing (OIDC), so there are no long-lived
+        # secrets to assert. The post-release rollup in release-verify.yml
+        # is the primary guard for "silently skipped" against this channel.
+        # Still run the check so a future required_secrets addition is
+        # picked up automatically. See #1506.
+        run: python3 scripts/check-env-secrets.py --channel pypi
+
       - name: Detect OIDC availability
         # Probes whether GitHub is providing OIDC tokens for this job run.
         # ACTIONS_ID_TOKEN_REQUEST_URL is set when `id-token: write` is in

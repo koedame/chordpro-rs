@@ -123,6 +123,15 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
 
+      - name: Check required secrets present
+        # Fails fast when VSCE_PAT is missing so "environment missing → silent
+        # skip" turns into a loud, diagnosable error. Paired with the
+        # post-release rollup in release-verify.yml which catches the silent
+        # case (where the environment gate itself is absent). See #1506.
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: python3 scripts/check-env-secrets.py --channel vscode-marketplace
+
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:

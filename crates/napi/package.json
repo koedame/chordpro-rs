@@ -1,7 +1,7 @@
 {
   "name": "@chordsketch/node",
-  "version": "0.1.0",
-  "description": "Native Node.js addon for ChordPro parsing and rendering",
+  "version": "0.2.0",
+  "description": "Native Node.js addon for ChordPro parsing and rendering via napi-rs.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -26,12 +26,19 @@
   "main": "index.js",
   "types": "index.d.ts",
   "files": [
-    "*.node",
     "index.js",
     "index.d.ts"
   ],
+  "optionalDependencies": {
+    "@chordsketch/node-linux-x64-gnu": "0.2.0",
+    "@chordsketch/node-linux-arm64-gnu": "0.2.0",
+    "@chordsketch/node-darwin-x64": "0.2.0",
+    "@chordsketch/node-darwin-arm64": "0.2.0",
+    "@chordsketch/node-win32-x64-msvc": "0.2.0"
+  },
   "napi": {
     "binaryName": "chordsketch-napi",
+    "packageName": "@chordsketch/node",
     "targets": [
       "x86_64-apple-darwin",
       "aarch64-apple-darwin",
@@ -45,7 +52,6 @@
   },
   "scripts": {
     "build": "napi build --release --manifest-path Cargo.toml",
-    "build:debug": "napi build --manifest-path Cargo.toml",
-    "prepack": "napi build --release --manifest-path Cargo.toml"
+    "build:debug": "napi build --manifest-path Cargo.toml"
   }
 }

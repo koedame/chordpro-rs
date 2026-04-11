@@ -25,7 +25,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Determine version
         id: version
@@ -128,6 +128,8 @@ jobs:
       contents: read
       packages: read
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
       - name: Determine version
         id: version
         env:
@@ -142,21 +144,24 @@ jobs:
           fi
 
       - name: Detect Docker Hub credentials
-        # Decouple Docker Hub from GHCR: if `DOCKERHUB_TOKEN` is unset
-        # (fork PRs, manual recovery runs, an org-side credential rotation),
-        # the GHCR push (already completed by the `ghcr` job) is unaffected.
-        # Secrets aren't available in step `if:` expressions directly, so we
-        # surface the boolean via a step output. See #1072.
+        # Decouple Docker Hub from GHCR: if DOCKERHUB_TOKEN or DOCKERHUB_USERNAME
+        # is unset (fork PRs, manual recovery runs, an org-side credential
+        # rotation), the GHCR push (already completed by the `ghcr` job) is
+        # unaffected. Secrets aren't available in step `if:` expressions
+        # directly, so we surface the boolean via a step output. See #1072.
+        #
+        # Uses `check-env-secrets.py --soft` which reads the manifest at
+        # ci/release-channels.toml, looks up the `docker-hub` channel's
+        # required_secrets list, and writes `available=true|false` to stdout.
+        # --soft mode is correct here because Docker Hub is intentionally
+        # secondary to GHCR: a missing token must NOT fail the workflow. For
+        # primary channels (VSCode, npm, Kotlin, etc.) the hard-fail default
+        # is correct. See #1506 for the shared script.
         id: dockerhub
         env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: |
-          if [ -n "${DOCKERHUB_TOKEN:-}" ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::DOCKERHUB_TOKEN is not set; skipping Docker Hub push (GHCR was already published). See #1072."
-          fi
+        run: python3 scripts/check-env-secrets.py --channel docker-hub --soft >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         if: steps.dockerhub.outputs.available == 'true'

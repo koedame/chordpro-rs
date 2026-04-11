@@ -1,0 +1,25 @@
+{
+  "name": "@chordsketch/node-win32-x64-msvc",
+  "version": "0.2.0",
+  "description": "Prebuilt @chordsketch/node binary for Windows x86_64 (MSVC).",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/koedame/chordsketch.git",
+    "directory": "crates/napi/npm/win32-x64-msvc"
+  },
+  "homepage": "https://github.com/koedame/chordsketch",
+  "main": "chordsketch-napi.win32-x64-msvc.node",
+  "files": [
+    "chordsketch-napi.win32-x64-msvc.node"
+  ],
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "engines": {
+    "node": ">=15.12.0"
+  }
+}

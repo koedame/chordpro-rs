@@ -1,0 +1,25 @@
+{
+  "name": "@chordsketch/node-darwin-arm64",
+  "version": "0.2.0",
+  "description": "Prebuilt @chordsketch/node binary for macOS aarch64 (Apple Silicon).",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/koedame/chordsketch.git",
+    "directory": "crates/napi/npm/darwin-arm64"
+  },
+  "homepage": "https://github.com/koedame/chordsketch",
+  "main": "chordsketch-napi.darwin-arm64.node",
+  "files": [
+    "chordsketch-napi.darwin-arm64.node"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "engines": {
+    "node": ">=15.12.0"
+  }
+}

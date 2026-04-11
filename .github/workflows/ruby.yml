@@ -255,6 +255,12 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
 
+      - name: Check required secrets present
+        # RubyGems uses trusted publishing (OIDC), so there are no long-lived
+        # secrets to assert. The post-release rollup in release-verify.yml is
+        # the primary guard for "silently skipped" against this channel. See #1506.
+        run: python3 scripts/check-env-secrets.py --channel rubygems
+
       - name: Detect OIDC availability
         # Probes whether GitHub is providing OIDC tokens for this job run.
         # ACTIONS_ID_TOKEN_REQUEST_URL is set when `id-token: write` is in

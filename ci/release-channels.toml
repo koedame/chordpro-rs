@@ -1,0 +1,241 @@
+# Release channels manifest.
+#
+# Single source of truth for every distribution channel chordsketch ships to.
+# Consumed by:
+#   1. `.github/workflows/release-verify.yml` — post-release rollup that
+#      queries every channel's registry and fails if a version is stale,
+#      missing, or a public-visibility contract is broken.
+#   2. `scripts/check-env-secrets.py` — fail-fast secrets check at the top of
+#      every publish job. The `required_secrets` field below is the list that
+#      must be present in the GitHub Actions environment at publish time.
+#
+# This file is TOML (not YAML, despite what the issue body suggests) because
+# tomllib is in the Python standard library from 3.11 onward; using TOML keeps
+# the check scripts dependency-free. All YAML-specific language in issue #1506
+# should be read as "the manifest file" regardless of extension.
+#
+# When adding a new channel:
+#   - Add an [[channels]] entry with kind, package, expected_version,
+#     required_secrets.
+#   - If you add it behind an environment gate, also create that environment
+#     in repo settings and add its secrets.
+#   - Register the channel in README.md `## Installation` if it is user-facing.
+#   - Add smoke coverage under `.github/workflows/readme-smoke.yml` per
+#     `.claude/rules/readme-sync.md`.
+#   - Update `docs/releasing.md` Step 1 bump list if the channel has a manifest.
+#
+# When intentionally skipping a channel (e.g. manual PR flows such as winget),
+# set `expected_version = "skip"` and fill in `skip_reason` — the post-release
+# verifier uses these fields to distinguish "no publish expected" from
+# "publish missing".
+
+# ---------------------------------------------------------------- crates.io
+
+[[channels]]
+id = "crates-io-core"
+display = "crates.io — chordsketch-core"
+kind = "crates-io"
+package = "chordsketch-core"
+expected_version = "tag"
+required_secrets = []
+notes = "Published manually per docs/releasing.md Step 6."
+
+[[channels]]
+id = "crates-io-render-text"
+display = "crates.io — chordsketch-render-text"
+kind = "crates-io"
+package = "chordsketch-render-text"
+expected_version = "tag"
+required_secrets = []
+
+[[channels]]
+id = "crates-io-render-html"
+display = "crates.io — chordsketch-render-html"
+kind = "crates-io"
+package = "chordsketch-render-html"
+expected_version = "tag"
+required_secrets = []
+
+[[channels]]
+id = "crates-io-render-pdf"
+display = "crates.io — chordsketch-render-pdf"
+kind = "crates-io"
+package = "chordsketch-render-pdf"
+expected_version = "tag"
+required_secrets = []
+
+[[channels]]
+id = "crates-io-cli"
+display = "crates.io — chordsketch"
+kind = "crates-io"
+package = "chordsketch"
+expected_version = "tag"
+required_secrets = []
+
+# ---------------------------------------------------------------- containers
+
+[[channels]]
+id = "ghcr"
+display = "GHCR — ghcr.io/koedame/chordsketch"
+kind = "ghcr"
+package = "koedame/chordsketch"
+expected_version = "tag"
+required_secrets = []  # GITHUB_TOKEN is always present
+notes = "Requires manual visibility flip on first publish (project_ghcr_org_policy)."
+
+[[channels]]
+id = "docker-hub"
+display = "Docker Hub — docker.io/koedame/chordsketch"
+kind = "docker-hub"
+package = "koedame/chordsketch"
+expected_version = "tag"
+required_secrets = ["DOCKERHUB_USERNAME", "DOCKERHUB_TOKEN"]
+
+# ---------------------------------------------------------------- npm (wasm)
+
+[[channels]]
+id = "npm-wasm"
+display = "npm — @chordsketch/wasm"
+kind = "npm"
+package = "@chordsketch/wasm"
+expected_version = "tag"
+required_secrets = ["NPM_TOKEN"]
+notes = "Patch skew from workspace is allowed; see ci/version-skew-allowlist.toml."
+
+# ---------------------------------------------------------------- installers
+
+[[channels]]
+id = "homebrew-tap"
+display = "Homebrew tap — koedame/homebrew-tap"
+kind = "homebrew-tap"
+package = "chordsketch"
+expected_version = "tag"
+required_secrets = []  # post-release.yml uses a PAT at publish time, but the
+                       # rollup only reads the public formula file.
+notes = "Updated by .github/workflows/post-release.yml via PR to koedame/homebrew-tap."
+
+[[channels]]
+id = "scoop-bucket"
+display = "Scoop bucket — koedame/scoop-bucket"
+kind = "scoop-bucket"
+package = "chordsketch"
+expected_version = "tag"
+required_secrets = []
+notes = "Updated by .github/workflows/post-release.yml via PR to koedame/scoop-bucket."
+
+[[channels]]
+id = "winget"
+display = "winget — microsoft/winget-pkgs"
+kind = "manual"
+expected_version = "skip"
+skip_reason = """
+winget publication requires a manual PR against microsoft/winget-pkgs that is
+reviewed asynchronously by Microsoft. There is no reliable programmatic
+contract to verify at release time, so this channel is intentionally skipped
+from the rollup.
+"""
+required_secrets = []
+
+# ---------------------------------------------------------------- VS Code
+
+[[channels]]
+id = "vscode-marketplace"
+display = "VS Code Marketplace — koedame.chordsketch"
+kind = "vscode-marketplace"
+package = "koedame.chordsketch"
+expected_version = "tag"
+required_secrets = ["VSCE_PAT"]
+notes = """
+Gated on the `vscode-marketplace` GitHub environment in
+.github/workflows/vscode-extension.yml. First publish must be performed
+manually by a human after registering the publisher at
+https://marketplace.visualstudio.com/manage (see #1428).
+"""
+
+# ---------------------------------------------------------------- language bindings
+
+[[channels]]
+id = "pypi"
+display = "PyPI — chordsketch"
+kind = "pypi"
+package = "chordsketch"
+expected_version = "tag"
+required_secrets = []  # trusted publishing (OIDC)
+notes = "Publishes via maturin + trusted publishing in .github/workflows/python.yml."
+
+[[channels]]
+id = "rubygems"
+display = "RubyGems — chordsketch"
+kind = "rubygems"
+package = "chordsketch"
+expected_version = "tag"
+required_secrets = []  # trusted publishing (OIDC)
+notes = "Publishes via .github/workflows/ruby.yml."
+
+[[channels]]
+id = "maven-central"
+display = "Maven Central — io.github.koedame:chordsketch"
+kind = "maven-central"
+package = "io.github.koedame:chordsketch"
+expected_version = "tag"
+required_secrets = [
+    "MAVEN_CENTRAL_USERNAME",
+    "MAVEN_CENTRAL_PASSWORD",
+    "SIGNING_KEY",
+    "SIGNING_PASSWORD",
+]
+notes = "OIDC migration tracked in #1124."
+
+# ---------------------------------------------------------------- napi (@chordsketch/node)
+#
+# Multi-package prebuilt-binary layout following the napi-rs convention: one
+# platform-specific package per target triple, plus a main resolver package.
+# All six packages are published on the same release.
+
+[[channels]]
+id = "napi-main"
+display = "npm — @chordsketch/node (resolver)"
+kind = "npm"
+package = "@chordsketch/node"
+expected_version = "tag"
+required_secrets = ["NPM_TOKEN"]
+
+[[channels]]
+id = "napi-linux-x64-gnu"
+display = "npm — @chordsketch/node-linux-x64-gnu"
+kind = "npm"
+package = "@chordsketch/node-linux-x64-gnu"
+expected_version = "tag"
+required_secrets = ["NPM_TOKEN"]
+
+[[channels]]
+id = "napi-linux-arm64-gnu"
+display = "npm — @chordsketch/node-linux-arm64-gnu"
+kind = "npm"
+package = "@chordsketch/node-linux-arm64-gnu"
+expected_version = "tag"
+required_secrets = ["NPM_TOKEN"]
+
+[[channels]]
+id = "napi-darwin-x64"
+display = "npm — @chordsketch/node-darwin-x64"
+kind = "npm"
+package = "@chordsketch/node-darwin-x64"
+expected_version = "tag"
+required_secrets = ["NPM_TOKEN"]
+
+[[channels]]
+id = "napi-darwin-arm64"
+display = "npm — @chordsketch/node-darwin-arm64"
+kind = "npm"
+package = "@chordsketch/node-darwin-arm64"
+expected_version = "tag"
+required_secrets = ["NPM_TOKEN"]
+
+[[channels]]
+id = "napi-win32-x64-msvc"
+display = "npm — @chordsketch/node-win32-x64-msvc"
+kind = "npm"
+package = "@chordsketch/node-win32-x64-msvc"
+expected_version = "tag"
+required_secrets = ["NPM_TOKEN"]

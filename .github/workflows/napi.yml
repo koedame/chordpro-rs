@@ -18,6 +18,14 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/napi.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g., v0.2.0)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -161,3 +169,180 @@ jobs:
 
       - name: Format check
         run: cargo fmt --check -p chordsketch-napi
+
+  publish:
+    name: Publish to npm (@chordsketch/node + 5 platforms)
+    # Runs only on release: published or explicit workflow_dispatch.
+    # `build` must succeed so every target triple has an artifact to
+    # publish; we download them all and assemble each platform package
+    # before running `npm publish`.
+    needs: [build]
+    if: |
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && inputs.tag != '')
+    runs-on: ubuntu-latest
+    # `continue-on-error: true` keeps the overall workflow green when the
+    # `napi` environment is absent (forks, fresh instances). The authoritative
+    # success/failure signal for this channel is `release-verify.yml`'s
+    # post-release rollup, which queries registry.npmjs.org for each of the
+    # six packages. See #1506.
+    #
+    # One-time human setup: create the "napi" environment at
+    #   https://github.com/koedame/chordsketch/settings/environments
+    # and add NPM_TOKEN as an environment secret. The npm account must own
+    # the `@chordsketch` scope and have published the six @chordsketch/node*
+    # packages at least once (see docs/releasing.md §napi distribution).
+    continue-on-error: true
+    environment:
+      name: napi
+      url: https://www.npmjs.com/package/@chordsketch/node
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Check required secrets present
+        # Fails fast when NPM_TOKEN is missing so "environment missing →
+        # silent skip" turns into a loud, diagnosable error. Mirrors the
+        # pattern used in every other publish job. See #1506.
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: python3 scripts/check-env-secrets.py --channel napi-main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Determine version
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "release" ]; then
+            tag="$RELEASE_TAG"
+          else
+            tag="$INPUT_TAG"
+          fi
+          version="${tag#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing @chordsketch/node@$version"
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: napi-artifacts
+          pattern: napi-*
+          merge-multiple: false
+
+      - name: Stage each platform package with its prebuilt binary
+        # Each `crates/napi/npm/<triple>/package.json` declares a `main` and
+        # `files` entry referencing a specific `.node` filename. Copy the
+        # downloaded artifact into the staging directory under that name so
+        # `npm publish` picks it up via the `files` allowlist. The `{ok, }`
+        # suffix in the loop makes the script fail loud if a target's
+        # artifact is missing, rather than silently publishing an empty
+        # package.
+        working-directory: crates/napi
+        run: |
+          set -euo pipefail
+          declare -A TARGET_TO_TRIPLE=(
+            [x86_64-unknown-linux-gnu]=linux-x64-gnu
+            [aarch64-unknown-linux-gnu]=linux-arm64-gnu
+            [x86_64-apple-darwin]=darwin-x64
+            [aarch64-apple-darwin]=darwin-arm64
+            [x86_64-pc-windows-msvc]=win32-x64-msvc
+          )
+          for target in "${!TARGET_TO_TRIPLE[@]}"; do
+            triple="${TARGET_TO_TRIPLE[$target]}"
+            src_dir="../../napi-artifacts/napi-${target}"
+            dst_dir="npm/${triple}"
+            if [ ! -d "$src_dir" ]; then
+              echo "::error::artifact directory $src_dir is missing; build matrix failed for $target"
+              exit 1
+            fi
+            node_file=$(ls "$src_dir"/*.node 2>/dev/null | head -n1 || true)
+            if [ -z "$node_file" ]; then
+              echo "::error::no .node file found in $src_dir"
+              exit 1
+            fi
+            cp "$node_file" "$dst_dir/chordsketch-napi.${triple}.node"
+            # Verify the file is non-empty — a zero-byte .node publishes
+            # without error but fails at require() time on the user.
+            if [ ! -s "$dst_dir/chordsketch-napi.${triple}.node" ]; then
+              echo "::error::$dst_dir/chordsketch-napi.${triple}.node is empty"
+              exit 1
+            fi
+            ls -la "$dst_dir/"
+          done
+
+      - name: Assert committed version matches the release tag
+        # crates/napi/package.json and each crates/napi/npm/<triple>/package.json
+        # all have a committed `version` field that must match the release tag
+        # exactly. The version-consistency check enforces this on every PR, but
+        # re-verify at publish time to catch any out-of-band edit that slipped
+        # through (e.g., a hotfix tag cut from an older commit).
+        env:
+          EXPECTED: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          check() {
+            local path="$1"
+            local actual
+            actual=$(node -p "require('./$path/package.json').version")
+            if [ "$actual" != "$EXPECTED" ]; then
+              echo "::error::$path/package.json version=$actual but release tag is $EXPECTED"
+              exit 1
+            fi
+          }
+          check crates/napi
+          for triple in linux-x64-gnu linux-arm64-gnu darwin-x64 darwin-arm64 win32-x64-msvc; do
+            check "crates/napi/npm/$triple"
+          done
+
+      - name: Publish each platform package
+        # Publish the five platform packages FIRST. Order within this group
+        # does not matter, but all five must succeed before the main resolver
+        # package is published — the resolver's `optionalDependencies` point
+        # at them, and installing the resolver before the platform packages
+        # are live causes npm to silently skip them and then `require()`
+        # fails at runtime.
+        #
+        # `--access public` is required for scoped packages under a free npm
+        # account — without it, the first publish would default to private
+        # and be silently invisible to anonymous pulls.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          for triple in linux-x64-gnu linux-arm64-gnu darwin-x64 darwin-arm64 win32-x64-msvc; do
+            pkg="@chordsketch/node-${triple}"
+            version="${{ steps.version.outputs.version }}"
+            if npm view "$pkg@$version" version >/dev/null 2>&1; then
+              echo "$pkg@$version already published — skipping"
+              continue
+            fi
+            (cd "crates/napi/npm/${triple}" && npm publish --access public)
+          done
+
+      - name: Publish resolver package (@chordsketch/node)
+        # Publish the main resolver LAST, after all platform packages are
+        # live on the registry. Same skip-if-already-published guard as the
+        # platform loop above.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          if npm view "@chordsketch/node@$version" version >/dev/null 2>&1; then
+            echo "@chordsketch/node@$version already published — skipping"
+            exit 0
+          fi
+          cd crates/napi
+          npm publish --access public

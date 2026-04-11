@@ -1,0 +1,28 @@
+{
+  "name": "@chordsketch/node-linux-arm64-gnu",
+  "version": "0.2.0",
+  "description": "Prebuilt @chordsketch/node binary for Linux aarch64 (glibc).",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/koedame/chordsketch.git",
+    "directory": "crates/napi/npm/linux-arm64-gnu"
+  },
+  "homepage": "https://github.com/koedame/chordsketch",
+  "main": "chordsketch-napi.linux-arm64-gnu.node",
+  "files": [
+    "chordsketch-napi.linux-arm64-gnu.node"
+  ],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "engines": {
+    "node": ">=15.12.0"
+  }
+}
