@@ -141,7 +141,7 @@
     "prepackage": "npm run build"
   },
   "dependencies": {
-    "@chordsketch/wasm": "^0.1.1",
+    "@chordsketch/wasm": "^0.2.0",
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {

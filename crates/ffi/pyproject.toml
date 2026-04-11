@@ -7,11 +7,11 @@ name = "chordsketch"
 # Version is derived from Cargo.toml automatically by maturin.
 dynamic = ["version"]
 description = "ChordPro file format parser and renderer"
-readme = {text = "ChordPro file format parser and renderer for Python. See https://github.com/koedame/chordsketch for documentation.", content-type = "text/plain"}
+readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.8"
 authors = [{ name = "koedame" }]
-keywords = ["chordpro", "music", "chord", "parser", "lyrics"]
+keywords = ["chordpro", "music", "chord", "parser", "lyrics", "rust", "uniffi"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
