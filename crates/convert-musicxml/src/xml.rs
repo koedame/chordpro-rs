@@ -81,15 +81,38 @@ impl Element {
 /// from adversarial input.
 const MAX_DEPTH: usize = 200;
 
+/// Maximum input size accepted by the parser (50 MiB).
+///
+/// Inputs larger than this limit are rejected at the `parse()` entry point to
+/// prevent memory exhaustion from flat-wide adversarial documents — e.g., a
+/// document with millions of siblings, enormous text nodes, or millions of
+/// attributes that bypass the depth limit by operating horizontally within a
+/// single level. Real MusicXML files are typically well under 10 MB; 50 MiB is
+/// a generous ceiling. See #1565.
+///
+/// This limit also makes the `i32` bracket-depth counter in `skip_doctype`
+/// overflow-safe: even if the entire input consists of `[` characters, 50 MiB
+/// is well below `i32::MAX` (≈ 2 GiB).
+const MAX_INPUT_BYTES: usize = 50 * 1024 * 1024; // 50 MiB
+
 /// Parse an XML string into an element tree.
 ///
 /// Returns the root element, or an error message if parsing fails.
 ///
 /// # Errors
 ///
-/// Returns an error if the XML is malformed or if the element nesting depth
-/// exceeds [`MAX_DEPTH`].
+/// Returns an error if:
+/// - The input exceeds [`MAX_INPUT_BYTES`] (50 MiB)
+/// - The XML is malformed
+/// - The element nesting depth exceeds [`MAX_DEPTH`]
 pub(crate) fn parse(xml: &str) -> Result<Element, String> {
+    if xml.len() > MAX_INPUT_BYTES {
+        return Err(format!(
+            "MusicXML input too large: {} bytes (limit is {} bytes)",
+            xml.len(),
+            MAX_INPUT_BYTES
+        ));
+    }
     let mut p = Parser {
         src: xml.as_bytes(),
         pos: 0,
@@ -828,5 +851,37 @@ mod tests {
         // Also verify a valid named entity after multi-byte text still works.
         let input2 = "café &amp; more";
         assert_eq!(decode_entities(input2), "café & more");
+    }
+
+    #[test]
+    fn parse_rejects_oversized_input() {
+        // An input larger than MAX_INPUT_BYTES must be rejected at the entry
+        // point before any allocation, preventing memory exhaustion from
+        // flat-wide adversarial documents (see #1565).
+        let oversized = "A".repeat(MAX_INPUT_BYTES + 1);
+        let result = parse(&oversized);
+        assert!(result.is_err(), "expected error for oversized input");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("too large"),
+            "error message should mention 'too large': {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_accepts_input_at_limit() {
+        // An input of exactly MAX_INPUT_BYTES must not be rejected by the size
+        // check (it may still fail for other reasons — malformed XML — but the
+        // size guard must not trigger).
+        let at_limit = "A".repeat(MAX_INPUT_BYTES);
+        let result = parse(&at_limit);
+        // The input is not valid XML, so it will fail, but the error must NOT
+        // mention "too large" (the size guard should not fire).
+        if let Err(msg) = result {
+            assert!(
+                !msg.contains("too large"),
+                "size guard should not fire at exactly MAX_INPUT_BYTES, got: {msg}"
+            );
+        }
     }
 }
