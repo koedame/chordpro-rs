@@ -9,6 +9,7 @@ members = [
     "crates/wasm",
     "crates/napi",
     "crates/ffi",
+    "crates/convert-musicxml",
 ]
 resolver = "3"
 

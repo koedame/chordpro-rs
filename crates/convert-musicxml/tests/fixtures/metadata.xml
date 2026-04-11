@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN"
+  "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="4.0">
+  <work>
+    <work-title>Amazing Grace</work-title>
+  </work>
+  <identification>
+    <creator type="composer">John Newton</creator>
+    <creator type="lyricist">John Newton</creator>
+  </identification>
+  <part-list>
+    <score-part id="P1"><part-name>Voice</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>1</fifths><mode>major</mode></key>
+        <time><beats>3</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <direction placement="above">
+        <direction-type>
+          <metronome><beat-unit>quarter</beat-unit><per-minute>72</per-minute></metronome>
+        </direction-type>
+        <sound tempo="72"/>
+      </direction>
+      <harmony>
+        <root><root-step>G</root-step></root>
+        <kind text="">major</kind>
+      </harmony>
+      <note>
+        <pitch><step>G</step><octave>4</octave></pitch>
+        <duration>1</duration>
+        <type>quarter</type>
+        <lyric number="1"><syllabic>single</syllabic><text>A</text></lyric>
+      </note>
+      <harmony>
+        <root><root-step>C</root-step></root>
+        <kind text="">major</kind>
+      </harmony>
+      <note>
+        <pitch><step>C</step><octave>5</octave></pitch>
+        <duration>1</duration>
+        <type>quarter</type>
+        <lyric number="1"><syllabic>begin</syllabic><text>ma</text></lyric>
+      </note>
+      <note>
+        <pitch><step>E</step><octave>5</octave></pitch>
+        <duration>1</duration>
+        <type>quarter</type>
+        <lyric number="1"><syllabic>end</syllabic><text>zing</text></lyric>
+      </note>
+    </measure>
+    <measure number="2">
+      <harmony>
+        <root><root-step>G</root-step></root>
+        <kind text="">major</kind>
+      </harmony>
+      <note>
+        <pitch><step>G</step><octave>5</octave></pitch>
+        <duration>1</duration>
+        <type>quarter</type>
+        <lyric number="1"><syllabic>single</syllabic><text>grace</text></lyric>
+      </note>
+    </measure>
+  </part>
+</score-partwise>

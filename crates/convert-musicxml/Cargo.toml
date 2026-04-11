@@ -1,0 +1,15 @@
+[package]
+name = "chordsketch-convert-musicxml"
+version = "0.2.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["musicxml", "chordpro", "music", "converter"]
+categories = ["parser-implementations", "text-processing"]
+description = "MusicXML ↔ ChordPro bidirectional converter"
+
+[dependencies]
+chordsketch-core = { version = "0.2.0", path = "../core" }

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN"
+  "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="4.0">
+  <work>
+    <work-title>Section Demo</work-title>
+  </work>
+  <part-list>
+    <score-part id="P1"><part-name>Voice</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <!-- Verse section -->
+    <measure number="1">
+      <direction placement="above">
+        <direction-type>
+          <rehearsal>Verse 1</rehearsal>
+        </direction-type>
+      </direction>
+      <harmony>
+        <root><root-step>A</root-step></root>
+        <kind text="m">minor</kind>
+      </harmony>
+      <note>
+        <pitch><step>A</step><octave>4</octave></pitch>
+        <duration>4</duration>
+        <type>whole</type>
+        <lyric number="1"><syllabic>single</syllabic><text>Verse</text></lyric>
+      </note>
+      <harmony>
+        <root><root-step>F</root-step></root>
+        <kind text="">major</kind>
+      </harmony>
+      <note>
+        <pitch><step>F</step><octave>4</octave></pitch>
+        <duration>4</duration>
+        <type>whole</type>
+        <lyric number="1"><syllabic>single</syllabic><text>line</text></lyric>
+      </note>
+    </measure>
+    <!-- Chorus section -->
+    <measure number="2">
+      <direction placement="above">
+        <direction-type>
+          <rehearsal>Chorus</rehearsal>
+        </direction-type>
+      </direction>
+      <harmony>
+        <root><root-step>C</root-step></root>
+        <kind text="">major</kind>
+      </harmony>
+      <note>
+        <pitch><step>C</step><octave>5</octave></pitch>
+        <duration>4</duration>
+        <type>whole</type>
+        <lyric number="1"><syllabic>single</syllabic><text>Chorus</text></lyric>
+      </note>
+      <harmony>
+        <root><root-step>G</root-step></root>
+        <kind text="">major</kind>
+      </harmony>
+      <note>
+        <pitch><step>G</step><octave>4</octave></pitch>
+        <duration>4</duration>
+        <type>whole</type>
+        <lyric number="1"><syllabic>single</syllabic><text>line</text></lyric>
+      </note>
+    </measure>
+  </part>
+</score-partwise>

@@ -261,6 +261,7 @@ name = "chordsketch"
 version = "0.2.0"
 dependencies = [
  "assert_cmd",
+ "chordsketch-convert-musicxml",
  "chordsketch-core",
  "chordsketch-render-html",
  "chordsketch-render-pdf",
@@ -269,6 +270,13 @@ dependencies = [
  "clap_complete",
  "predicates",
  "tempfile",
+]
+
+[[package]]
+name = "chordsketch-convert-musicxml"
+version = "0.2.0"
+dependencies = [
+ "chordsketch-core",
 ]
 
 [[package]]

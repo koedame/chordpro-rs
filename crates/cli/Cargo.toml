@@ -21,6 +21,7 @@ chordsketch-core = { version = "0.2.0", path = "../core" }
 chordsketch-render-text = { version = "0.2.0", path = "../render-text" }
 chordsketch-render-html = { version = "0.2.0", path = "../render-html" }
 chordsketch-render-pdf = { version = "0.2.0", path = "../render-pdf" }
+chordsketch-convert-musicxml = { version = "0.2.0", path = "../convert-musicxml" }
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 tempfile = "3"

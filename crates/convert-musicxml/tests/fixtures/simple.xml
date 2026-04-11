@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN"
+  "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Voice</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <harmony>
+        <root><root-step>C</root-step></root>
+        <kind text="">major</kind>
+      </harmony>
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>4</duration>
+        <type>whole</type>
+        <lyric number="1"><syllabic>single</syllabic><text>Hello</text></lyric>
+      </note>
+      <harmony>
+        <root><root-step>A</root-step></root>
+        <kind text="m">minor</kind>
+      </harmony>
+      <note>
+        <pitch><step>E</step><octave>4</octave></pitch>
+        <duration>4</duration>
+        <type>whole</type>
+        <lyric number="1"><syllabic>single</syllabic><text>world</text></lyric>
+      </note>
+    </measure>
+    <measure number="2">
+      <harmony>
+        <root><root-step>F</root-step></root>
+        <kind text="">major</kind>
+      </harmony>
+      <note>
+        <pitch><step>F</step><octave>4</octave></pitch>
+        <duration>4</duration>
+        <type>whole</type>
+        <lyric number="1"><syllabic>single</syllabic><text>Good</text></lyric>
+      </note>
+      <harmony>
+        <root><root-step>G</root-step></root>
+        <kind text="">major</kind>
+      </harmony>
+      <note>
+        <pitch><step>G</step><octave>4</octave></pitch>
+        <duration>4</duration>
+        <type>whole</type>
+        <lyric number="1"><syllabic>single</syllabic><text>bye</text></lyric>
+      </note>
+    </measure>
+  </part>
+</score-partwise>

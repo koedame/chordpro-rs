@@ -85,15 +85,16 @@ enum Commands {
         check: bool,
     },
 
-    /// Convert a plain-text chord+lyrics sheet or ABC notation file to ChordPro format.
+    /// Convert between ChordPro and other music notation formats.
     ///
-    /// Reads plain-text files where chord names appear on their own lines
-    /// directly above the corresponding lyric lines, or ABC notation files
-    /// (`.abc`), and converts them to ChordPro (`.cho`) format.  The output
-    /// is written to stdout unless `--output` is given.
+    /// Import: reads plain-text, ABC notation (`.abc`), or MusicXML (`.xml`)
+    /// files and converts them to ChordPro (`.cho`) format.
     ///
-    /// Auto-detection is used by default.  Pass `--from plaintext` or
-    /// `--from abc` to force a specific conversion.
+    /// Export: reads ChordPro files and converts them to MusicXML (`.xml`)
+    /// using `--to musicxml`.
+    ///
+    /// Auto-detection is used by default for import.  Pass `--from plaintext`,
+    /// `--from abc`, or `--from musicxml` to force a specific input format.
     Convert {
         /// Input file(s) to convert. Use '-' to read from stdin.
         #[arg(required = true)]
@@ -101,9 +102,15 @@ enum Commands {
 
         /// Input format. `auto` detects the format automatically;
         /// `plaintext` forces plain chord+lyrics conversion;
-        /// `abc` forces ABC notation conversion.
+        /// `abc` forces ABC notation conversion;
+        /// `musicxml` forces MusicXML import.
         #[arg(long, default_value = "auto")]
         from: ConvertFrom,
+
+        /// Output format for export. `musicxml` converts ChordPro → MusicXML.
+        /// When omitted, the output is ChordPro (`.cho`) format.
+        #[arg(long)]
+        to: Option<ConvertTo>,
 
         /// Write output to a file instead of stdout.
         #[arg(short, long)]
@@ -114,12 +121,21 @@ enum Commands {
 /// Input format for the `convert` subcommand.
 #[derive(Clone, Debug, clap::ValueEnum)]
 enum ConvertFrom {
-    /// Automatically detect the input format.
+    /// Automatically detect the input format from file extension and content.
     Auto,
     /// Force plain chord+lyrics conversion.
     Plaintext,
     /// Force ABC notation conversion.
     Abc,
+    /// Force MusicXML import.
+    Musicxml,
+}
+
+/// Output format for the `convert --to` flag.
+#[derive(Clone, Debug, clap::ValueEnum)]
+enum ConvertTo {
+    /// Export to MusicXML 4.0.
+    Musicxml,
 }
 
 /// Supported output formats.
@@ -143,10 +159,11 @@ fn main() -> ExitCode {
     if let Some(Commands::Convert {
         files,
         from,
+        to,
         output,
     }) = cli.command
     {
-        return run_convert(&files, from, output.as_deref());
+        return run_convert(&files, from, to, output.as_deref());
     }
 
     // Render mode: require at least one file (unless generating completions).
@@ -441,21 +458,64 @@ fn run_fmt(files: &[String], check: bool) -> ExitCode {
 
 /// Run the `convert` subcommand.
 ///
-/// Reads each file, auto-detects or force-converts plain chord+lyrics text to
-/// ChordPro format, then writes the output to `output_path` (or stdout).
+/// For import (no `--to` flag): reads each file, auto-detects or
+/// force-converts to ChordPro format, then writes the output to
+/// `output_path` (or stdout). Multiple files are concatenated with
+/// `{new_song}` separators.
 ///
-/// When multiple files are provided their ChordPro output is concatenated.
+/// For export (`--to musicxml`): reads ChordPro files and converts them
+/// to MusicXML 4.0. Only a single input file is supported for export.
 ///
 /// # Exit codes
 ///
 /// * `0` — all files converted successfully.
 /// * `1` — at least one I/O error occurred or a file was skipped because its
 ///   format could not be detected.
-fn run_convert(files: &[String], from: ConvertFrom, output_path: Option<&str>) -> ExitCode {
+fn run_convert(
+    files: &[String],
+    from: ConvertFrom,
+    to: Option<ConvertTo>,
+    output_path: Option<&str>,
+) -> ExitCode {
     use chordsketch_core::{
-        InputFormat, convert_abc, convert_plain_text, detect_format, song_to_chordpro,
+        InputFormat, convert_abc, convert_plain_text, detect_format, parse_lenient,
+        song_to_chordpro,
     };
+    use chordsketch_convert_musicxml::{from_musicxml, to_musicxml};
 
+    // --- Export path: ChordPro → MusicXML -----------------------------------
+    if let Some(ConvertTo::Musicxml) = to {
+        if files.len() > 1 {
+            eprintln!("error: --to musicxml supports only a single input file");
+            return ExitCode::FAILURE;
+        }
+        let file = &files[0];
+        let input = if file == "-" {
+            let mut s = String::new();
+            if let Err(e) = io::stdin().read_to_string(&mut s) {
+                eprintln!("error: reading stdin: {e}");
+                return ExitCode::FAILURE;
+            }
+            s
+        } else {
+            match fs::read_to_string(file) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("error: {file}: {e}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        };
+        let result = parse_lenient(&input);
+        let xml = to_musicxml(&result.song);
+        if let Err(e) = write_text(&output_path.map(str::to_string), &xml) {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+        return ExitCode::SUCCESS;
+    }
+
+    // --- Import path: other formats → ChordPro ------------------------------
     let mut had_error = false;
     let mut combined = String::new();
 
@@ -483,6 +543,7 @@ fn run_convert(files: &[String], from: ConvertFrom, output_path: Option<&str>) -
         enum Action {
             Plaintext,
             Abc,
+            MusicXml,
             Passthrough,
             Skip,
         }
@@ -490,13 +551,23 @@ fn run_convert(files: &[String], from: ConvertFrom, output_path: Option<&str>) -
         let action = match from {
             ConvertFrom::Plaintext => Action::Plaintext,
             ConvertFrom::Abc => Action::Abc,
+            ConvertFrom::Musicxml => Action::MusicXml,
             ConvertFrom::Auto => {
-                let fmt = detect_format(&input);
-                match fmt {
-                    InputFormat::PlainChordLyrics => Action::Plaintext,
-                    InputFormat::Abc => Action::Abc,
-                    InputFormat::ChordPro => Action::Passthrough,
-                    InputFormat::Unknown => Action::Skip,
+                // Check file extension first
+                let ext = Path::new(file.as_str())
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(str::to_ascii_lowercase);
+                if ext.as_deref() == Some("xml") || ext.as_deref() == Some("musicxml") {
+                    Action::MusicXml
+                } else {
+                    let fmt = detect_format(&input);
+                    match fmt {
+                        InputFormat::PlainChordLyrics => Action::Plaintext,
+                        InputFormat::Abc => Action::Abc,
+                        InputFormat::ChordPro => Action::Passthrough,
+                        InputFormat::Unknown => Action::Skip,
+                    }
                 }
             }
         };
@@ -515,6 +586,19 @@ fn run_convert(files: &[String], from: ConvertFrom, output_path: Option<&str>) -
                 }
                 combined.push_str(&convert_abc(&input));
             }
+            Action::MusicXml => {
+                if !combined.is_empty() {
+                    combined.push_str("{new_song}\n");
+                }
+                match from_musicxml(&input) {
+                    Ok(song) => combined.push_str(&song_to_chordpro(&song)),
+                    Err(e) => {
+                        let label = if file == "-" { "<stdin>" } else { file.as_str() };
+                        eprintln!("error: {label}: {e}");
+                        had_error = true;
+                    }
+                }
+            }
             Action::Passthrough => {
                 // Already ChordPro — pass through unchanged.
                 if !combined.is_empty() {
@@ -530,7 +614,7 @@ fn run_convert(files: &[String], from: ConvertFrom, output_path: Option<&str>) -
                 };
                 eprintln!(
                     "warning: {label}: format could not be detected; \
-                     use --from plaintext or --from abc to force conversion"
+                     use --from plaintext, --from abc, or --from musicxml to force conversion"
                 );
                 had_error = true;
             }

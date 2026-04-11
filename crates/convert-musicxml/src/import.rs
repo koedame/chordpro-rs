@@ -1,0 +1,594 @@
+//! MusicXML → ChordPro importer.
+//!
+//! Converts a MusicXML 4.0 `<score-partwise>` document into a [`Song`] AST
+//! by extracting chord symbols, lyrics, metadata, and section structure.
+//!
+//! # What is extracted
+//!
+//! - Song metadata: `<work-title>`, `<creator type="composer">`, key signature,
+//!   tempo (`<sound tempo="...">`), capo (`<capo>`)
+//! - Chord symbols: reconstructed from `<harmony>` elements using root step/alter
+//!   and the kind `text` attribute (falling back to kind content mapping)
+//! - Lyrics: from `<note><lyric>` elements; each lyric syllable is matched to
+//!   the preceding harmony
+//! - Section structure: rehearsal marks (`<rehearsal>`) are mapped to ChordPro
+//!   start-of-verse / start-of-chorus / start-of-bridge directives
+//!
+//! # What is not extracted
+//!
+//! - Staff notation (notes, pitch, rhythm, duration)
+//! - Multi-part scores (only the first `<part>` is used)
+//! - Dynamics, articulations, slurs
+//! - Chord diagrams
+
+use crate::xml::{Element, parse};
+use chordsketch_core::ast::{Chord, Directive, Line, LyricsLine, LyricsSegment, Song};
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/// Error type for MusicXML import failures.
+#[derive(Debug)]
+pub struct ImportError(String);
+
+impl std::fmt::Display for ImportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MusicXML import error: {}", self.0)
+    }
+}
+
+impl std::error::Error for ImportError {}
+
+/// Converts a MusicXML string into a [`Song`] AST.
+///
+/// Only the first `<part>` is used; additional parts are ignored. Chord
+/// symbols are reconstructed from `<harmony>` elements; lyrics are extracted
+/// from `<note><lyric>` elements and aligned to the preceding chord.
+///
+/// # Errors
+///
+/// Returns an [`ImportError`] if the XML cannot be parsed or if the document
+/// is not a `<score-partwise>` MusicXML file.
+pub fn from_musicxml(xml: &str) -> Result<Song, ImportError> {
+    let root = parse(xml).map_err(|e| ImportError(format!("XML parse error: {e}")))?;
+    if root.name != "score-partwise" {
+        return Err(ImportError(format!(
+            "expected <score-partwise> root element, found <{}>",
+            root.name
+        )));
+    }
+    convert_score(&root)
+}
+
+// ---------------------------------------------------------------------------
+// Internal conversion
+// ---------------------------------------------------------------------------
+
+fn convert_score(score: &Element) -> Result<Song, ImportError> {
+    let mut song = Song::new();
+
+    // --- Metadata -----------------------------------------------------------
+
+    // Title from <work><work-title>
+    if let Some(title) = score.text_at(&["work", "work-title"]) {
+        if !title.is_empty() {
+            song.metadata.title = Some(title.to_string());
+        }
+    }
+
+    // Creators from <identification><creator type="...">
+    if let Some(ident) = score.child("identification") {
+        for creator in ident.children_named("creator") {
+            let kind = creator.attr("type").unwrap_or("");
+            let name = creator.text.trim();
+            if name.is_empty() {
+                continue;
+            }
+            match kind {
+                "composer" | "arranger" => song.metadata.artists.push(name.to_string()),
+                "lyricist" => song.metadata.lyricists.push(name.to_string()),
+                _ => {
+                    // Store unknown creator types as custom metadata
+                    song.metadata
+                        .custom
+                        .push((kind.to_string(), name.to_string()));
+                }
+            }
+        }
+    }
+
+    // --- Body ---------------------------------------------------------------
+
+    // Use the first <part> only
+    let part = score
+        .child("part")
+        .ok_or_else(|| ImportError("no <part> element found".to_string()))?;
+
+    let mut current_key: Option<String> = None;
+    let mut key_emitted = false;
+    let mut tempo_emitted = false;
+    let mut capo_emitted = false;
+    let mut in_section = false;
+
+    for measure in part.children_named("measure") {
+        // --- attributes (key, capo) -----------------------------------------
+        if let Some(attrs) = measure.child("attributes") {
+            if let Some(key_elem) = attrs.child("key") {
+                let fifths: i32 = key_elem
+                    .text_at(&["fifths"])
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                let mode = key_elem.text_at(&["mode"]).unwrap_or("major");
+                let key_name = fifths_to_key(fifths, mode);
+                current_key = Some(key_name);
+            }
+            if !capo_emitted {
+                if let Some(capo_text) = attrs.text_at(&["capo"]) {
+                    if !capo_text.is_empty() && capo_text != "0" {
+                        emit_directive(&mut song.lines, "capo", Some(capo_text));
+                        capo_emitted = true;
+                    }
+                }
+            }
+        }
+
+        // Emit key once (first time we see it)
+        if !key_emitted {
+            if let Some(ref key) = current_key {
+                if song.metadata.key.is_none() {
+                    song.metadata.key = Some(key.clone());
+                }
+                key_emitted = true;
+            }
+        }
+
+        // --- directions (tempo, rehearsal marks) ----------------------------
+        for direction in measure.children_named("direction") {
+            // Tempo
+            if !tempo_emitted {
+                if let Some(sound) = direction.child("sound") {
+                    if let Some(tempo) = sound.attr("tempo") {
+                        if !tempo.is_empty() {
+                            song.metadata.tempo = Some(tempo.to_string());
+                            tempo_emitted = true;
+                        }
+                    }
+                }
+                // Also handle <sound> directly in measure
+            }
+
+            // Rehearsal marks → section start directives
+            if let Some(dt) = direction.child("direction-type") {
+                if let Some(rehearsal) = dt.child("rehearsal") {
+                    let label = rehearsal.text.trim();
+                    if !label.is_empty() {
+                        // Close any open section
+                        if in_section {
+                            song.lines.push(Line::Empty);
+                        }
+                        let (section_dir, section_end) = map_section_label(label);
+                        emit_directive(&mut song.lines, section_dir, Some(label));
+                        in_section = true;
+                        let _ = section_end; // will emit on next section or EOF
+                    }
+                }
+                if let Some(words) = dt.child("words") {
+                    let text = words.text.trim();
+                    // Treat "Intro:", "Verse", "Chorus", etc. as section markers
+                    if looks_like_section_marker(text) {
+                        if in_section {
+                            song.lines.push(Line::Empty);
+                        }
+                        let (section_dir, _) = map_section_label(text);
+                        emit_directive(&mut song.lines, section_dir, Some(text));
+                        in_section = true;
+                    }
+                }
+            }
+
+            // Bare <sound tempo="..."> inside <direction>
+            if let Some(sound) = direction.child("sound") {
+                if !tempo_emitted {
+                    if let Some(tempo) = sound.attr("tempo") {
+                        if !tempo.is_empty() {
+                            song.metadata.tempo = Some(tempo.to_string());
+                            tempo_emitted = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- collect chords and lyrics per measure --------------------------
+        let segments = collect_measure_segments(measure);
+        if segments.is_empty() {
+            continue;
+        }
+
+        // Build LyricsLine(s) from segments
+        // Each segment is (Option<chord_name>, lyric_text)
+        let mut line_segs: Vec<LyricsSegment> = Vec::new();
+        for (chord_name, lyric_text) in segments {
+            let chord = chord_name.map(Chord::new);
+            line_segs.push(LyricsSegment::new(chord, lyric_text));
+        }
+
+        if !line_segs.is_empty() {
+            let mut ll = LyricsLine::new();
+            ll.segments = line_segs;
+            song.lines.push(Line::Lyrics(ll));
+        }
+    }
+
+    // Close open section
+    if in_section {
+        song.lines.push(Line::Empty);
+    }
+
+    Ok(song)
+}
+
+/// Collect (chord_name, lyric_text) pairs from a measure.
+///
+/// Chords are matched to the lyric that immediately follows them. Notes
+/// without a lyric advance the "has chord available" state so the chord
+/// floats to the next lyric-bearing note.
+fn collect_measure_segments(measure: &Element) -> Vec<(Option<String>, String)> {
+    let mut result: Vec<(Option<String>, String)> = Vec::new();
+    let mut pending_chord: Option<String> = None;
+
+    for child in &measure.children {
+        match child.name.as_str() {
+            "harmony" => {
+                pending_chord = parse_harmony(child);
+            }
+            "note" => {
+                // Skip chord notes (notes that are part of a chord voicing)
+                if child.child("chord").is_some() {
+                    continue;
+                }
+
+                let lyric_text = collect_lyric_text(child);
+                if !lyric_text.is_empty() {
+                    result.push((pending_chord.take(), lyric_text));
+                } else {
+                    // Note has no lyric — keep the chord pending for the next lyric
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // If there's a leftover pending chord with no following lyric, add it
+    // as a chord-only segment so it isn't lost.
+    if let Some(chord) = pending_chord {
+        result.push((Some(chord), String::new()));
+    }
+
+    result
+}
+
+/// Extract the chord name from a `<harmony>` element.
+fn parse_harmony(harmony: &Element) -> Option<String> {
+    let root = harmony.child("root")?;
+    let step = root.text_at(&["root-step"])?;
+    if step.is_empty() {
+        return None;
+    }
+
+    let alter = root
+        .text_at(&["root-alter"])
+        .and_then(|s| {
+            let v: f64 = s.trim().parse().ok()?;
+            Some(v)
+        })
+        .unwrap_or(0.0);
+
+    let root_str = format!(
+        "{}{}",
+        step,
+        match alter as i32 {
+            1 => "#",
+            -1 => "b",
+            _ => "",
+        }
+    );
+
+    // Try the `text` attribute on <kind> first — it often has the display
+    // chord symbol (e.g., "m7", "maj7", "sus4").
+    let suffix = if let Some(kind_elem) = harmony.child("kind") {
+        if let Some(text_attr) = kind_elem.attr("text") {
+            // text="" means major, text="m" means minor, etc.
+            text_attr.to_string()
+        } else {
+            // Fall back to mapping the kind content
+            let kind_content = kind_elem.text.trim();
+            musicxml_kind_to_suffix(kind_content).to_string()
+        }
+    } else {
+        String::new()
+    };
+
+    // Bass note for slash chords
+    let bass_str = if let Some(bass) = harmony.child("bass") {
+        let bass_step = bass.text_at(&["bass-step"]).unwrap_or("");
+        if bass_step.is_empty() {
+            String::new()
+        } else {
+            let bass_alter = bass
+                .text_at(&["bass-alter"])
+                .and_then(|s| s.trim().parse::<f64>().ok())
+                .unwrap_or(0.0);
+            format!(
+                "/{}{}",
+                bass_step,
+                match bass_alter as i32 {
+                    1 => "#",
+                    -1 => "b",
+                    _ => "",
+                }
+            )
+        }
+    } else {
+        String::new()
+    };
+
+    Some(format!("{root_str}{suffix}{bass_str}"))
+}
+
+/// Map MusicXML `<kind>` content to a ChordPro chord suffix.
+fn musicxml_kind_to_suffix(kind: &str) -> &str {
+    match kind {
+        "major" | "none" | "" => "",
+        "minor" => "m",
+        "dominant" => "7",
+        "major-seventh" => "maj7",
+        "minor-seventh" => "m7",
+        "diminished" => "dim",
+        "augmented" => "aug",
+        "half-diminished" => "m7b5",
+        "diminished-seventh" => "dim7",
+        "major-sixth" => "6",
+        "minor-sixth" => "m6",
+        "dominant-ninth" => "9",
+        "major-ninth" => "maj9",
+        "minor-ninth" => "m9",
+        "suspended-fourth" => "sus4",
+        "suspended-second" => "sus2",
+        "dominant-11th" => "11",
+        "major-11th" => "maj11",
+        "dominant-13th" => "13",
+        "major-13th" => "maj13",
+        "power" => "5",
+        "major-minor" => "mM7",
+        "augmented-seventh" => "aug7",
+        "augmented-major-seventh" => "augM7",
+        _ => "",
+    }
+}
+
+/// Collect the lyric text from a `<note>` element.
+///
+/// Concatenates all `<lyric><text>` values (there may be multiple lyrics
+/// in different verses). Uses only the first lyric if multiple are present.
+fn collect_lyric_text(note: &Element) -> String {
+    // Use the first <lyric> element (lyric number="1")
+    for lyric in note.children_named("lyric") {
+        let text = lyric.text_at(&["text"]).unwrap_or("").trim();
+        if !text.is_empty() {
+            let syllabic = lyric.text_at(&["syllabic"]).unwrap_or("single");
+            return match syllabic {
+                "begin" | "middle" => format!("{text}-"),
+                _ => format!("{text} "),
+            };
+        }
+    }
+    String::new()
+}
+
+/// Map a key signature (circle-of-fifths value + mode) to a key name string.
+fn fifths_to_key(fifths: i32, mode: &str) -> String {
+    let major_keys = [
+        "Cb", "Gb", "Db", "Ab", "Eb", "Bb", "F", "C", "G", "D", "A", "E", "B", "F#", "C#",
+    ];
+    // Index 7 = C (fifths=0), offset by +7
+    let idx = (fifths + 7).clamp(0, 14) as usize;
+    let key = major_keys[idx];
+    if mode.eq_ignore_ascii_case("minor") {
+        format!("{key}m")
+    } else {
+        key.to_string()
+    }
+}
+
+/// Decide which section directive to emit for a rehearsal/words label.
+///
+/// Returns `(start_directive_name, end_directive_name)`.
+fn map_section_label(label: &str) -> (&'static str, &'static str) {
+    let lower = label.to_lowercase();
+    if lower.contains("chorus") || lower.contains("refrain") {
+        ("start_of_chorus", "end_of_chorus")
+    } else if lower.contains("bridge") {
+        ("start_of_bridge", "end_of_bridge")
+    } else if lower.contains("intro") || lower.contains("outro") {
+        ("start_of_verse", "end_of_verse")
+    } else {
+        // Default to verse
+        ("start_of_verse", "end_of_verse")
+    }
+}
+
+/// Heuristic: is this a words string likely to be a section label?
+fn looks_like_section_marker(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    matches!(
+        lower.as_str(),
+        "verse"
+            | "chorus"
+            | "bridge"
+            | "intro"
+            | "outro"
+            | "pre-chorus"
+            | "prechorus"
+            | "interlude"
+            | "coda"
+            | "tag"
+    ) || lower.starts_with("verse ")
+        || lower.starts_with("chorus ")
+}
+
+/// Push a directive line onto `lines`.
+fn emit_directive(lines: &mut Vec<Line>, name: &str, value: Option<&str>) {
+    let dir = match value {
+        Some(v) => Directive::with_value(name, v),
+        None => Directive::name_only(name),
+    };
+    lines.push(Line::Directive(dir));
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fifths_to_key_major() {
+        assert_eq!(fifths_to_key(0, "major"), "C");
+        assert_eq!(fifths_to_key(1, "major"), "G");
+        assert_eq!(fifths_to_key(-1, "major"), "F");
+        assert_eq!(fifths_to_key(2, "major"), "D");
+        assert_eq!(fifths_to_key(-2, "major"), "Bb");
+        assert_eq!(fifths_to_key(4, "major"), "E");
+    }
+
+    #[test]
+    fn fifths_to_key_minor() {
+        assert_eq!(fifths_to_key(0, "minor"), "Cm");
+        assert_eq!(fifths_to_key(3, "minor"), "Am");
+    }
+
+    #[test]
+    fn musicxml_kind_suffix() {
+        assert_eq!(musicxml_kind_to_suffix("major"), "");
+        assert_eq!(musicxml_kind_to_suffix("minor"), "m");
+        assert_eq!(musicxml_kind_to_suffix("dominant"), "7");
+        assert_eq!(musicxml_kind_to_suffix("major-seventh"), "maj7");
+        assert_eq!(musicxml_kind_to_suffix("diminished"), "dim");
+        assert_eq!(musicxml_kind_to_suffix("suspended-fourth"), "sus4");
+    }
+
+    #[test]
+    fn simple_import() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Test Song</work-title></work>
+  <identification>
+    <creator type="composer">Test Artist</creator>
+  </identification>
+  <part-list>
+    <score-part id="P1"><part-name>Voice</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <key><fifths>0</fifths><mode>major</mode></key>
+      </attributes>
+      <direction><sound tempo="120"/></direction>
+      <harmony>
+        <root><root-step>C</root-step></root>
+        <kind text="">major</kind>
+      </harmony>
+      <note>
+        <duration>1</duration>
+        <lyric><syllabic>single</syllabic><text>Hello</text></lyric>
+      </note>
+      <harmony>
+        <root><root-step>G</root-step></root>
+        <kind text="">major</kind>
+      </harmony>
+      <note>
+        <duration>1</duration>
+        <lyric><syllabic>single</syllabic><text>world</text></lyric>
+      </note>
+    </measure>
+  </part>
+</score-partwise>"#;
+        let song = from_musicxml(xml).unwrap();
+        assert_eq!(song.metadata.title.as_deref(), Some("Test Song"));
+        assert_eq!(
+            song.metadata.artists.first().map(String::as_str),
+            Some("Test Artist")
+        );
+        assert_eq!(song.metadata.key.as_deref(), Some("C"));
+        assert_eq!(song.metadata.tempo.as_deref(), Some("120"));
+
+        // Should have one lyrics line with two segments
+        let lyrics: Vec<&Line> = song
+            .lines
+            .iter()
+            .filter(|l| matches!(l, Line::Lyrics(_)))
+            .collect();
+        assert_eq!(lyrics.len(), 1);
+        if let Line::Lyrics(ll) = lyrics[0] {
+            assert_eq!(ll.segments.len(), 2);
+            assert_eq!(
+                ll.segments[0].chord.as_ref().map(|c| c.name.as_str()),
+                Some("C")
+            );
+            assert!(ll.segments[0].text.contains("Hello"));
+            assert_eq!(
+                ll.segments[1].chord.as_ref().map(|c| c.name.as_str()),
+                Some("G")
+            );
+            assert!(ll.segments[1].text.contains("world"));
+        }
+    }
+
+    #[test]
+    fn import_sharp_flat_chords() {
+        let xml = r#"<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name/></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <harmony>
+        <root><root-step>F</root-step><root-alter>1</root-alter></root>
+        <kind text="m">minor</kind>
+      </harmony>
+      <note>
+        <duration>1</duration>
+        <lyric><syllabic>single</syllabic><text>hi</text></lyric>
+      </note>
+      <harmony>
+        <root><root-step>B</root-step><root-alter>-1</root-alter></root>
+        <kind text="">major</kind>
+      </harmony>
+      <note>
+        <duration>1</duration>
+        <lyric><syllabic>single</syllabic><text>there</text></lyric>
+      </note>
+    </measure>
+  </part>
+</score-partwise>"#;
+        let song = from_musicxml(xml).unwrap();
+        let lyrics: Vec<&Line> = song
+            .lines
+            .iter()
+            .filter(|l| matches!(l, Line::Lyrics(_)))
+            .collect();
+        assert_eq!(lyrics.len(), 1);
+        if let Line::Lyrics(ll) = lyrics[0] {
+            assert_eq!(
+                ll.segments[0].chord.as_ref().map(|c| c.name.as_str()),
+                Some("F#m")
+            );
+            assert_eq!(
+                ll.segments[1].chord.as_ref().map(|c| c.name.as_str()),
+                Some("Bb")
+            );
+        }
+    }
+}
