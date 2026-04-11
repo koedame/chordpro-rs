@@ -398,3 +398,66 @@ fn wrong_root_element_returns_error() {
 fn invalid_xml_returns_error() {
     assert!(from_musicxml("<unclosed").is_err());
 }
+
+// ---------------------------------------------------------------------------
+// Round-trip: section labels
+// ---------------------------------------------------------------------------
+
+/// Regression test: `{start_of_verse}` and `{start_of_chorus}` must survive a
+/// ChordPro → MusicXML → ChordPro round-trip in the correct order.
+///
+/// The medium bug fixed in PR #1460 (rehearsal mark placed on wrong measure) was
+/// not caught by round-trip tests at the time.  This test ensures it cannot
+/// regress silently.
+#[test]
+fn round_trip_section_labels_preserved_and_ordered() {
+    use chordsketch_core::ast::{Directive, DirectiveKind, LyricsLine, LyricsSegment};
+
+    let mut song = chordsketch_core::ast::Song::new();
+
+    // Build: {start_of_verse} / verse line / {end_of_verse}
+    //        {start_of_chorus} / chorus line / {end_of_chorus}
+    song.lines
+        .push(Line::Directive(Directive::name_only("start_of_verse")));
+    let mut verse_line = LyricsLine::new();
+    verse_line.segments = vec![LyricsSegment::new(
+        Some(chordsketch_core::ast::Chord::new("C")),
+        "Verse lyrics",
+    )];
+    song.lines.push(Line::Lyrics(verse_line));
+    song.lines
+        .push(Line::Directive(Directive::name_only("end_of_verse")));
+    song.lines.push(Line::Empty);
+    song.lines
+        .push(Line::Directive(Directive::name_only("start_of_chorus")));
+    let mut chorus_line = LyricsLine::new();
+    chorus_line.segments = vec![LyricsSegment::new(
+        Some(chordsketch_core::ast::Chord::new("G")),
+        "Chorus lyrics",
+    )];
+    song.lines.push(Line::Lyrics(chorus_line));
+    song.lines
+        .push(Line::Directive(Directive::name_only("end_of_chorus")));
+
+    // Export → import round-trip
+    let xml = to_musicxml(&song);
+    let reimported = from_musicxml(&xml).expect("section round-trip should succeed");
+
+    // Both section starts must be present after the round-trip.
+    let verse_start_pos = reimported
+        .lines
+        .iter()
+        .position(|l| matches!(l, Line::Directive(d) if d.kind == DirectiveKind::StartOfVerse));
+    let chorus_start_pos = reimported
+        .lines
+        .iter()
+        .position(|l| matches!(l, Line::Directive(d) if d.kind == DirectiveKind::StartOfChorus));
+
+    let verse_pos = verse_start_pos.expect("StartOfVerse not found after round-trip");
+    let chorus_pos = chorus_start_pos.expect("StartOfChorus not found after round-trip");
+
+    assert!(
+        verse_pos < chorus_pos,
+        "StartOfVerse (pos {verse_pos}) must precede StartOfChorus (pos {chorus_pos})"
+    );
+}
