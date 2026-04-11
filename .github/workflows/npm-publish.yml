@@ -17,6 +17,16 @@ jobs:
   publish:
     name: Publish @chordsketch/wasm
     runs-on: ubuntu-latest
+    # Scopes NPM_TOKEN to this environment, consistent with python.yml (pypi),
+    # ruby.yml (rubygems), kotlin.yml (maven-central), and
+    # vscode-extension.yml (vscode-marketplace).
+    #
+    # One-time human setup: create the "npm" environment at
+    #   https://github.com/koedame/chordsketch/settings/environments
+    # and move NPM_TOKEN from repository secrets to environment secrets.
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/@chordsketch/wasm
     permissions:
       contents: read
     steps:
