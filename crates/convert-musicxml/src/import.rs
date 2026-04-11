@@ -151,7 +151,8 @@ fn convert_score(score: &Element) -> Result<Song, ImportError> {
 
         // --- directions (tempo, rehearsal marks) ----------------------------
         for direction in measure.children_named("direction") {
-            // Tempo — validate that the value is a positive finite number before storing.
+            // Tempo: `<sound tempo="...">` inside `<direction>`.
+            // Validate the value is a positive finite number before storing.
             if !tempo_emitted {
                 if let Some(sound) = direction.child("sound") {
                     if let Some(tempo) = sound.attr("tempo") {
@@ -163,7 +164,6 @@ fn convert_score(score: &Element) -> Result<Song, ImportError> {
                         }
                     }
                 }
-                // Also handle <sound> directly in measure
             }
 
             // Rehearsal marks → section start directives
@@ -193,20 +193,6 @@ fn convert_score(score: &Element) -> Result<Song, ImportError> {
                         let (section_dir, section_end) = map_section_label(text);
                         emit_directive(&mut song.lines, section_dir, Some(text));
                         current_section_end = Some(section_end);
-                    }
-                }
-            }
-
-            // Bare <sound tempo="..."> inside <direction> (second position)
-            if let Some(sound) = direction.child("sound") {
-                if !tempo_emitted {
-                    if let Some(tempo) = sound.attr("tempo") {
-                        if let Ok(bpm) = tempo.trim().parse::<f64>() {
-                            if bpm > 0.0 && bpm.is_finite() {
-                                song.metadata.tempo = Some(tempo.trim().to_string());
-                                tempo_emitted = true;
-                            }
-                        }
                     }
                 }
             }
