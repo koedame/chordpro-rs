@@ -200,9 +200,39 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         # No `ref:` override — always check out the default branch (main) so
         # scripts/check-env-secrets.py is present. The publish step uses
-        # pre-built artifacts downloaded from the build jobs; the Gradle source
-        # in packages/kotlin/ is identical in substance between main and any
-        # recent release tag, with version 0.2.0 specified in both.
+        # pre-built artifacts downloaded from the build jobs. Version
+        # consistency between the checked-out source and the release tag is
+        # enforced by the "Assert committed version matches the release tag"
+        # step below.
+
+      - name: Assert committed version matches the release tag
+        # crates/ffi/Cargo.toml has a committed `version` field that must
+        # match the release tag exactly. The version-consistency check
+        # enforces this on every PR, but re-verify at publish time to catch
+        # any out-of-band edit that slipped through (e.g., a hotfix tag cut
+        # from an older commit). This guards against the latent risk where
+        # main has been bumped to the next version between the release tag
+        # cut and a delayed re-dispatch — without this check the Gradle build
+        # would read the wrong version from Cargo.toml and publish mismatched
+        # JNI artifacts. See #1522.
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          GIT_REF: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ]; then
+            tag="${GIT_REF#refs/tags/}"
+          else
+            tag="$INPUT_TAG"
+          fi
+          expected="${tag#v}"
+          actual=$(grep -m 1 '^version = ' crates/ffi/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::crates/ffi/Cargo.toml version=$actual but release tag is $expected"
+            exit 1
+          fi
+          echo "Version check passed: $actual"
 
       - name: Check required secrets present
         # Fails fast when any Maven Central credential is missing so
