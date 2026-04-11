@@ -801,7 +801,7 @@ mod tests {
 
     #[test]
     fn parse_depth_at_limit_accepted() {
-        // MAX_DEPTH - 1 levels of nesting (indices 0 .. MAX_DEPTH-1) must succeed.
+        // MAX_DEPTH levels of nesting (indices 0..MAX_DEPTH-1 are depths 0 to 199) must succeed.
         let open: String = (0..MAX_DEPTH).map(|i| format!("<a{i}>")).collect();
         let close: String = (0..MAX_DEPTH).rev().map(|i| format!("</a{i}>")).collect();
         let doc = format!("{open}{close}");
