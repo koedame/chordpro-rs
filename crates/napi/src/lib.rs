@@ -3,6 +3,7 @@
 //! Provides the same API as `@chordsketch/wasm` but as a prebuilt native
 //! addon, offering better performance and no WASM overhead.
 
+use chordsketch_core::render_result::RenderResult;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
@@ -57,18 +58,68 @@ fn parse_songs(input: &str) -> Result<Vec<chordsketch_core::ast::Song>> {
     Ok(songs)
 }
 
+/// Forward each warning in a [`RenderResult`] to `eprintln!` and unwrap the
+/// output.
+///
+/// In a Node.js addon, `eprintln!` writes to process stderr, which is visible
+/// to callers (unlike WASM in a browser context where stderr is silently
+/// dropped). This matches the WASM binding's `flush_warnings` pattern: both
+/// bindings now explicitly capture warnings via `render_songs_with_warnings`
+/// rather than relying on the renderer's internal eprintln paths. See #1541.
+fn flush_warnings<T>(result: RenderResult<T>) -> T {
+    for w in &result.warnings {
+        eprintln!("chordsketch: {w}");
+    }
+    result.output
+}
+
+/// Parse and render songs as a string, forwarding any render warnings to stderr.
+///
+/// Single source of truth for all string-output render calls. Accepts a
+/// `render_fn` so it can be shared by text and HTML renderers.
+fn do_render_string(
+    input: &str,
+    config: &chordsketch_core::config::Config,
+    transpose: i8,
+    render_fn: fn(
+        &[chordsketch_core::ast::Song],
+        i8,
+        &chordsketch_core::config::Config,
+    ) -> RenderResult<String>,
+) -> Result<String> {
+    let songs = parse_songs(input)?;
+    Ok(flush_warnings(render_fn(&songs, transpose, config)))
+}
+
+/// Parse and render songs as bytes, forwarding any render warnings to stderr.
+///
+/// See [`do_render_string`] — same pattern for PDF output.
+fn do_render_bytes(
+    input: &str,
+    config: &chordsketch_core::config::Config,
+    transpose: i8,
+    render_fn: fn(
+        &[chordsketch_core::ast::Song],
+        i8,
+        &chordsketch_core::config::Config,
+    ) -> RenderResult<Vec<u8>>,
+) -> Result<Vec<u8>> {
+    let songs = parse_songs(input)?;
+    Ok(flush_warnings(render_fn(&songs, transpose, config)))
+}
+
 /// Render ChordPro input as plain text using default configuration.
 ///
 /// Use [`render_text_with_options`] to pass a config preset, inline RRJSON,
 /// or transposition.
 #[napi]
 pub fn render_text(input: String) -> Result<String> {
-    let songs = parse_songs(&input)?;
-    Ok(chordsketch_render_text::render_songs_with_transpose(
-        &songs,
-        0,
+    do_render_string(
+        &input,
         &chordsketch_core::config::Config::defaults(),
-    ))
+        0,
+        chordsketch_render_text::render_songs_with_warnings,
+    )
 }
 
 /// Render ChordPro input as an HTML document using default configuration.
@@ -77,12 +128,12 @@ pub fn render_text(input: String) -> Result<String> {
 /// or transposition.
 #[napi]
 pub fn render_html(input: String) -> Result<String> {
-    let songs = parse_songs(&input)?;
-    Ok(chordsketch_render_html::render_songs_with_transpose(
-        &songs,
-        0,
+    do_render_string(
+        &input,
         &chordsketch_core::config::Config::defaults(),
-    ))
+        0,
+        chordsketch_render_html::render_songs_with_warnings,
+    )
 }
 
 /// Render ChordPro input as a PDF document using default configuration
@@ -92,12 +143,12 @@ pub fn render_html(input: String) -> Result<String> {
 /// or transposition.
 #[napi]
 pub fn render_pdf(input: String) -> Result<Buffer> {
-    let songs = parse_songs(&input)?;
-    let bytes = chordsketch_render_pdf::render_songs_with_transpose(
-        &songs,
-        0,
+    let bytes = do_render_bytes(
+        &input,
         &chordsketch_core::config::Config::defaults(),
-    );
+        0,
+        chordsketch_render_pdf::render_songs_with_warnings,
+    )?;
     Ok(bytes.into())
 }
 
@@ -119,10 +170,12 @@ fn parse_transpose(raw: i32) -> i8 {
 pub fn render_text_with_options(input: String, options: RenderOptions) -> Result<String> {
     let config = resolve_config(options.config)?;
     let transpose = parse_transpose(options.transpose.unwrap_or(0));
-    let songs = parse_songs(&input)?;
-    Ok(chordsketch_render_text::render_songs_with_transpose(
-        &songs, transpose, &config,
-    ))
+    do_render_string(
+        &input,
+        &config,
+        transpose,
+        chordsketch_render_text::render_songs_with_warnings,
+    )
 }
 
 /// Render ChordPro input as an HTML document with options.
@@ -130,10 +183,12 @@ pub fn render_text_with_options(input: String, options: RenderOptions) -> Result
 pub fn render_html_with_options(input: String, options: RenderOptions) -> Result<String> {
     let config = resolve_config(options.config)?;
     let transpose = parse_transpose(options.transpose.unwrap_or(0));
-    let songs = parse_songs(&input)?;
-    Ok(chordsketch_render_html::render_songs_with_transpose(
-        &songs, transpose, &config,
-    ))
+    do_render_string(
+        &input,
+        &config,
+        transpose,
+        chordsketch_render_html::render_songs_with_warnings,
+    )
 }
 
 /// Render ChordPro input as a PDF document with options (returned as a Buffer).
@@ -141,8 +196,12 @@ pub fn render_html_with_options(input: String, options: RenderOptions) -> Result
 pub fn render_pdf_with_options(input: String, options: RenderOptions) -> Result<Buffer> {
     let config = resolve_config(options.config)?;
     let transpose = parse_transpose(options.transpose.unwrap_or(0));
-    let songs = parse_songs(&input)?;
-    let bytes = chordsketch_render_pdf::render_songs_with_transpose(&songs, transpose, &config);
+    let bytes = do_render_bytes(
+        &input,
+        &config,
+        transpose,
+        chordsketch_render_pdf::render_songs_with_warnings,
+    )?;
     Ok(bytes.into())
 }
 
@@ -177,11 +236,14 @@ mod tests {
         let result = chordsketch_core::parse_multi_lenient(MINIMAL_INPUT);
         let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();
         assert!(!songs.is_empty());
-        let text = chordsketch_render_text::render_songs_with_transpose(
+        // Use render_songs_with_warnings to match the code path used by the NAPI
+        // binding's do_render_string (via flush_warnings).
+        let text = chordsketch_render_text::render_songs_with_warnings(
             &songs,
             0,
             &chordsketch_core::config::Config::defaults(),
-        );
+        )
+        .output;
         assert!(!text.is_empty());
         assert!(text.contains("Test"));
     }
@@ -190,11 +252,14 @@ mod tests {
     fn test_render_html_returns_content() {
         let result = chordsketch_core::parse_multi_lenient(MINIMAL_INPUT);
         let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();
-        let html = chordsketch_render_html::render_songs_with_transpose(
+        // Use render_songs_with_warnings to match the code path used by the NAPI
+        // binding's do_render_string (via flush_warnings).
+        let html = chordsketch_render_html::render_songs_with_warnings(
             &songs,
             0,
             &chordsketch_core::config::Config::defaults(),
-        );
+        )
+        .output;
         assert!(!html.is_empty());
         assert!(html.contains("Test"));
     }
@@ -203,11 +268,14 @@ mod tests {
     fn test_render_pdf_returns_bytes() {
         let result = chordsketch_core::parse_multi_lenient(MINIMAL_INPUT);
         let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();
-        let bytes = chordsketch_render_pdf::render_songs_with_transpose(
+        // Use render_songs_with_warnings to match the code path used by the NAPI
+        // binding's do_render_bytes (via flush_warnings).
+        let bytes = chordsketch_render_pdf::render_songs_with_warnings(
             &songs,
             0,
             &chordsketch_core::config::Config::defaults(),
-        );
+        )
+        .output;
         assert!(!bytes.is_empty());
         assert!(bytes.starts_with(b"%PDF"));
     }
@@ -269,6 +337,33 @@ mod tests {
         assert!(
             chordsketch_core::config::Config::parse(r#"{ "settings": { "transpose": 2 } }"#)
                 .is_ok()
+        );
+    }
+
+    /// Verifies that `render_songs_with_warnings` captures warnings rather than
+    /// silently discarding them. The saturation input ({transpose: 100} in
+    /// source + 100 CLI transpose = 200 > 127) reliably triggers a "transpose
+    /// clamped" warning from the renderer. This is the regression test for
+    /// #1541: previously `render_songs_with_transpose` was called instead,
+    /// which routed warnings to internal eprintln and made them invisible
+    /// to the napi binding.
+    #[test]
+    fn render_songs_with_warnings_captures_saturation_warning() {
+        let input = "{title: T}\n{transpose: 100}\n[C]Hello";
+        let result = chordsketch_core::parse_multi_lenient(input);
+        let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();
+        let render_result = chordsketch_render_text::render_songs_with_warnings(
+            &songs,
+            100,
+            &chordsketch_core::config::Config::defaults(),
+        );
+        assert!(
+            !render_result.warnings.is_empty(),
+            "expected at least one transpose saturation warning, got none"
+        );
+        assert!(
+            !render_result.output.is_empty(),
+            "render output must not be empty"
         );
     }
 }
