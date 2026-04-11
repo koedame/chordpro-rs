@@ -188,10 +188,13 @@ jobs:
         # Uploaded after tests pass so the artifact represents a validated
         # binding file. The publish job downloads this instead of rebuilding
         # the FFI crate and re-running uniffi-bindgen. See #1448.
+        # 7-day retention is sufficient; the artifact is only consumed within
+        # the same workflow run by the publish job. See #1452.
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ruby-bindings
           path: packages/ruby/lib/chordsketch_uniffi.rb
+          retention-days: 7
 
   publish:
     name: Publish to RubyGems

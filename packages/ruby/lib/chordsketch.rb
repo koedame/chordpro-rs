@@ -70,6 +70,6 @@ end
 Chordsketch::NativeLoader.load!
 
 # Load the UniFFI-generated bindings. Their `ffi_lib` line is rewritten
-# to reference `Chordsketch::NATIVE_LIB_PATH` (set above) by a sed step
-# in the gem build pipeline. See `.github/workflows/ruby.yml` and #1082.
+# to reference `Chordsketch::NATIVE_LIB_PATH` (set above) by a Python script
+# in the CI workflow. See `.github/workflows/ruby.yml` and #1082.
 require_relative "chordsketch_uniffi"
