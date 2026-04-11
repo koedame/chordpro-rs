@@ -86,7 +86,7 @@ mavenPublishing {
     pom {
         name.set("ChordSketch")
         description.set("ChordPro file format parser and renderer")
-        inceptionYear.set("2025")
+        inceptionYear.set("2026")
         url.set("https://github.com/koedame/chordsketch")
 
         licenses {

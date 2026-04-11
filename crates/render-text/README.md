@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/koedame/chordsketch/main/assets/logo.svg" alt="ChordSketch" width="80" height="80">
+</p>
+
 # chordsketch-render-text
 
 Plain text renderer for [ChordPro](https://www.chordpro.org/) documents.

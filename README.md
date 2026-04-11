@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/koedame/chordsketch/main/assets/logo.svg" alt="ChordSketch" width="100" height="100">
+</p>
+
 # ChordSketch
 
 A Rust implementation of the [ChordPro](https://www.chordpro.org/) file format

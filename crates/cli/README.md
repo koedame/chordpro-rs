@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/koedame/chordsketch/main/assets/logo.svg" alt="ChordSketch" width="80" height="80">
+</p>
+
 # chordsketch
 
 Command-line tool for rendering [ChordPro](https://www.chordpro.org/)

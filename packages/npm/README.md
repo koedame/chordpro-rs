@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/koedame/chordsketch/main/assets/logo.svg" alt="ChordSketch" width="80" height="80">
+</p>
+
 # @chordsketch/wasm
 
 [ChordSketch](https://github.com/koedame/chordsketch) compiled to
