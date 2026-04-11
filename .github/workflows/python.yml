@@ -172,16 +172,17 @@ jobs:
     #   https://pypi.org/manage/project/chordsketch/settings/publishing/
     # for this repo + workflow + environment, otherwise the very first
     # publish fails with 403 Forbidden. See #1068.
-    permissions:
-      contents: read
-      id-token: write
+    #
     # If the "pypi" environment does not exist (fork, fresh instance), GitHub
     # cannot start this job. continue-on-error keeps the overall workflow green
-    # when GHCR/CI succeeded but publishing infrastructure is absent. See #1443.
+    # when CI succeeded but publishing infrastructure is absent. See #1443.
     continue-on-error: true
     environment:
       name: pypi
       url: https://pypi.org/p/chordsketch
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
