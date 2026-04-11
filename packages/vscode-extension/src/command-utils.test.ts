@@ -86,7 +86,16 @@ test('isWasmRenderModule: rejects object where render_text is not a function', (
   assert.equal(isWasmRenderModule(mod), false);
 });
 
-test('isWasmRenderModule: rejects object where render_pdf is not a function', () => {
+test('isWasmRenderModule: rejects object where render_text is undefined', () => {
+  // undefined is the most common real-world case: a partially-initialised module
+  // that exports render_html and render_pdf but not render_text.
+  const mod = { render_html: () => '', render_text: undefined, render_pdf: () => new Uint8Array(0) };
+  assert.equal(isWasmRenderModule(mod), false);
+});
+
+test('isWasmRenderModule: rejects object where render_pdf is not a function (null)', () => {
+  // `typeof null === "object"` is truthy, so null bypasses the early non-object
+  // guard and must be caught by the per-property typeof check.
   const mod = { render_html: () => '', render_text: () => '', render_pdf: null };
   assert.equal(isWasmRenderModule(mod), false);
 });
