@@ -47,6 +47,15 @@ bug should close all linked issues.
    this repo; a human inspects the check rollup and performs the squash merge.
 6. Cleanup worktree.
 
+## Closing an Issue Without Implementing It
+
+When closing an issue because the work is being declined (upstream-blocked,
+no longer wanted, superseded, or rejected on its merits) rather than because
+a PR implemented it, **first check whether an ADR is warranted** per
+[`adr-discipline.md`](adr-discipline.md). If yes, write the ADR and link it
+from the closing comment so the rationale outlives the issue tracker. The
+ADR should be opened as its own dedicated PR before the close action runs.
+
 ## Tracking Issues & Sub-Issues
 
 For large features or milestones, create a **tracking issue** labeled
