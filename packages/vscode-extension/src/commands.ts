@@ -30,10 +30,16 @@ import {
  */
 let exportOutputChannel: vscode.OutputChannel | undefined;
 
-/** Returns the shared ChordSketch output channel, creating it if necessary. */
-function getExportChannel(): vscode.OutputChannel {
+/**
+ * Returns the shared ChordSketch output channel, creating it if necessary.
+ *
+ * On first creation the channel is pushed to `context.subscriptions` so VS Code
+ * disposes it automatically when the extension is deactivated.
+ */
+function getExportChannel(context: vscode.ExtensionContext): vscode.OutputChannel {
   if (!exportOutputChannel) {
     exportOutputChannel = vscode.window.createOutputChannel('ChordSketch');
+    context.subscriptions.push(exportOutputChannel);
   }
   return exportOutputChannel;
 }
@@ -199,7 +205,7 @@ export function registerConvertTo(context: vscode.ExtensionContext): vscode.Disp
     try {
       wasm = loadWasmRender(context.extensionPath);
     } catch (err) {
-      const ch = getExportChannel();
+      const ch = getExportChannel(context);
       ch.appendLine(`[convertTo] Failed to load WASM renderer: ${String(err)}`);
       ch.show(true);
       void vscode.window.showErrorMessage(
@@ -220,7 +226,7 @@ export function registerConvertTo(context: vscode.ExtensionContext): vscode.Disp
         await vscode.workspace.fs.writeFile(saveUri, Buffer.from(rendered, 'utf-8'));
       }
     } catch (err) {
-      const ch = getExportChannel();
+      const ch = getExportChannel(context);
       ch.appendLine(`[convertTo] Export failed: ${String(err)}`);
       ch.show(true);
       void vscode.window.showErrorMessage(
