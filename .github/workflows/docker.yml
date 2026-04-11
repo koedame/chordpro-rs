@@ -108,10 +108,19 @@ jobs:
     # or its secrets are absent, the `ghcr` job (which runs first) still
     # succeeds and GHCR publishing is unaffected. See #1435.
     #
+    # `continue-on-error: true` extends that optional-infrastructure intent
+    # to the environment-gate level: if the "docker-hub" environment does not
+    # exist (e.g. a fork, a fresh instance, or a temporary environment
+    # deletion), GitHub cannot start the job and would otherwise mark the
+    # whole workflow run red — even though GHCR publishing succeeded. Docker
+    # Hub is secondary to GHCR, so a blocked or missing environment should
+    # not color a successful release workflow red. See #1437.
+    #
     # One-time human setup: create the "docker-hub" environment at
     #   https://github.com/koedame/chordsketch/settings/environments
     # and move DOCKERHUB_USERNAME and DOCKERHUB_TOKEN from repository
     # secrets to environment secrets.
+    continue-on-error: true
     environment:
       name: docker-hub
       url: https://hub.docker.com/r/koedame/chordsketch
