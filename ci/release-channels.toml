@@ -179,10 +179,10 @@ kind = "maven-central"
 package = "io.github.koedame:chordsketch"
 expected_version = "tag"
 required_secrets = [
-    "MAVEN_CENTRAL_USERNAME",
-    "MAVEN_CENTRAL_PASSWORD",
-    "SIGNING_KEY",
-    "SIGNING_PASSWORD",
+    "CENTRAL_PORTAL_USERNAME",
+    "CENTRAL_PORTAL_PASSWORD",
+    "GPG_SIGNING_KEY",
+    "GPG_SIGNING_PASSWORD",
 ]
 notes = "OIDC migration tracked in #1124."
 

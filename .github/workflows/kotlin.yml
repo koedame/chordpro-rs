@@ -207,10 +207,10 @@ jobs:
         # error. Paired with the post-release rollup in release-verify.yml
         # which catches the silent environment-gate case. See #1506.
         env:
-          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          CENTRAL_PORTAL_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
+          CENTRAL_PORTAL_PASSWORD: ${{ secrets.CENTRAL_PORTAL_PASSWORD }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_PASSWORD: ${{ secrets.GPG_SIGNING_PASSWORD }}
         run: python3 scripts/check-env-secrets.py --channel maven-central
 
       - name: Download generated Kotlin bindings
