@@ -490,7 +490,8 @@ fn decode_entities(s: &str) -> String {
                 if let Some(semi) = rest.find(';') {
                     let entity = &rest[..semi];
                     let ch = if let Some(code_str) = entity.strip_prefix('#') {
-                        // Numeric character reference: &#N; or &#xN; / &#XN;
+                        // Numeric character reference: &#N; or &#xN; / &#XN;.
+                        // XML 1.0 §2.2 forbids U+0000, so reject it explicitly.
                         let code_point = if let Some(hex) = code_str
                             .strip_prefix('x')
                             .or_else(|| code_str.strip_prefix('X'))
@@ -499,7 +500,7 @@ fn decode_entities(s: &str) -> String {
                         } else {
                             code_str.parse::<u32>().ok()
                         };
-                        code_point.and_then(char::from_u32)
+                        code_point.and_then(char::from_u32).filter(|&c| c != '\0')
                     } else {
                         // Named entity reference
                         match entity {
@@ -511,8 +512,11 @@ fn decode_entities(s: &str) -> String {
                             _ => None,
                         }
                     };
-                    // `semi` is a byte offset into ASCII-only entity names, so
-                    // `semi + 1` equals the char count (including the semicolon).
+                    // All recognised entity bodies (named entities and numeric
+                    // digit strings) are ASCII-only, so `semi` (a byte offset)
+                    // equals the char count up to the semicolon, and
+                    // `semi + 1` is the total chars to skip including `;`.
+                    debug_assert!(entity.is_ascii(), "entity body must be ASCII");
                     (semi + 1, ch)
                 } else {
                     (0, None)
@@ -524,8 +528,10 @@ fn decode_entities(s: &str) -> String {
                     chars.next();
                 }
             } else {
-                // Unknown or malformed reference — emit `&` literally and let
-                // the iterator continue from the next character.
+                // Unknown or malformed reference — emit `&` literally.
+                // Subsequent iterations will output the entity name and
+                // semicolon (if any) as ordinary characters, preserving the
+                // original text verbatim.
                 out.push('&');
             }
         } else {
@@ -647,5 +653,36 @@ mod tests {
         // Unknown named entities are left unchanged
         assert_eq!(decode_entities("&foo;"), "&foo;");
         assert_eq!(decode_entities("&unknown;bar"), "&unknown;bar");
+    }
+
+    #[test]
+    fn decode_entities_null_char_not_decoded() {
+        // XML 1.0 §2.2 forbids U+0000; &#0; must not produce a null byte.
+        assert_eq!(decode_entities("&#0;"), "&#0;");
+        assert_eq!(decode_entities("&#x0;"), "&#x0;");
+        assert_eq!(decode_entities("&#X0;"), "&#X0;");
+    }
+
+    #[test]
+    fn parse_with_doctype_internal_subset() {
+        // DOCTYPE with an internal `[...]` subset should be skipped correctly.
+        let doc = r#"<?xml version="1.0"?>
+<!DOCTYPE root [
+  <!ELEMENT root (item)>
+  <!ELEMENT item (#PCDATA)>
+]>
+<root><item>hello</item></root>"#;
+        let root = parse(doc).unwrap();
+        assert_eq!(root.name, "root");
+        assert_eq!(root.child("item").unwrap().text, "hello");
+    }
+
+    #[test]
+    fn parse_with_lowercase_doctype() {
+        // `<!doctype` (lowercase) should also be skipped.
+        let doc = "<!doctype root><root><child>text</child></root>";
+        let root = parse(doc).unwrap();
+        assert_eq!(root.name, "root");
+        assert_eq!(root.child("child").unwrap().text, "text");
     }
 }
