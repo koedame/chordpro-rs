@@ -166,6 +166,15 @@ jobs:
           mv .uniffi-tmp/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
           rm -rf .uniffi-tmp/
 
+      - name: Upload Ruby bindings
+        # The generated chordsketch_uniffi.rb is uploaded as an artifact so
+        # the publish job can download it directly instead of rebuilding the
+        # FFI crate and re-running uniffi-bindgen. See #1448.
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ruby-bindings
+          path: packages/ruby/lib/chordsketch_uniffi.rb
+
       - name: Download native library (linux-x86-64)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -217,72 +226,6 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
 
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          shared-key: ruby-generate
-
-      - name: Build FFI crate
-        run: cargo build -p chordsketch-ffi
-
-      - name: Generate Ruby bindings
-        # See note on the same step in the generate-and-test job above —
-        # generate into a temp dir and rewrite the ffi_lib line to use
-        # the absolute path resolved by the loader. #1082.
-        run: |
-          mkdir -p .uniffi-tmp
-          cargo run -p chordsketch-ffi --bin uniffi-bindgen generate \
-            --library target/debug/libchordsketch_ffi.so \
-            --language ruby \
-            --out-dir .uniffi-tmp/
-          python3 - <<'PYTHON'
-          import re, sys
-          path = ".uniffi-tmp/chordsketch.rb"
-          with open(path) as f:
-              content = f.read()
-          pat = re.compile(
-              r'^([ \t]*)ffi_lib[ \t]+[\'"][^\'"]*chordsketch_ffi[^\'"]*[\'"][ \t]*$',
-              re.MULTILINE,
-          )
-          m = pat.search(content)
-          if not m:
-              sys.stderr.write("ERROR: could not find ffi_lib line for chordsketch_ffi.\n")
-              for i, line in enumerate(content.splitlines(), 1):
-                  if "ffi_lib" in line:
-                      sys.stderr.write(f"  {i}: {line!r}\n")
-              sys.exit(1)
-          new_content, n = pat.subn(r"\1ffi_lib Chordsketch::NATIVE_LIB_PATH", content)
-          if n != 1:
-              sys.stderr.write(f"ERROR: expected exactly 1 ffi_lib substitution, got {n}\n")
-              sys.exit(1)
-          with open(path, "w") as f:
-              f.write(new_content)
-          print(f"OK: rewrote 1 ffi_lib line in {path}")
-          PYTHON
-          mv .uniffi-tmp/chordsketch.rb packages/ruby/lib/chordsketch_uniffi.rb
-          rm -rf .uniffi-tmp/
-
-      - name: Download all native libraries
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          pattern: native-*
-          path: packages/ruby/lib/
-
-      - name: Organize native libraries by platform
-        run: |
-          cd packages/ruby/lib
-          mkdir -p x86_64-linux aarch64-linux aarch64-darwin x86_64-darwin x86_64-windows
-          mv native-x86_64-unknown-linux-gnu/* x86_64-linux/
-          mv native-aarch64-unknown-linux-gnu/* aarch64-linux/
-          mv native-aarch64-apple-darwin/* aarch64-darwin/
-          mv native-x86_64-apple-darwin/* x86_64-darwin/
-          mv native-x86_64-pc-windows-msvc/* x86_64-windows/
-          rmdir native-*
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@3ff19f5e2baf30647122352b96108b1fbe250c64 # v1
-        with:
-          ruby-version: "3.3"
-
       - name: Detect OIDC availability
         # Probes whether GitHub is providing OIDC tokens for this job run.
         # ACTIONS_ID_TOKEN_REQUEST_URL is set when `id-token: write` is in
@@ -290,6 +233,10 @@ jobs:
         # would fail; surfacing the skip here as a warning keeps the job exit-0
         # (consistent with the continue-on-error intent) while making it
         # visible in the run log.
+        #
+        # Placed before expensive downloads so that OIDC-unavailable runs
+        # (e.g. forks without the rubygems environment) exit early without
+        # spending CI minutes on artifact downloads. See #1448.
         #
         # Limitation: this probe cannot detect a misconfigured RubyGems trusted
         # publisher — that failure occurs inside the OIDC exchange within the
@@ -304,6 +251,42 @@ jobs:
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "::warning::GitHub OIDC token endpoint is unavailable; skipping RubyGems publish. Check that the environment exists and id-token: write permission is effective. See #1445."
           fi
+
+      - name: Download Ruby bindings
+        # Download the pre-built chordsketch_uniffi.rb from the
+        # generate-and-test job instead of rebuilding the FFI crate and
+        # re-running uniffi-bindgen. Eliminates the cargo build + bindgen
+        # steps from this job. See #1448.
+        if: steps.oidc.outputs.available == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ruby-bindings
+          path: packages/ruby/lib/
+
+      - name: Download all native libraries
+        if: steps.oidc.outputs.available == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: native-*
+          path: packages/ruby/lib/
+
+      - name: Organize native libraries by platform
+        if: steps.oidc.outputs.available == 'true'
+        run: |
+          cd packages/ruby/lib
+          mkdir -p x86_64-linux aarch64-linux aarch64-darwin x86_64-darwin x86_64-windows
+          mv native-x86_64-unknown-linux-gnu/* x86_64-linux/
+          mv native-aarch64-unknown-linux-gnu/* aarch64-linux/
+          mv native-aarch64-apple-darwin/* aarch64-darwin/
+          mv native-x86_64-apple-darwin/* x86_64-darwin/
+          mv native-x86_64-pc-windows-msvc/* x86_64-windows/
+          rmdir native-*
+
+      - name: Set up Ruby
+        if: steps.oidc.outputs.available == 'true'
+        uses: ruby/setup-ruby@3ff19f5e2baf30647122352b96108b1fbe250c64 # v1
+        with:
+          ruby-version: "3.3"
 
       - name: Configure RubyGems trusted publisher credentials
         if: steps.oidc.outputs.available == 'true'
