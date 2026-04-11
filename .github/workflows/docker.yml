@@ -10,31 +10,20 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: read
-  packages: write
+# Deny-by-default: each job declares only the permissions it needs.
+permissions: {}
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: koedame/chordsketch
 
 jobs:
-  docker:
-    name: Build and push Docker image
+  ghcr:
+    name: Build and push to GHCR
     runs-on: ubuntu-latest
-    # Scopes DOCKERHUB_TOKEN and DOCKERHUB_USERNAME to this environment,
-    # consistent with python.yml (pypi), ruby.yml (rubygems),
-    # kotlin.yml (maven-central), vscode-extension.yml (vscode-marketplace),
-    # and npm-publish.yml (npm).
-    # GHCR push uses GITHUB_TOKEN (automatic — not environment-scoped).
-    #
-    # One-time human setup: create the "docker-hub" environment at
-    #   https://github.com/koedame/chordsketch/settings/environments
-    # and move DOCKERHUB_USERNAME and DOCKERHUB_TOKEN from repository
-    # secrets to environment secrets.
-    environment:
-      name: docker-hub
-      url: https://hub.docker.com/r/koedame/chordsketch
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -43,11 +32,12 @@ jobs:
         env:
           INPUT_TAG: ${{ inputs.tag }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "tag=${INPUT_TAG}" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+            echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Download and extract release binaries
@@ -81,62 +71,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Detect Docker Hub credentials
-        # Decouple Docker Hub from GHCR: if `DOCKERHUB_TOKEN` is unset
-        # (fork PRs, manual recovery runs, an org-side credential rotation),
-        # the GHCR push should still succeed instead of taking the entire
-        # workflow down with it. Secrets aren't available in step `if:`
-        # expressions directly, so we surface the boolean via a step output.
-        # See #1072.
-        id: dockerhub
-        env:
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: |
-          if [ -n "${DOCKERHUB_TOKEN:-}" ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::DOCKERHUB_TOKEN is not set; skipping Docker Hub push (GHCR will still publish). See #1072."
-          fi
-
-      - name: Log in to Docker Hub
-        if: steps.dockerhub.outputs.available == 'true'
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Compute image list
-        # Build the metadata-action `images:` value dynamically so we
-        # only push to Docker Hub when its credentials are available.
-        # See #1072.
-        #
-        # Step outputs and env values are passed to the shell via the
-        # `env:` block (rather than `${{ ... }}` interpolation inside
-        # the `run:` body) per GitHub's expression-injection hardening
-        # guidance — see #1115. The current values are always
-        # workflow-controlled, but the `env:` form is the safe pattern
-        # to keep using as the inputs evolve.
-        id: images
-        env:
-          REGISTRY: ${{ env.REGISTRY }}
-          IMAGE_NAME: ${{ env.IMAGE_NAME }}
-          DOCKERHUB_AVAILABLE: ${{ steps.dockerhub.outputs.available }}
-        run: |
-          {
-            echo "list<<EOF"
-            echo "${REGISTRY}/${IMAGE_NAME}"
-            if [ "${DOCKERHUB_AVAILABLE}" = "true" ]; then
-              echo "docker.io/${IMAGE_NAME}"
-            fi
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5
         with:
-          images: ${{ steps.images.outputs.list }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=semver,pattern={{version}},value=${{ steps.version.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.tag }}
@@ -146,7 +85,7 @@ jobs:
             # aliases. See #1064 for the regression scenario.
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
 
-      - name: Build and push
+      - name: Build and push to GHCR
         uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6
         with:
           context: .
@@ -155,3 +94,108 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  docker-hub:
+    name: Copy to Docker Hub
+    needs: [ghcr]
+    runs-on: ubuntu-latest
+    # Scopes DOCKERHUB_TOKEN and DOCKERHUB_USERNAME to this environment,
+    # consistent with python.yml (pypi), ruby.yml (rubygems),
+    # kotlin.yml (maven-central), vscode-extension.yml (vscode-marketplace),
+    # and npm-publish.yml (npm).
+    #
+    # This job is intentionally separate from `ghcr`: the environment gate
+    # applies only here, so if the "docker-hub" environment does not exist
+    # or its secrets are absent, the `ghcr` job (which runs first) still
+    # succeeds and GHCR publishing is unaffected. See #1435.
+    #
+    # One-time human setup: create the "docker-hub" environment at
+    #   https://github.com/koedame/chordsketch/settings/environments
+    # and move DOCKERHUB_USERNAME and DOCKERHUB_TOKEN from repository
+    # secrets to environment secrets.
+    environment:
+      name: docker-hub
+      url: https://hub.docker.com/r/koedame/chordsketch
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Determine version
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "tag=${INPUT_TAG}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Detect Docker Hub credentials
+        # Decouple Docker Hub from GHCR: if `DOCKERHUB_TOKEN` is unset
+        # (fork PRs, manual recovery runs, an org-side credential rotation),
+        # the GHCR push (already completed by the `ghcr` job) is unaffected.
+        # Secrets aren't available in step `if:` expressions directly, so we
+        # surface the boolean via a step output. See #1072.
+        id: dockerhub
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::DOCKERHUB_TOKEN is not set; skipping Docker Hub push (GHCR was already published). See #1072."
+          fi
+
+      - name: Log in to GHCR
+        if: steps.dockerhub.outputs.available == 'true'
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: steps.dockerhub.outputs.available == 'true'
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: steps.dockerhub.outputs.available == 'true'
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3
+
+      - name: Copy tags from GHCR to Docker Hub
+        # `docker buildx imagetools create` copies the multi-platform manifest
+        # list from GHCR to Docker Hub without a rebuild. Tag logic mirrors the
+        # metadata-action configuration in the `ghcr` job.
+        if: steps.dockerhub.outputs.available == 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          SRC: ghcr.io/${{ env.IMAGE_NAME }}
+          DST: docker.io/${{ env.IMAGE_NAME }}
+        run: |
+          VERSION="${TAG#v}"
+          MAJOR_MINOR="${VERSION%.*}"
+
+          docker buildx imagetools create \
+            -t "${DST}:${VERSION}" \
+            "${SRC}:${VERSION}"
+
+          docker buildx imagetools create \
+            -t "${DST}:${MAJOR_MINOR}" \
+            "${SRC}:${MAJOR_MINOR}"
+
+          # Only copy :latest for release events. workflow_dispatch reruns
+          # (e.g. fixing a broken older release) MUST NOT regress the :latest
+          # tag. See #1064.
+          if [ "${EVENT_NAME}" = "release" ]; then
+            docker buildx imagetools create \
+              -t "${DST}:latest" \
+              "${SRC}:latest"
+          fi
