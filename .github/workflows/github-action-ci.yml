@@ -104,3 +104,72 @@ jobs:
             exit 1
           fi
           cat "$OUTPUT"
+
+      # ---- PDF output -----------------------------------------------------
+      - name: Render to PDF
+        id: render-pdf
+        uses: ./packages/github-action
+        with:
+          input: packages/github-action/fixtures/simple.cho
+          output: out/simple.pdf
+          format: pdf
+
+      - name: Verify PDF output
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUTPUT="${{ steps.render-pdf.outputs.output-path }}"
+          echo "output-path: $OUTPUT"
+          [ -s "$OUTPUT" ] || { echo "PDF output file is missing or empty"; exit 1; }
+          # PDF files begin with the %PDF- magic bytes. Use python3 (pre-installed on
+          # all GitHub-hosted runners) to read binary bytes without grep binary-mode issues.
+          python3 -c "
+          import sys
+          with open(sys.argv[1], 'rb') as f:
+              header = f.read(5)
+          assert header == b'%PDF-', f'Expected PDF magic bytes, got {header!r}'
+          print('PDF header verified:', header)
+          " "$OUTPUT"
+
+      # ---- validation: negative-path tests --------------------------------
+      # Verify that the action exits non-zero when given an invalid format or
+      # transpose value. 'continue-on-error: true' prevents the job from failing
+      # when the action under test exits 1; we then assert the outcome explicitly.
+
+      - name: Test invalid format (should fail)
+        id: test-invalid-format
+        uses: ./packages/github-action
+        continue-on-error: true
+        with:
+          input: packages/github-action/fixtures/simple.cho
+          output: out/should-not-exist.txt
+          format: xlsx
+
+      - name: Verify invalid format was rejected
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.test-invalid-format.outcome }}" != "failure" ]; then
+            echo "Expected action to fail with invalid format 'xlsx' but it succeeded"
+            exit 1
+          fi
+          echo "Correctly rejected invalid format 'xlsx'"
+
+      - name: Test invalid transpose (should fail)
+        id: test-invalid-transpose
+        uses: ./packages/github-action
+        continue-on-error: true
+        with:
+          input: packages/github-action/fixtures/simple.cho
+          output: out/should-not-exist-2.txt
+          transpose: abc
+
+      - name: Verify invalid transpose was rejected
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.test-invalid-transpose.outcome }}" != "failure" ]; then
+            echo "Expected action to fail with invalid transpose 'abc' but it succeeded"
+            exit 1
+          fi
+          echo "Correctly rejected invalid transpose 'abc'"
