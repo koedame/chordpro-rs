@@ -22,7 +22,7 @@ Actions workflow.
 | `input`     | yes      | —        | Path to the `.cho` source file (relative to the repository root or absolute) |
 | `output`    | yes      | —        | Path for the rendered output file (parent directories are created automatically) |
 | `format`    | no       | `text`   | Output format: `text`, `html`, or `pdf` |
-| `transpose` | no       | `0`      | Semitones to transpose (positive = up, negative = down) |
+| `transpose` | no       | `0`      | Semitones to transpose, integer in range `-128..127` (positive = up, negative = down). No leading zeros. |
 | `version`   | no       | `latest` | ChordSketch release tag to install, e.g. `v0.2.0`. `latest` resolves the current GitHub Release at runtime. |
 
 ### Outputs

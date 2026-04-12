@@ -17,7 +17,7 @@ inputs:
     required: false
     default: 'text'
   transpose:
-    description: 'Semitones to transpose (positive or negative integer; 0 = no change)'
+    description: 'Semitones to transpose, integer in range -128..127 (positive = up, negative = down; 0 = no change). No leading zeros.'
     required: false
     default: '0'
   version:
@@ -172,8 +172,8 @@ runs:
           text|html|pdf) ;;
           *) echo "Invalid format '${FORMAT}': must be text, html, or pdf" >&2; exit 1 ;;
         esac
-        if ! [[ "${TRANSPOSE}" =~ ^[+-]?[0-9]+$ ]]; then
-          echo "Invalid transpose value '${TRANSPOSE}': must be an integer" >&2; exit 1
+        if ! [[ "${TRANSPOSE}" =~ ^[+-]?(0|[1-9][0-9]*)$ ]]; then
+          echo "Invalid transpose value '${TRANSPOSE}': must be an integer in range -128..127 with no leading zeros" >&2; exit 1
         fi
         if [[ "${INPUT}" != /* ]]; then INPUT="${GITHUB_WORKSPACE}/${INPUT}"; fi
         if [[ "${OUTPUT}" != /* ]]; then OUTPUT="${GITHUB_WORKSPACE}/${OUTPUT}"; fi
@@ -208,9 +208,9 @@ runs:
           exit 1
         }
 
-        # Validate transpose is an integer before invoking CLI
-        if ($transpose -notmatch '^[+-]?[0-9]+$') {
-          Write-Error "Invalid transpose value '${transpose}': must be an integer"
+        # Validate transpose is an integer in range -128..127 with no leading zeros
+        if ($transpose -notmatch '^[+-]?(0|[1-9][0-9]*)$') {
+          Write-Error "Invalid transpose value '${transpose}': must be an integer in range -128..127 with no leading zeros"
           exit 1
         }
 
