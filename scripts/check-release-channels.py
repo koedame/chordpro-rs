@@ -215,6 +215,23 @@ def _check_vscode_marketplace(channel: Channel, version: str) -> CheckResult:
     return _compare(channel, version, observed)
 
 
+def _check_open_vsx(channel: Channel, version: str) -> CheckResult:
+    # channel.package is "namespace.extension" (e.g. "koedame.chordsketch").
+    # The Open VSX REST API returns the latest published version at:
+    #   GET https://open-vsx.org/api/{namespace}/{name}
+    try:
+        namespace, name = channel.package.split(".", 1)
+    except ValueError:
+        return _error(channel, version, f"open-vsx package must be 'namespace.name', got {channel.package!r}")
+    url = f"https://open-vsx.org/api/{namespace}/{name}"
+    try:
+        payload = _http_get_json(url)
+    except Exception as exc:  # noqa: BLE001
+        return _error(channel, version, f"Open VSX API error: {exc}")
+    observed = str(payload.get("version") or "<missing>")
+    return _compare(channel, version, observed)
+
+
 def _check_pypi(channel: Channel, version: str) -> CheckResult:
     url = f"https://pypi.org/pypi/{channel.package}/json"
     try:
@@ -332,6 +349,7 @@ _DISPATCH: dict[str, Callable[[Channel, str], CheckResult]] = {
     "ghcr": _check_ghcr,
     "docker-hub": _check_docker_hub,
     "vscode-marketplace": _check_vscode_marketplace,
+    "open-vsx": _check_open_vsx,
     "pypi": _check_pypi,
     "rubygems": _check_rubygems,
     "maven-central": _check_maven_central,

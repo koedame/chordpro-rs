@@ -31,6 +31,7 @@ KNOWN_KINDS = frozenset(
         "ghcr",
         "docker-hub",
         "vscode-marketplace",
+        "open-vsx",
         "pypi",
         "rubygems",
         "maven-central",

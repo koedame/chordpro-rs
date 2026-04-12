@@ -155,3 +155,58 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: ./node_modules/.bin/vsce publish --packagePath *.vsix
         working-directory: packages/vscode-extension
+
+  publish-openvsx:
+    name: Publish to Open VSX Registry
+    needs: [build]
+    runs-on: ubuntu-latest
+    # Publish only on GitHub Release (published) events or when workflow_dispatch supplies a tag.
+    #
+    # Prerequisites (one-time human setup before this job can succeed):
+    #   1. Create an account on https://open-vsx.org/ (GitHub login)
+    #   2. Generate a personal access token at https://open-vsx.org/user-settings/tokens
+    #   3. Create the "open-vsx" environment at
+    #      https://github.com/koedame/chordsketch/settings/environments
+    #      and add the token as the OPEN_VSX_TOKEN environment secret.
+    #
+    # If the "open-vsx" environment does not exist (fork, fresh instance),
+    # GitHub cannot start this job. continue-on-error keeps the overall workflow
+    # green when publishing infrastructure is absent. See #1604.
+    continue-on-error: true
+    environment:
+      name: open-vsx
+      url: https://open-vsx.org/extension/koedame/chordsketch
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && inputs.tag != '')
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        # No `ref:` override — always check out main so scripts/ is present.
+
+      - name: Check required secrets present
+        env:
+          OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
+        run: python3 scripts/check-env-secrets.py --channel open-vsx
+
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: packages/vscode-extension/package-lock.json
+
+      - name: Install dependencies (for ovsx)
+        run: npm ci
+        working-directory: packages/vscode-extension
+
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: chordsketch-vsix
+          path: packages/vscode-extension/
+
+      - name: Publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OPEN_VSX_TOKEN }}
+        run: npx ovsx publish *.vsix --pat "$OVSX_PAT"
+        working-directory: packages/vscode-extension

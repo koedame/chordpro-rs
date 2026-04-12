@@ -152,6 +152,21 @@ manually by a human after registering the publisher at
 https://marketplace.visualstudio.com/manage (see #1428).
 """
 
+[[channels]]
+id = "open-vsx"
+display = "Open VSX Registry — koedame.chordsketch"
+kind = "open-vsx"
+package = "koedame.chordsketch"
+expected_version = "tag"
+required_secrets = ["OPEN_VSX_TOKEN"]
+notes = """
+Gated on the `open-vsx` GitHub environment in
+.github/workflows/vscode-extension.yml. First publish requires creating a
+namespace on open-vsx.org (GitHub login) and generating a personal access
+token. The same .vsix artifact built by the `build` job is reused; no
+separate build step is needed. See #1604.
+"""
+
 # ---------------------------------------------------------------- language bindings
 
 [[channels]]
