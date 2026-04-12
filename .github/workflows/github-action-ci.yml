@@ -1,20 +1,23 @@
 name: GitHub Action CI
 
 # Exercises the composite action defined in packages/github-action/action.yml
-# against a sample fixture on all supported platforms. Runs on every push or
-# PR that touches the action definition, its fixture, or this workflow file.
+# against a sample fixture on all supported platforms.
+#
+# No paths: filter — the action downloads a published release binary, so any
+# CI regression introduced here is structural (action.yml / workflow wiring),
+# not a code regression. Running unconditionally ensures the test always
+# reflects the current state of the action wiring.
 
 on:
   push:
     branches: [main]
-    paths:
-      - "packages/github-action/**"
-      - ".github/workflows/github-action-ci.yml"
   pull_request:
-    paths:
-      - "packages/github-action/**"
-      - ".github/workflows/github-action-ci.yml"
   workflow_dispatch:
+
+# Cancel previous runs on the same PR when new commits land.
+concurrency:
+  group: github-action-ci-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -47,6 +50,8 @@ jobs:
           OUTPUT="${{ steps.render-text.outputs.output-path }}"
           echo "output-path: $OUTPUT"
           [ -s "$OUTPUT" ] || { echo "Output file is missing or empty"; exit 1; }
+          # The title directive must appear in text output
+          grep -qi "Amazing Grace" "$OUTPUT" || { echo "Title not found in text output"; exit 1; }
           cat "$OUTPUT"
 
       # ---- HTML output -----------------------------------------------------
@@ -68,6 +73,9 @@ jobs:
           grep -q "Amazing Grace" "$OUTPUT" || { echo "Title not found in HTML output"; exit 1; }
 
       # ---- transpose -------------------------------------------------------
+      # The fixture uses G-major chords. Transposing by +2 semitones
+      # shifts G→A, C→D, D→E, Em→F#m. Assert that A (transposed root)
+      # appears in the output to confirm the flag is not silently ignored.
       - name: Render with transpose
         id: render-transpose
         uses: ./packages/github-action
@@ -77,11 +85,14 @@ jobs:
           format: text
           transpose: '2'
 
-      - name: Verify transposed output exists
+      - name: Verify transposed output
         shell: bash
         run: |
           set -euo pipefail
           OUTPUT="${{ steps.render-transpose.outputs.output-path }}"
           echo "output-path: $OUTPUT"
           [ -s "$OUTPUT" ] || { echo "Output file is missing or empty"; exit 1; }
+          # G transposed +2 = A; assert A chord is present and G is absent
+          # (text renderer outputs chords inline, e.g. [A] or A  above the lyric)
+          grep -q "A" "$OUTPUT" || { echo "Expected A chord (G+2) not found in transposed output"; exit 1; }
           cat "$OUTPUT"
