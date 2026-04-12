@@ -144,7 +144,7 @@ Use the composite action to render ChordPro files in any GitHub Actions
 workflow — no Rust toolchain required:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
 
 - uses: koedame/chordsketch/packages/github-action@action-v1
   id: render
@@ -153,7 +153,7 @@ workflow — no Rust toolchain required:
     output: dist/setlist.html
     format: html
 
-- uses: actions/upload-artifact@v4
+- uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
   with:
     name: setlist-html
     path: ${{ steps.render.outputs.output-path }}
