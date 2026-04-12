@@ -112,6 +112,7 @@ fn do_render_bytes(
 ///
 /// Use [`render_text_with_options`] to pass a config preset, inline RRJSON,
 /// or transposition.
+#[must_use = "callers must handle render errors"]
 #[napi]
 pub fn render_text(input: String) -> Result<String> {
     do_render_string(
@@ -126,6 +127,7 @@ pub fn render_text(input: String) -> Result<String> {
 ///
 /// Use [`render_html_with_options`] to pass a config preset, inline RRJSON,
 /// or transposition.
+#[must_use = "callers must handle render errors"]
 #[napi]
 pub fn render_html(input: String) -> Result<String> {
     do_render_string(
@@ -141,6 +143,7 @@ pub fn render_html(input: String) -> Result<String> {
 ///
 /// Use [`render_pdf_with_options`] to pass a config preset, inline RRJSON,
 /// or transposition.
+#[must_use = "callers must handle render errors"]
 #[napi]
 pub fn render_pdf(input: String) -> Result<Buffer> {
     let bytes = do_render_bytes(
@@ -166,6 +169,7 @@ fn parse_transpose(raw: i32) -> i8 {
 }
 
 /// Render ChordPro input as plain text with options.
+#[must_use = "callers must handle render errors"]
 #[napi]
 pub fn render_text_with_options(input: String, options: RenderOptions) -> Result<String> {
     let config = resolve_config(options.config)?;
@@ -179,6 +183,7 @@ pub fn render_text_with_options(input: String, options: RenderOptions) -> Result
 }
 
 /// Render ChordPro input as an HTML document with options.
+#[must_use = "callers must handle render errors"]
 #[napi]
 pub fn render_html_with_options(input: String, options: RenderOptions) -> Result<String> {
     let config = resolve_config(options.config)?;
@@ -192,6 +197,7 @@ pub fn render_html_with_options(input: String, options: RenderOptions) -> Result
 }
 
 /// Render ChordPro input as a PDF document with options (returned as a Buffer).
+#[must_use = "callers must handle render errors"]
 #[napi]
 pub fn render_pdf_with_options(input: String, options: RenderOptions) -> Result<Buffer> {
     let config = resolve_config(options.config)?;
