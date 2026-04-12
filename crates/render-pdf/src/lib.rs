@@ -279,6 +279,7 @@ pub fn render_song_with_transpose(song: &Song, cli_transpose: i8, config: &Confi
 /// This is the structured variant of [`render_song_with_transpose`]. Instead
 /// of printing warnings to stderr, they are collected into
 /// [`RenderResult::warnings`].
+#[must_use = "caller must check warnings in the returned RenderResult"]
 pub fn render_song_with_warnings(
     song: &Song,
     cli_transpose: i8,
@@ -337,6 +338,7 @@ pub fn render_songs_with_transpose(songs: &[Song], cli_transpose: i8, config: &C
 /// This is the structured variant of [`render_songs_with_transpose`]. Instead
 /// of printing warnings to stderr, they are collected into
 /// [`RenderResult::warnings`].
+#[must_use = "caller must check warnings in the returned RenderResult"]
 pub fn render_songs_with_warnings(
     songs: &[Song],
     cli_transpose: i8,

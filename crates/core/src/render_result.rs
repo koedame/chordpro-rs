@@ -30,6 +30,7 @@ impl<T> RenderResult<T> {
     }
 
     /// Returns `true` if there are no warnings.
+    #[must_use]
     pub fn has_warnings(&self) -> bool {
         !self.warnings.is_empty()
     }

@@ -925,6 +925,7 @@ impl Parser {
 /// assert_eq!(song.metadata.title.as_deref(), Some("Hello World"));
 /// assert_eq!(song.lines.len(), 2);
 /// ```
+#[must_use = "callers must handle the parse error"]
 pub fn parse(input: &str) -> Result<Song, ParseError> {
     parse_with_options(input, &ParseOptions::default())
 }
@@ -965,6 +966,7 @@ impl Default for ParseOptions {
 ///
 /// Returns a [`ParseError`] if the input exceeds the configured size limit
 /// or contains structural problems.
+#[must_use = "callers must handle the parse error"]
 pub fn parse_with_options(input: &str, options: &ParseOptions) -> Result<Song, ParseError> {
     if options.max_input_size > 0 && input.len() > options.max_input_size {
         return Err(ParseError::new(
@@ -1001,6 +1003,7 @@ pub fn parse_with_options(input: &str, options: &ParseOptions) -> Result<Song, P
 /// // The valid lyrics line was still parsed.
 /// assert!(result.song.lines.len() >= 2);
 /// ```
+#[must_use]
 pub fn parse_lenient(input: &str) -> ParseResult {
     parse_lenient_with_options(input, &ParseOptions::default())
 }
@@ -1008,6 +1011,7 @@ pub fn parse_lenient(input: &str) -> ParseResult {
 /// Parses a ChordPro source string leniently with custom options.
 ///
 /// See [`parse_lenient`] for details.
+#[must_use]
 pub fn parse_lenient_with_options(input: &str, options: &ParseOptions) -> ParseResult {
     if options.max_input_size > 0 && input.len() > options.max_input_size {
         return ParseResult {
@@ -1158,6 +1162,7 @@ fn split_at_new_song(input: &str) -> Vec<&str> {
 /// assert_eq!(songs[0].metadata.title.as_deref(), Some("Song One"));
 /// assert_eq!(songs[1].metadata.title.as_deref(), Some("Song Two"));
 /// ```
+#[must_use = "callers must handle the parse error"]
 pub fn parse_multi(input: &str) -> Result<Vec<Song>, ParseError> {
     parse_multi_with_options(input, &ParseOptions::default())
 }
@@ -1172,6 +1177,7 @@ pub fn parse_multi(input: &str) -> Result<Vec<Song>, ParseError> {
 ///
 /// Returns a [`ParseError`] if the input exceeds the configured size limit
 /// or any song segment contains structural problems.
+#[must_use = "callers must handle the parse error"]
 pub fn parse_multi_with_options(
     input: &str,
     options: &ParseOptions,
@@ -1220,6 +1226,7 @@ pub fn parse_multi_with_options(
 /// assert!(result.results[0].has_errors()); // unclosed chord
 /// assert!(result.results[1].is_ok());
 /// ```
+#[must_use]
 pub fn parse_multi_lenient(input: &str) -> MultiParseResult {
     parse_multi_lenient_with_options(input, &ParseOptions::default())
 }
@@ -1227,6 +1234,7 @@ pub fn parse_multi_lenient(input: &str) -> MultiParseResult {
 /// Parses a multi-song ChordPro source string leniently with custom options.
 ///
 /// See [`parse_multi_lenient`] for details.
+#[must_use]
 pub fn parse_multi_lenient_with_options(input: &str, options: &ParseOptions) -> MultiParseResult {
     if options.max_input_size > 0 && input.len() > options.max_input_size {
         return MultiParseResult {

@@ -207,6 +207,7 @@ pub fn render_pdf_with_options(input: String, options: RenderOptions) -> Result<
 
 /// Validate ChordPro input and return any parse errors as strings.
 /// Returns an empty array if the input is valid.
+#[must_use]
 #[napi]
 pub fn validate(input: String) -> Vec<String> {
     let result = chordsketch_core::parse_multi_lenient(&input);

@@ -144,6 +144,7 @@ pub fn parse_and_render_pdf(
 }
 
 /// Validate ChordPro input and return any parse errors as strings.
+#[must_use]
 pub fn validate(input: String) -> Vec<String> {
     let result = chordsketch_core::parse_multi_lenient(&input);
     result
