@@ -63,8 +63,11 @@ Direct URI-bearing SVG/HTML attributes MUST include at minimum:
 SVG animation value attributes (`to`, `values`, `from`, `by`) are NOT URI-bearing
 in the conventional sense — they carry animation values. However, they MUST still be
 sanitized when the animated `attributeName` is a URI attribute (e.g.
-`<animate attributeName="href" to="javascript:alert(1)"/>`). Filter for animation
-elements that target URI attributes rather than blanket URI-checking these attributes.
+`<animate attributeName="href" to="javascript:alert(1)"/>`). The implementation uses
+a defense-in-depth approach: animation elements (`animate`, `set`, etc.) are stripped
+entirely via `DANGEROUS_TAGS`, and `to`/`values`/`from`/`by` are additionally included
+in `is_uri_attr` as a secondary defense on any surviving element. Both layers are
+intentional and must be preserved.
 
 ### Testing completeness
 

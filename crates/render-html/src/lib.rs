@@ -1188,7 +1188,7 @@ fn has_dangerous_uri_scheme(value: &str) -> bool {
     //   data:               content injection
     //   file:/blob:         local file access when HTML is opened as a local file
     //   mhtml:              MIME HTML (IE-era; blocked by is_safe_image_src via allowlist)
-    // See WHATWG Fetch forbidden origins for further rationale.
+    // See OWASP XSS Prevention Cheat Sheet for further rationale.
     lower.starts_with("javascript:")
         || lower.starts_with("vbscript:")
         || lower.starts_with("data:")
