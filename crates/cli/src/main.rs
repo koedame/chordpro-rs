@@ -10,6 +10,52 @@ use std::process::ExitCode;
 
 use tempfile::NamedTempFile;
 
+/// Maximum input size accepted at the I/O layer (50 MiB), matching the
+/// parser-level guard in `chordsketch-convert-musicxml`. Files or stdin
+/// streams larger than this limit are rejected before the content is fully
+/// buffered into memory.
+const MAX_INPUT_BYTES: u64 = 52_428_800;
+
+/// Reads `path` into a [`String`], returning an error string if the file is
+/// larger than [`MAX_INPUT_BYTES`] or if any I/O error occurs.
+///
+/// [`fs::metadata`] is used for an early, cheap size check that avoids
+/// loading oversized files into memory at all.
+fn read_file_clamped(path: &str) -> Result<String, String> {
+    match fs::metadata(path) {
+        Ok(meta) if meta.len() > MAX_INPUT_BYTES => {
+            return Err(format!(
+                "file exceeds the {} MiB input limit",
+                MAX_INPUT_BYTES / (1024 * 1024)
+            ));
+        }
+        Err(e) => return Err(e.to_string()),
+        Ok(_) => {}
+    }
+    fs::read_to_string(path).map_err(|e| e.to_string())
+}
+
+/// Reads stdin into a [`String`], rejecting streams that exceed
+/// [`MAX_INPUT_BYTES`].
+///
+/// Uses [`Read::take`] to avoid buffering more than `MAX_INPUT_BYTES + 1`
+/// bytes; if the read fills the cap the stream is rejected without consuming
+/// the remainder.
+fn read_stdin_clamped() -> Result<String, String> {
+    let mut buf = String::new();
+    io::stdin()
+        .take(MAX_INPUT_BYTES + 1)
+        .read_to_string(&mut buf)
+        .map_err(|e| e.to_string())?;
+    if buf.len() as u64 > MAX_INPUT_BYTES {
+        return Err(format!(
+            "input exceeds the {} MiB input limit",
+            MAX_INPUT_BYTES / (1024 * 1024)
+        ));
+    }
+    Ok(buf)
+}
+
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 
@@ -270,7 +316,7 @@ fn main() -> ExitCode {
     let mut had_error = false;
 
     for path in &cli.files {
-        let input = match fs::read_to_string(path) {
+        let input = match read_file_clamped(path) {
             Ok(content) => content,
             Err(e) => {
                 eprintln!("error: {path}: {e}");
@@ -409,12 +455,14 @@ fn run_fmt(files: &[String], check: bool) -> ExitCode {
     for file in files {
         if file == "-" {
             // stdin → stdout (always, regardless of --check).
-            let mut input = String::new();
-            if let Err(e) = io::stdin().read_to_string(&mut input) {
-                eprintln!("error: reading stdin: {e}");
-                had_error = true;
-                continue;
-            }
+            let input = match read_stdin_clamped() {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("error: reading stdin: {e}");
+                    had_error = true;
+                    continue;
+                }
+            };
             let formatted = chordsketch_core::formatter::format(&input, &options);
             if check {
                 if formatted != input {
@@ -426,7 +474,7 @@ fn run_fmt(files: &[String], check: bool) -> ExitCode {
                 had_error = true;
             }
         } else {
-            let input = match fs::read_to_string(file) {
+            let input = match read_file_clamped(file) {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("error: {file}: {e}");
@@ -491,14 +539,15 @@ fn run_convert(
         }
         let file = &files[0];
         let input = if file == "-" {
-            let mut s = String::new();
-            if let Err(e) = io::stdin().read_to_string(&mut s) {
-                eprintln!("error: reading stdin: {e}");
-                return ExitCode::FAILURE;
+            match read_stdin_clamped() {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("error: reading stdin: {e}");
+                    return ExitCode::FAILURE;
+                }
             }
-            s
         } else {
-            match fs::read_to_string(file) {
+            match read_file_clamped(file) {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("error: {file}: {e}");
@@ -521,15 +570,16 @@ fn run_convert(
 
     for file in files {
         let input = if file == "-" {
-            let mut s = String::new();
-            if let Err(e) = io::stdin().read_to_string(&mut s) {
-                eprintln!("error: reading stdin: {e}");
-                had_error = true;
-                continue;
+            match read_stdin_clamped() {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("error: reading stdin: {e}");
+                    had_error = true;
+                    continue;
+                }
             }
-            s
         } else {
-            match fs::read_to_string(file) {
+            match read_file_clamped(file) {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("error: {file}: {e}");
