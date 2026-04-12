@@ -60,9 +60,12 @@ describe("NAPI warning routing", () => {
         process.stdout.write(out);
       `,
       ],
-      { encoding: "utf8" }
+      { encoding: "utf8", timeout: 10000 }
     );
 
+    // Guard against spawn failures (result.status is null when spawnSync
+    // itself fails, e.g., executable not found).
+    expect(result.error).toBeUndefined();
     expect(result.status).toBe(0);
     // The rendered output must be non-empty (no regression in output).
     expect(result.stdout.trim()).toBeTruthy();
@@ -83,9 +86,11 @@ describe("NAPI warning routing", () => {
         process.stdout.write(out);
       `,
       ],
-      { encoding: "utf8" }
+      { encoding: "utf8", timeout: 10000 }
     );
 
+    // Guard against spawn failures before checking exit status.
+    expect(result.error).toBeUndefined();
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBeTruthy();
     expect(result.stderr).not.toMatch(/chordsketch:/);
