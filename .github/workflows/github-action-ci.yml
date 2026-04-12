@@ -94,10 +94,11 @@ jobs:
           [ -s "$OUTPUT" ] || { echo "Output file is missing or empty"; exit 1; }
           # The text renderer puts chords on their own line above lyrics (no brackets).
           # After G+2=A transpose: all standalone G chords become A.
-          # \bA\b matches standalone "A" (chord token) but NOT "Amazing" or "A7".
-          # \bG\b matches standalone "G" but NOT "Grace" (G followed by r) or "G7".
-          grep -qE '\bA\b' "$OUTPUT" || { echo "Expected standalone A chord (G+2) not found in transposed output"; exit 1; }
-          if grep -qE '\bG\b' "$OUTPUT"; then
+          # -w matches whole words: "A" matches the chord token but NOT "Amazing" or "A7".
+          # -w "G" matches the chord token but NOT "Grace" (G followed by r) or "G7".
+          # -w is portable across GNU grep, BSD grep, and Git Bash; \bX\b ERE is GNU-only.
+          grep -qw 'A' "$OUTPUT" || { echo "Expected standalone A chord (G+2) not found in transposed output"; exit 1; }
+          if grep -qw 'G' "$OUTPUT"; then
             echo "Standalone G chord found in transposed output — transposition was not applied"
             cat "$OUTPUT"
             exit 1

@@ -172,6 +172,9 @@ runs:
           text|html|pdf) ;;
           *) echo "Invalid format '${FORMAT}': must be text, html, or pdf" >&2; exit 1 ;;
         esac
+        if ! [[ "${TRANSPOSE}" =~ ^[+-]?[0-9]+$ ]]; then
+          echo "Invalid transpose value '${TRANSPOSE}': must be an integer" >&2; exit 1
+        fi
         if [[ "${INPUT}" != /* ]]; then INPUT="${GITHUB_WORKSPACE}/${INPUT}"; fi
         if [[ "${OUTPUT}" != /* ]]; then OUTPUT="${GITHUB_WORKSPACE}/${OUTPUT}"; fi
         mkdir -p "$(dirname "${OUTPUT}")"
@@ -199,9 +202,15 @@ runs:
         $transpose = $env:TRANSPOSE
         $bin       = $env:CHORDSKETCH_BIN
 
-        # Validate format before invoking CLI
-        if ($format -notin @("text", "html", "pdf")) {
+        # Validate format before invoking CLI (case-sensitive, matching Unix behavior)
+        if ($format -cnotin @("text", "html", "pdf")) {
           Write-Error "Invalid format '${format}': must be text, html, or pdf"
+          exit 1
+        }
+
+        # Validate transpose is an integer before invoking CLI
+        if ($transpose -notmatch '^[+-]?[0-9]+$') {
+          Write-Error "Invalid transpose value '${transpose}': must be an integer"
           exit 1
         }
 
