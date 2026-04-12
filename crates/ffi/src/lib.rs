@@ -83,6 +83,14 @@ fn flush_warnings<T>(result: RenderResult<T>) -> T {
 ///
 /// Render warnings (e.g. transpose saturation, chorus recall limits) are
 /// forwarded to stderr via `flush_warnings`.
+///
+/// # Parameters
+///
+/// * `transpose` — semitone transposition offset applied on top of any
+///   in-file `{transpose}` directives. Accepts the full `i8` range
+///   (`-128..=127`); musically meaningful values are typically `-24..=24`
+///   (two octaves). If the combined offset (API value + in-file directive)
+///   saturates the `i8` range, it is clamped and a warning is emitted.
 pub fn parse_and_render_text(
     input: String,
     config_json: Option<String>,
@@ -107,6 +115,8 @@ pub fn parse_and_render_text(
 ///
 /// Render warnings (e.g. transpose saturation, chorus recall limits) are
 /// forwarded to stderr via `flush_warnings`.
+///
+/// See [`parse_and_render_text`] for `transpose` parameter documentation.
 pub fn parse_and_render_html(
     input: String,
     config_json: Option<String>,
@@ -131,6 +141,8 @@ pub fn parse_and_render_html(
 ///
 /// Render warnings (e.g. transpose saturation, chorus recall limits) are
 /// forwarded to stderr via `flush_warnings`.
+///
+/// See [`parse_and_render_text`] for `transpose` parameter documentation.
 pub fn parse_and_render_pdf(
     input: String,
     config_json: Option<String>,
