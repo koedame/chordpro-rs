@@ -92,7 +92,14 @@ jobs:
           OUTPUT="${{ steps.render-transpose.outputs.output-path }}"
           echo "output-path: $OUTPUT"
           [ -s "$OUTPUT" ] || { echo "Output file is missing or empty"; exit 1; }
-          # G transposed +2 = A; assert A chord is present and G is absent
-          # (text renderer outputs chords inline, e.g. [A] or A  above the lyric)
-          grep -q "A" "$OUTPUT" || { echo "Expected A chord (G+2) not found in transposed output"; exit 1; }
+          # The text renderer puts chords on their own line above lyrics (no brackets).
+          # After G+2=A transpose: all standalone G chords become A.
+          # \bA\b matches standalone "A" (chord token) but NOT "Amazing" or "A7".
+          # \bG\b matches standalone "G" but NOT "Grace" (G followed by r) or "G7".
+          grep -qE '\bA\b' "$OUTPUT" || { echo "Expected standalone A chord (G+2) not found in transposed output"; exit 1; }
+          if grep -qE '\bG\b' "$OUTPUT"; then
+            echo "Standalone G chord found in transposed output — transposition was not applied"
+            cat "$OUTPUT"
+            exit 1
+          fi
           cat "$OUTPUT"
