@@ -192,6 +192,7 @@ fn render_bytes_inner(
 /// the `*_with_options` variant — this function itself never errors
 /// because the lenient parser always produces at least one song and
 /// the default config never fails to resolve.
+#[must_use = "callers must handle render errors"]
 #[wasm_bindgen]
 pub fn render_html(input: &str) -> Result<String, JsValue> {
     render_string_inner(
@@ -210,6 +211,7 @@ pub fn render_html(input: &str) -> Result<String, JsValue> {
 /// the `*_with_options` variant — this function itself never errors
 /// because the lenient parser always produces at least one song and
 /// the default config never fails to resolve.
+#[must_use = "callers must handle render errors"]
 #[wasm_bindgen]
 pub fn render_text(input: &str) -> Result<String, JsValue> {
     render_string_inner(
@@ -228,6 +230,7 @@ pub fn render_text(input: &str) -> Result<String, JsValue> {
 /// the `*_with_options` variant — this function itself never errors
 /// because the lenient parser always produces at least one song and
 /// the default config never fails to resolve.
+#[must_use = "callers must handle render errors"]
 #[wasm_bindgen]
 pub fn render_pdf(input: &str) -> Result<Vec<u8>, JsValue> {
     render_bytes_inner(
@@ -250,6 +253,7 @@ pub fn render_pdf(input: &str) -> Result<Vec<u8>, JsValue> {
 /// # Errors
 ///
 /// Returns a `JsValue` error string on parse failure or invalid options.
+#[must_use = "callers must handle render errors"]
 #[wasm_bindgen]
 pub fn render_html_with_options(input: &str, options: JsValue) -> Result<String, JsValue> {
     render_string_inner(
@@ -266,6 +270,7 @@ pub fn render_html_with_options(input: &str, options: JsValue) -> Result<String,
 /// # Errors
 ///
 /// Returns a `JsValue` error string on parse failure or invalid options.
+#[must_use = "callers must handle render errors"]
 #[wasm_bindgen]
 pub fn render_text_with_options(input: &str, options: JsValue) -> Result<String, JsValue> {
     render_string_inner(
@@ -284,6 +289,7 @@ pub fn render_text_with_options(input: &str, options: JsValue) -> Result<String,
 /// # Errors
 ///
 /// Returns a `JsValue` error string on parse failure or invalid options.
+#[must_use = "callers must handle render errors"]
 #[wasm_bindgen]
 pub fn render_pdf_with_options(input: &str, options: JsValue) -> Result<Vec<u8>, JsValue> {
     render_bytes_inner(
