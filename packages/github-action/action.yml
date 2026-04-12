@@ -168,6 +168,10 @@ runs:
         TRANSPOSE: ${{ inputs.transpose }}
       run: |
         set -euo pipefail
+        case "${FORMAT}" in
+          text|html|pdf) ;;
+          *) echo "Invalid format '${FORMAT}': must be text, html, or pdf" >&2; exit 1 ;;
+        esac
         if [[ "${INPUT}" != /* ]]; then INPUT="${GITHUB_WORKSPACE}/${INPUT}"; fi
         if [[ "${OUTPUT}" != /* ]]; then OUTPUT="${GITHUB_WORKSPACE}/${OUTPUT}"; fi
         mkdir -p "$(dirname "${OUTPUT}")"
@@ -194,6 +198,12 @@ runs:
         $format    = $env:FORMAT
         $transpose = $env:TRANSPOSE
         $bin       = $env:CHORDSKETCH_BIN
+
+        # Validate format before invoking CLI
+        if ($format -notin @("text", "html", "pdf")) {
+          Write-Error "Invalid format '${format}': must be text, html, or pdf"
+          exit 1
+        }
 
         # Resolve relative paths against GITHUB_WORKSPACE
         if (-not [System.IO.Path]::IsPathRooted($input_path)) {
