@@ -17,7 +17,7 @@ inputs:
     required: false
     default: 'text'
   transpose:
-    description: 'Semitones to transpose (positive = up, negative = down; 0 = no change). Must be an integer with no leading zeros (e.g., 2 or -2, not 02). Values outside -128..=127 are clamped by the CLI.'
+    description: 'Semitones to transpose (positive = up, negative = down; 0 = no change). Must be an integer in range -128..=127 with no leading zeros (e.g., 2 or -2, not 02). Values outside this range are rejected by the CLI.'
     required: false
     default: '0'
   version:
@@ -179,8 +179,8 @@ runs:
         if [[ "${OUTPUT}" != /* ]]; then OUTPUT="${GITHUB_WORKSPACE}/${OUTPUT}"; fi
         mkdir -p "$(dirname "${OUTPUT}")"
         ARGS=(-f "${FORMAT}" -o "${OUTPUT}")
-        # Use --transpose=VALUE (not --transpose VALUE) so clap treats negative
-        # numbers like -2 as the argument value rather than unknown short flags.
+        # Use --transpose=VALUE form; both forms work since allow_negative_numbers
+        # was added to the CLI, but equals-sign form is kept for consistency.
         [ "${TRANSPOSE}" = "0" ] || ARGS+=(--transpose="${TRANSPOSE}")
         "${CHORDSKETCH_BIN}" "${ARGS[@]}" "${INPUT}"
         echo "output-path=${OUTPUT}" >> "$GITHUB_OUTPUT"
@@ -229,8 +229,8 @@ runs:
         New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
         $args_list = @("-f", $format, "-o", $output_path)
-        # Use --transpose=VALUE (not --transpose VALUE) so clap treats negative
-        # numbers like -2 as the argument value rather than unknown short flags.
+        # Use --transpose=VALUE form; both forms work since allow_negative_numbers
+        # was added to the CLI, but equals-sign form is kept for consistency.
         if ($transpose -ne "0") { $args_list += @("--transpose=$transpose") }
         $args_list += $input_path
 
