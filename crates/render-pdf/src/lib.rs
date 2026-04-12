@@ -4432,6 +4432,36 @@ mod toc_tests {
         let content = String::from_utf8_lossy(&bytes);
         assert!(content.contains("Table of Contents"));
     }
+
+    #[test]
+    fn test_toc_multi_song_cjk_includes_cid_font() {
+        // Regression test for the HIGH finding: when CJK characters appear in body
+        // pages of a multi-song document, render_songs_with_warnings must merge
+        // body_doc.cid_glyphs into combined.cid_glyphs so that build_pdf() emits
+        // the CID font objects. Without the merge, body pages reference /F5 but no
+        // CID font dictionary is written, producing a corrupt PDF.
+        let songs = chordsketch_core::parse_multi(
+            "{title: Song A}\nこんにちは\n{new_song}\n{title: Song B}\n日本語",
+        )
+        .unwrap();
+        let bytes = render_songs(&songs);
+        let content = String::from_utf8_lossy(&bytes);
+        // CID font chain must be present.
+        assert!(
+            content.contains("/Type /Font") && content.contains("/Subtype /Type0"),
+            "multi-song CJK PDF must contain a Type0 CID font"
+        );
+        assert!(
+            content.contains("Identity-H"),
+            "multi-song CJK PDF must use Identity-H encoding"
+        );
+        assert!(
+            content.contains("/ToUnicode"),
+            "multi-song CJK PDF must contain a ToUnicode CMap"
+        );
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert!(bytes.ends_with(b"%%EOF\n"));
+    }
 }
 
 #[cfg(test)]
