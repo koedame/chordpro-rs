@@ -44,12 +44,17 @@ runs:
       shell: bash
       env:
         INPUT_VERSION: ${{ inputs.version }}
+        # github.token is available in composite actions and avoids GitHub API
+        # secondary rate-limits that occur with unauthenticated requests from
+        # shared runner IPs.
+        GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         VERSION="${INPUT_VERSION}"
         if [ "${VERSION}" = "latest" ]; then
           VERSION=$(curl -fsSL \
             -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
             "https://api.github.com/repos/koedame/chordsketch/releases/latest" \
             | jq -r '.tag_name')
         fi
@@ -133,7 +138,17 @@ runs:
         # The release archive extracts to chordsketch-{version}-{triple}/;
         # add that subdirectory to GITHUB_PATH so the binary is on PATH for
         # subsequent steps in this job.
-        echo "${INSTALL_DIR}/chordsketch-${CHORDSKETCH_VERSION}-${TRIPLE}" >> "$GITHUB_PATH"
+        #
+        # On Windows, the GitHub Actions runner requires Windows-style paths in
+        # GITHUB_PATH (e.g. C:\...) not Unix-style paths (/c/...) that bash
+        # uses internally. cygpath -w converts the Git Bash Unix path to a
+        # Windows path so the runner can update the system PATH correctly.
+        BIN_SUBDIR="${INSTALL_DIR}/chordsketch-${CHORDSKETCH_VERSION}-${TRIPLE}"
+        if [[ "${RUNNER_OS}" = "Windows" ]]; then
+          echo "$(cygpath -w "${BIN_SUBDIR}")" >> "$GITHUB_PATH"
+        else
+          echo "${BIN_SUBDIR}" >> "$GITHUB_PATH"
+        fi
 
     # ---- render the ChordPro file --------------------------------------------
     - name: Render
