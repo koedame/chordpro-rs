@@ -105,6 +105,35 @@ jobs:
           fi
           cat "$OUTPUT"
 
+      # ---- negative transpose ----------------------------------------------
+      # Transposing by -2 shifts G→F, C→Bb, D→C, Em→Dm. The action uses
+      # --transpose=VALUE (equals-sign form) so clap correctly interprets
+      # '-2' as the argument value rather than an unknown short flag.
+      - name: Render with negative transpose
+        id: render-negative-transpose
+        uses: ./packages/github-action
+        with:
+          input: packages/github-action/fixtures/simple.cho
+          output: out/simple-neg-transposed.txt
+          format: text
+          transpose: '-2'
+
+      - name: Verify negative transposed output
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUTPUT="${{ steps.render-negative-transpose.outputs.output-path }}"
+          echo "output-path: $OUTPUT"
+          [ -s "$OUTPUT" ] || { echo "Output file is missing or empty"; exit 1; }
+          # After G-2=F transpose: standalone G chords become F.
+          grep -qw 'F' "$OUTPUT" || { echo "Expected standalone F chord (G-2) not found in transposed output"; exit 1; }
+          if grep -qw 'G' "$OUTPUT"; then
+            echo "Standalone G chord found in negatively transposed output — transposition was not applied"
+            cat "$OUTPUT"
+            exit 1
+          fi
+          cat "$OUTPUT"
+
       # ---- PDF output -----------------------------------------------------
       - name: Render to PDF
         id: render-pdf
