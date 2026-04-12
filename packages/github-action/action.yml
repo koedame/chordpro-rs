@@ -150,8 +150,10 @@ runs:
         Expand-Archive -Path $zipPath -DestinationPath $installDir -Force
         Remove-Item $zipPath, $checksumPath
 
-        $binDir = Join-Path $installDir "chordsketch-${version}-${triple}"
-        $binPath = Join-Path $binDir "chordsketch.exe"
+        # The Windows zip extracts chordsketch.exe flat into $installDir (no
+        # subdirectory), unlike the Linux/macOS tarballs which include a
+        # version-triple subdirectory.
+        $binPath = Join-Path $installDir "chordsketch.exe"
         Add-Content -Path $env:GITHUB_ENV -Value "CHORDSKETCH_BIN=$binPath"
 
     # ---- render: Linux and macOS --------------------------------------------
