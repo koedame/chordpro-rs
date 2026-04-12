@@ -640,10 +640,11 @@ mod tests {
         let path = super::unique_temp_path("test_excl", "tmp");
         // First write succeeds.
         super::write_temp_file_exclusive(&path, "hello").unwrap();
+        // Hold a guard so the file is cleaned up even if the assertion panics.
+        let _guard = super::TempFileGuard { path: path.clone() };
         // Second write to same path must fail (O_EXCL semantics).
         let result = super::write_temp_file_exclusive(&path, "world");
         assert!(result.is_err());
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
