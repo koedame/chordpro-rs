@@ -144,6 +144,8 @@ Use the composite action to render ChordPro files in any GitHub Actions
 workflow — no Rust toolchain required:
 
 ```yaml
+- uses: actions/checkout@v4
+
 - uses: koedame/chordsketch/packages/github-action@action-v1
   id: render
   with:
