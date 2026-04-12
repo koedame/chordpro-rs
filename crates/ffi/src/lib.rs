@@ -65,9 +65,9 @@ fn parse_songs(input: &str) -> Result<Vec<chordsketch_core::ast::Song>, ChordSke
 ///
 /// UniFFI-based consumers (Python, Swift, Kotlin, Ruby) receive output via their
 /// language binding. Render warnings — such as transpose saturation or chorus
-/// recall limits — are forwarded to `process.stderr` / `sys.stderr` / the
-/// platform's standard error stream. This matches the NAPI binding's pattern.
-/// See #1541.
+/// recall limits — are forwarded to the platform's standard error stream
+/// (`sys.stderr` in Python, `NSLog`/`stderr` in Swift, `System.err` in Kotlin,
+/// `$stderr` in Ruby). This matches the NAPI binding's pattern. See #1541.
 fn flush_warnings<T>(result: RenderResult<T>) -> T {
     for w in &result.warnings {
         eprintln!("chordsketch: {w}");

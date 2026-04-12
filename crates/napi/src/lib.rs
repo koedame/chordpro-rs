@@ -348,7 +348,7 @@ mod tests {
     /// which routed warnings to internal eprintln and made them invisible
     /// to the napi binding.
     #[test]
-    fn render_songs_with_warnings_captures_saturation_warning() {
+    fn test_render_songs_with_warnings_captures_saturation_warning() {
         let input = "{title: T}\n{transpose: 100}\n[C]Hello";
         let result = chordsketch_core::parse_multi_lenient(input);
         let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();

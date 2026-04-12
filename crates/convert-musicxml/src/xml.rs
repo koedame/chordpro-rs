@@ -875,13 +875,16 @@ mod tests {
         // size guard must not trigger).
         let at_limit = "A".repeat(MAX_INPUT_BYTES);
         let result = parse(&at_limit);
-        // The input is not valid XML, so it will fail, but the error must NOT
-        // mention "too large" (the size guard should not fire).
-        if let Err(msg) = result {
-            assert!(
-                !msg.contains("too large"),
-                "size guard should not fire at exactly MAX_INPUT_BYTES, got: {msg}"
-            );
-        }
+        // The input is not valid XML, so the parser must return an error.
+        // The error must NOT mention "too large" (the size guard must not fire).
+        assert!(
+            result.is_err(),
+            "expected a parse error for non-XML input at limit"
+        );
+        let msg = result.unwrap_err();
+        assert!(
+            !msg.contains("too large"),
+            "size guard should not fire at exactly MAX_INPUT_BYTES, got: {msg}"
+        );
     }
 }
