@@ -1,7 +1,10 @@
 //! PDF renderer for ChordPro documents.
 //!
-//! Converts a parsed ChordPro AST into a PDF document using built-in PDF
-//! Type1 fonts (Helvetica family). Uses `flate2` for PNG image decompression.
+//! Converts a parsed ChordPro AST into a PDF document. ASCII and Latin-1
+//! characters are rendered using built-in Helvetica Type1 fonts. Characters
+//! outside the Latin-1 range (e.g. CJK, Greek, Cyrillic) are rendered with a
+//! bundled Noto Sans CJK JP subset font embedded as a CID composite font
+//! (Type0 / CIDFontType0C). Uses `flate2` for PNG image decompression.
 //!
 //! Supports multi-page output: content automatically flows to new pages when
 //! the current page overflows, and `{new_page}` / `{new_physical_page}`
@@ -18,7 +21,188 @@ use chordsketch_core::transpose::transpose_chord;
 use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
+use std::collections::BTreeMap;
 use std::io::{Read as IoRead, Write as IoWrite};
+
+// ---------------------------------------------------------------------------
+// Unicode CID font support
+// ---------------------------------------------------------------------------
+
+/// Bundled Noto Sans CJK JP subset font (OFL-licensed).
+///
+/// Covers Latin Extended A/B (U+0100–U+024F), Greek (U+0370–U+03FF),
+/// Cyrillic (U+0400–U+04FF), Hiragana (U+3040–U+309F), Katakana
+/// (U+30A0–U+30FF), and CJK Unified Ideographs (U+4E00–U+9FFF), plus
+/// CJK punctuation and fullwidth forms.  Characters in this range that are
+/// not already covered by WinAnsiEncoding are rendered using this font.
+static UNICODE_FONT_BYTES: &[u8] = include_bytes!("../assets/NotoSansCJK-subset.otf");
+
+/// Returns a reference to the parsed Unicode CID font face.
+///
+/// The face is parsed once on first access and cached for the lifetime of the
+/// process. Panics if the bundled font data is corrupt, which should never
+/// happen with the shipped asset.
+fn unicode_face() -> &'static ttf_parser::Face<'static> {
+    use std::sync::OnceLock;
+    static FACE: OnceLock<ttf_parser::Face<'static>> = OnceLock::new();
+    FACE.get_or_init(|| {
+        ttf_parser::Face::parse(UNICODE_FONT_BYTES, 0)
+            .expect("bundled NotoSansCJK-subset.otf must be a valid font face")
+    })
+}
+
+/// Extract the raw CFF table bytes from an OpenType font binary.
+///
+/// Returns `None` if `otf_bytes` is not a valid OTF file or contains no `CFF ` table.
+/// The returned slice borrows from `otf_bytes`, so its lifetime matches the input.
+fn extract_cff_table(otf_bytes: &[u8]) -> Option<&[u8]> {
+    if otf_bytes.len() < 12 {
+        return None;
+    }
+    let num_tables = u16::from_be_bytes([otf_bytes[4], otf_bytes[5]]) as usize;
+    for i in 0..num_tables {
+        let rec = 12 + i * 16;
+        if rec + 16 > otf_bytes.len() {
+            return None;
+        }
+        if &otf_bytes[rec..rec + 4] == b"CFF " {
+            let offset = u32::from_be_bytes(otf_bytes[rec + 8..rec + 12].try_into().ok()?) as usize;
+            let length =
+                u32::from_be_bytes(otf_bytes[rec + 12..rec + 16].try_into().ok()?) as usize;
+            let end = offset.checked_add(length)?;
+            if end <= otf_bytes.len() {
+                return Some(&otf_bytes[offset..end]);
+            }
+        }
+    }
+    None
+}
+
+/// Returns a reference to the raw CFF table bytes extracted from the bundled Unicode font.
+///
+/// The PDF spec requires `FontFile3` with `/Subtype /CIDFontType0C` to contain the raw
+/// CFF table, not the full OTF wrapper. This accessor extracts that table once and caches
+/// the result for the lifetime of the process.
+fn unicode_cff_bytes() -> &'static [u8] {
+    use std::sync::OnceLock;
+    static CFF: OnceLock<&'static [u8]> = OnceLock::new();
+    CFF.get_or_init(|| {
+        extract_cff_table(UNICODE_FONT_BYTES)
+            .expect("bundled NotoSansCJK-subset.otf must contain a CFF table")
+    })
+}
+
+/// Returns `true` if `c` must be rendered using the CID Unicode font.
+///
+/// Characters covered by WinAnsiEncoding (ASCII, Latin-1 Supplement
+/// U+00A0–U+00FF, and the 0x80–0x9F WinAnsi special range) use the
+/// built-in Helvetica Type1 fonts. Every other non-ASCII character is
+/// routed to the embedded CID font.
+#[must_use]
+fn needs_cid_font(c: char) -> bool {
+    let code = c as u32;
+    if code <= 0x7F {
+        return false; // ASCII: handled by Helvetica
+    }
+    if (0xA0..=0xFF).contains(&code) {
+        return false; // Latin-1 Supplement: WinAnsiEncoding octal escapes
+    }
+    winansi_byte(c).is_none() // WinAnsiEncoding 0x80–0x9F range: Helvetica
+}
+
+/// Split `text` into alternating Latin-1 and CID segments.
+///
+/// Returns a `Vec<(is_cid, segment_text)>` where `is_cid = true` means the
+/// segment should be rendered using the CID font. Adjacent characters with the
+/// same routing are merged into a single segment.
+fn text_segments(text: &str) -> Vec<(bool, String)> {
+    let mut result: Vec<(bool, String)> = Vec::new();
+    let mut current_cid = false;
+    let mut current = String::new();
+    for c in text.chars() {
+        let cid = needs_cid_font(c);
+        if !current.is_empty() && cid != current_cid {
+            result.push((current_cid, std::mem::take(&mut current)));
+        }
+        current_cid = cid;
+        current.push(c);
+    }
+    if !current.is_empty() {
+        result.push((current_cid, current));
+    }
+    result
+}
+
+/// Encode a CID text segment as a PDF hex string.
+///
+/// Each character is looked up in the Unicode font by codepoint and mapped to
+/// its Glyph ID (GID). The output is a hex string of 2-byte big-endian GIDs,
+/// suitable for use as `<GGGG…> Tj` in a PDF content stream when the current
+/// font is the Identity-H encoded CID font `/F5`.
+///
+/// Also returns a list of `(gid, char)` pairs for populating the ToUnicode CMap.
+fn encode_cid_text(text: &str) -> (String, Vec<(u16, char)>) {
+    let face = unicode_face();
+    let mut hex = String::with_capacity(text.chars().count() * 4);
+    let mut mappings: Vec<(u16, char)> = Vec::with_capacity(text.chars().count());
+    for c in text.chars() {
+        let gid = face.glyph_index(c).map(|g| g.0).unwrap_or(0);
+        hex.push_str(&format!("{:04X}", gid));
+        mappings.push((gid, c));
+    }
+    (hex, mappings)
+}
+
+/// Compute the advance width (in PDF points) of a CID text string.
+fn cid_text_width(text: &str, font_size: f32) -> f32 {
+    let face = unicode_face();
+    let units = face.units_per_em() as f32;
+    text.chars()
+        .map(|c| {
+            let gid = face.glyph_index(c).unwrap_or(ttf_parser::GlyphId(0));
+            face.glyph_hor_advance(gid).unwrap_or(1000) as f32 / units * font_size
+        })
+        .sum()
+}
+
+/// Build a PDF ToUnicode CMap stream body mapping GIDs to Unicode codepoints.
+///
+/// The CMap uses `Identity` ordering so that the GID directly identifies the
+/// character. Output is grouped in blocks of at most 100 entries as required
+/// by the PDF spec.
+fn build_to_unicode_cmap(cid_glyphs: &BTreeMap<u16, char>) -> String {
+    let mut cmap = String::new();
+    cmap.push_str("/CIDInit /ProcSet findresource begin\n");
+    cmap.push_str("12 dict begin\n");
+    cmap.push_str("begincmap\n");
+    cmap.push_str("/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n");
+    cmap.push_str("/CMapName /Adobe-Identity-UCS def\n");
+    cmap.push_str("/CMapType 2 def\n");
+
+    let entries: Vec<_> = cid_glyphs.iter().collect();
+    for chunk in entries.chunks(100) {
+        cmap.push_str(&format!("{} beginbfchar\n", chunk.len()));
+        for &(gid, ch) in chunk {
+            let cp = *ch as u32;
+            if cp <= 0xFFFF {
+                cmap.push_str(&format!("<{:04X}> <{:04X}>\n", gid, cp));
+            } else {
+                // Encode as UTF-16BE surrogate pair
+                let offset = cp - 0x10000;
+                let hi = 0xD800u32 + (offset >> 10);
+                let lo = 0xDC00u32 + (offset & 0x3FF);
+                cmap.push_str(&format!("<{:04X}> <{:04X}{:04X}>\n", gid, hi, lo));
+            }
+        }
+        cmap.push_str("endbfchar\n");
+    }
+
+    cmap.push_str("endcmap\n");
+    cmap.push_str("CMapName currentdict /CMap defineresource pop\n");
+    cmap.push_str("end\n"); // closes "12 dict begin"
+    cmap.push_str("end\n"); // closes "/CIDInit /ProcSet findresource begin"
+    cmap
+}
 
 // ---------------------------------------------------------------------------
 // Formatting state
@@ -201,10 +385,16 @@ fn char_width(c: char) -> f32 {
     ];
     let code = c as u32;
     if (32..=126).contains(&code) {
-        WIDTHS[(code - 32) as usize]
-    } else {
-        0.52 // fallback for non-ASCII
+        return WIDTHS[(code - 32) as usize];
     }
+    // Non-ASCII characters: use the CID font metrics if available, otherwise
+    // fall back to an approximation of Helvetica's average character width.
+    if needs_cid_font(c) {
+        let face = unicode_face();
+        let gid = face.glyph_index(c).unwrap_or(ttf_parser::GlyphId(0));
+        return face.glyph_hor_advance(gid).unwrap_or(1000) as f32 / face.units_per_em() as f32;
+    }
+    0.52 // WinAnsiEncoding non-ASCII (Latin-1 Supplement, WinAnsi 0x80–0x9F)
 }
 
 /// Compute text width in points for a string at the given font size.
@@ -435,6 +625,11 @@ pub fn render_songs_with_warnings(
 
     // Phase 4: combine ToC pages + body pages.
     let mut combined = toc_doc;
+    // Merge CID glyph map from body into combined so build_pdf() can emit the full
+    // ToUnicode CMap and FontDescriptor for all glyphs referenced in the document.
+    for (gid, ch) in body_doc.cid_glyphs.iter() {
+        combined.cid_glyphs.entry(*gid).or_insert(*ch);
+    }
     for page_ops in body_doc.take_pages() {
         combined.push_page(page_ops);
     }
@@ -1962,6 +2157,12 @@ struct PdfDocument {
     margin_bottom: f32,
     margin_left: f32,
     margin_right: f32,
+    /// GID → char mappings for non-Latin-1 glyphs used in this document.
+    ///
+    /// Populated when CID-font segments are rendered (any character outside
+    /// the WinAnsiEncoding range). Used in `build_pdf` to emit the ToUnicode
+    /// CMap and the glyph-width `/W` array for the embedded CID font.
+    cid_glyphs: BTreeMap<u16, char>,
 }
 
 impl PdfDocument {
@@ -1983,6 +2184,7 @@ impl PdfDocument {
             margin_bottom: bottom,
             margin_left: left,
             margin_right: right,
+            cid_glyphs: BTreeMap::new(),
         }
     }
 
@@ -2167,32 +2369,61 @@ impl PdfDocument {
     ///
     /// Used by callers that manage their own clipping context (e.g.,
     /// `render_lyrics_spans` which wraps the entire line in a single clip).
+    ///
+    /// Text is split into Latin-1 segments (rendered with the specified
+    /// Helvetica font) and non-Latin-1 segments (rendered with the embedded
+    /// CID Unicode font `/F5`). Each segment is its own BT…ET block so that
+    /// font switching works correctly.
     fn text_at_raw(&mut self, text: &str, font: Font, size: f32, x: f32, y: f32) {
-        let ops = self.current_page_mut();
-        ops.push("BT".to_string());
-        ops.push(format!("{} {} Tf", font.pdf_name(), fmt_f32(size)));
-        ops.push(format!("{} {} Td", fmt_f32(x), fmt_f32(y)));
-        ops.push(format!("({}) Tj", pdf_escape(text)));
-        ops.push("ET".to_string());
+        let segments = text_segments(text);
+        // Collect CID mappings before mutably borrowing pages.
+        let mut cid_mappings: Vec<(u16, char)> = Vec::new();
+        let mut ops_batch: Vec<String> = Vec::new();
+        let mut cur_x = x;
+        for (is_cid, seg) in &segments {
+            ops_batch.push("BT".to_string());
+            if *is_cid {
+                let (hex, mappings) = encode_cid_text(seg);
+                cid_mappings.extend_from_slice(&mappings);
+                ops_batch.push(format!("/F5 {} Tf", fmt_f32(size)));
+                ops_batch.push(format!("{} {} Td", fmt_f32(cur_x), fmt_f32(y)));
+                ops_batch.push(format!("<{}> Tj", hex));
+                cur_x += cid_text_width(seg, size);
+            } else {
+                ops_batch.push(format!("{} {} Tf", font.pdf_name(), fmt_f32(size)));
+                ops_batch.push(format!("{} {} Td", fmt_f32(cur_x), fmt_f32(y)));
+                ops_batch.push(format!("({}) Tj", pdf_escape(seg)));
+                cur_x += text_width(seg, size);
+            }
+            ops_batch.push("ET".to_string());
+        }
+        self.current_page_mut().extend(ops_batch);
+        for (gid, ch) in cid_mappings {
+            self.cid_glyphs.entry(gid).or_insert(ch);
+        }
     }
 
     /// Emit text at an explicit (x, y) position.
     ///
     /// In multi-column layouts, a clipping rectangle is applied to prevent
     /// text from overflowing the column boundary into adjacent columns.
+    ///
+    /// Text is split into Latin-1 and non-Latin-1 segments; non-Latin-1
+    /// characters use the embedded CID font `/F5`.
     fn text_at(&mut self, text: &str, font: Font, size: f32, x: f32, y: f32) {
         let clip = self.num_columns > 1;
-        // Pre-compute column right edge before borrowing self mutably.
         let col_right = if clip {
             self.margin_left() + self.column_width()
         } else {
             0.0
         };
-        let ops = self.current_page_mut();
+        let segments = text_segments(text);
+        let mut cid_mappings: Vec<(u16, char)> = Vec::new();
+        let mut ops_batch: Vec<String> = Vec::new();
         if clip {
             let clip_w = (col_right - x).max(0.0);
-            ops.push("q".to_string());
-            ops.push(format!(
+            ops_batch.push("q".to_string());
+            ops_batch.push(format!(
                 "{} {} {} {} re W n",
                 fmt_f32(x),
                 fmt_f32(0.0),
@@ -2200,13 +2431,30 @@ impl PdfDocument {
                 fmt_f32(PAGE_H)
             ));
         }
-        ops.push("BT".to_string());
-        ops.push(format!("{} {} Tf", font.pdf_name(), fmt_f32(size)));
-        ops.push(format!("{} {} Td", fmt_f32(x), fmt_f32(y)));
-        ops.push(format!("({}) Tj", pdf_escape(text)));
-        ops.push("ET".to_string());
+        let mut cur_x = x;
+        for (is_cid, seg) in &segments {
+            ops_batch.push("BT".to_string());
+            if *is_cid {
+                let (hex, mappings) = encode_cid_text(seg);
+                cid_mappings.extend_from_slice(&mappings);
+                ops_batch.push(format!("/F5 {} Tf", fmt_f32(size)));
+                ops_batch.push(format!("{} {} Td", fmt_f32(cur_x), fmt_f32(y)));
+                ops_batch.push(format!("<{}> Tj", hex));
+                cur_x += cid_text_width(seg, size);
+            } else {
+                ops_batch.push(format!("{} {} Tf", font.pdf_name(), fmt_f32(size)));
+                ops_batch.push(format!("{} {} Td", fmt_f32(cur_x), fmt_f32(y)));
+                ops_batch.push(format!("({}) Tj", pdf_escape(seg)));
+                cur_x += text_width(seg, size);
+            }
+            ops_batch.push("ET".to_string());
+        }
         if clip {
-            ops.push("Q".to_string());
+            ops_batch.push("Q".to_string());
+        }
+        self.current_page_mut().extend(ops_batch);
+        for (gid, ch) in cid_mappings {
+            self.cid_glyphs.entry(gid).or_insert(ch);
         }
     }
 
@@ -2214,6 +2462,9 @@ impl PdfDocument {
     ///
     /// Used for finger numbers inside filled dots in chord diagrams.
     /// In multi-column layouts, applies the same clipping as [`text_at`].
+    ///
+    /// Text is split into Latin-1 and non-Latin-1 segments; non-Latin-1
+    /// characters use the embedded CID font `/F5`.
     fn white_text_at(&mut self, text: &str, font: Font, size: f32, x: f32, y: f32) {
         let clip = self.num_columns > 1;
         let col_right = if clip {
@@ -2221,11 +2472,13 @@ impl PdfDocument {
         } else {
             0.0
         };
-        let ops = self.current_page_mut();
+        let segments = text_segments(text);
+        let mut cid_mappings: Vec<(u16, char)> = Vec::new();
+        let mut ops_batch: Vec<String> = Vec::new();
         if clip {
             let clip_w = (col_right - x).max(0.0);
-            ops.push("q".to_string());
-            ops.push(format!(
+            ops_batch.push("q".to_string());
+            ops_batch.push(format!(
                 "{} {} {} {} re W n",
                 fmt_f32(x),
                 fmt_f32(0.0),
@@ -2233,15 +2486,32 @@ impl PdfDocument {
                 fmt_f32(PAGE_H)
             ));
         }
-        ops.push("BT".to_string());
-        ops.push("1 1 1 rg".to_string()); // white fill color
-        ops.push(format!("{} {} Tf", font.pdf_name(), fmt_f32(size)));
-        ops.push(format!("{} {} Td", fmt_f32(x), fmt_f32(y)));
-        ops.push(format!("({}) Tj", pdf_escape(text)));
-        ops.push("ET".to_string());
-        ops.push("0 0 0 rg".to_string()); // reset to black
+        let mut cur_x = x;
+        for (is_cid, seg) in &segments {
+            ops_batch.push("BT".to_string());
+            ops_batch.push("1 1 1 rg".to_string()); // white fill
+            if *is_cid {
+                let (hex, mappings) = encode_cid_text(seg);
+                cid_mappings.extend_from_slice(&mappings);
+                ops_batch.push(format!("/F5 {} Tf", fmt_f32(size)));
+                ops_batch.push(format!("{} {} Td", fmt_f32(cur_x), fmt_f32(y)));
+                ops_batch.push(format!("<{}> Tj", hex));
+                cur_x += cid_text_width(seg, size);
+            } else {
+                ops_batch.push(format!("{} {} Tf", font.pdf_name(), fmt_f32(size)));
+                ops_batch.push(format!("{} {} Td", fmt_f32(cur_x), fmt_f32(y)));
+                ops_batch.push(format!("({}) Tj", pdf_escape(seg)));
+                cur_x += text_width(seg, size);
+            }
+            ops_batch.push("ET".to_string());
+            ops_batch.push("0 0 0 rg".to_string()); // reset to black
+        }
         if clip {
-            ops.push("Q".to_string());
+            ops_batch.push("Q".to_string());
+        }
+        self.current_page_mut().extend(ops_batch);
+        for (gid, ch) in cid_mappings {
+            self.cid_glyphs.entry(gid).or_insert(ch);
         }
     }
 
@@ -2430,6 +2700,11 @@ impl PdfDocument {
     fn build_pdf(&self) -> Vec<u8> {
         let num_pages = self.pages.len();
         let num_images = self.images.len();
+        // CID font chain (Type0 + CIDFontType0 + FontDescriptor + FontFile3 + ToUnicode).
+        // Emitted only when non-Latin-1 glyphs were actually used in the document.
+        const CID_OBJ_COUNT: usize = 5;
+        let cid_needed = !self.cid_glyphs.is_empty();
+        let extra_objs = if cid_needed { CID_OBJ_COUNT } else { 0 };
         let mut offsets: Vec<usize> = Vec::new();
         let mut pdf = Vec::<u8>::new();
 
@@ -2449,10 +2724,18 @@ impl PdfDocument {
             .collect::<Vec<_>>()
             .join(" ");
 
+        // Add the CID composite font /F5 when non-Latin-1 glyphs are present.
+        // Object number = 3 + FONTS.len() (first object after the 4 Helvetica fonts).
+        let cid_font_ref = if cid_needed {
+            format!(" /F5 {} 0 R", 3 + FONTS.len())
+        } else {
+            String::new()
+        };
+
         // Image XObject references for the Resources dict.
         // Each image is referenced as /Im{i+1}. We compute the actual object
         // number by accumulating num_pdf_objects() for each preceding image.
-        let image_obj_base = 3 + FONTS.len(); // first image object number
+        let image_obj_base = 3 + FONTS.len() + extra_objs; // first image object number
         let xobject_refs = if num_images > 0 {
             let mut refs = Vec::new();
             let mut obj_offset = 0;
@@ -2471,18 +2754,19 @@ impl PdfDocument {
             "/ProcSet [/PDF /Text]"
         };
 
-        // Kids: page objects start after fonts + all image-related objects.
+        // Kids: page objects start after fonts + CID objects (if any) + images.
         let total_image_objects: usize = self.images.iter().map(|img| img.num_pdf_objects()).sum();
-        let page_obj_start = 3 + FONTS.len() + total_image_objects;
+        let page_obj_start = 3 + FONTS.len() + extra_objs + total_image_objects;
         let kids: String = (0..num_pages)
             .map(|i| format!("{} 0 R", page_obj_start + i * 2))
             .collect::<Vec<_>>()
             .join(" ");
         let obj2 = format!(
-            "2 0 obj\n<< /Type /Pages /MediaBox [0 0 {} {}] /Resources << /Font << {} >>{} {} >> /Kids [{}] /Count {} >>\nendobj\n",
+            "2 0 obj\n<< /Type /Pages /MediaBox [0 0 {} {}] /Resources << /Font << {}{} >>{} {} >> /Kids [{}] /Count {} >>\nendobj\n",
             fmt_f32(PAGE_W),
             fmt_f32(PAGE_H),
             font_refs,
+            cid_font_ref,
             xobject_refs,
             procset,
             kids,
@@ -2500,6 +2784,129 @@ impl PdfDocument {
                 font.base_name()
             );
             pdf.extend_from_slice(obj.as_bytes());
+        }
+
+        // CID composite font chain (5 objects), emitted only when used.
+        // Object layout (relative to 3 + FONTS.len()):
+        //   +0: Type0 wrapper   (/F5)
+        //   +1: CIDFontType0 dictionary
+        //   +2: FontDescriptor
+        //   +3: FontFile3 stream (raw CFF bytes from the bundled OTF)
+        //   +4: ToUnicode CMap stream
+        if cid_needed {
+            let f5_obj = 3 + FONTS.len();
+            let cid_dict_obj = f5_obj + 1;
+            let desc_obj = f5_obj + 2;
+            let font_file_obj = f5_obj + 3;
+            let to_unicode_obj = f5_obj + 4;
+
+            // Derive scaled font metrics from the bundled face.
+            let face = unicode_face();
+            let upe = face.units_per_em() as i32;
+            // Scale a font-design-unit value to PDF glyph-space units (1/1000 em).
+            let scale = |v: i32| v * 1000 / upe;
+            let ascender = scale(face.ascender() as i32);
+            let descender = scale(face.descender() as i32);
+            let cap_height = scale(
+                face.capital_height()
+                    .map(|h| h as i32)
+                    .unwrap_or(face.ascender() as i32),
+            );
+            let bbox = face.global_bounding_box();
+            let llx = scale(bbox.x_min as i32);
+            let lly = scale(bbox.y_min as i32);
+            let urx = scale(bbox.x_max as i32);
+            let ury = scale(bbox.y_max as i32);
+
+            // Build /W width array for glyphs that differ from the default (1000).
+            // Format: gid [width] gid [width] ...
+            const DW: u16 = 1000;
+            let width_array: String = {
+                let entries: Vec<String> = self
+                    .cid_glyphs
+                    .keys()
+                    .filter_map(|&gid| {
+                        let advance = face
+                            .glyph_hor_advance(ttf_parser::GlyphId(gid))
+                            .unwrap_or(DW);
+                        if advance != DW {
+                            Some(format!("{} [{}]", gid, advance))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                if entries.is_empty() {
+                    String::new()
+                } else {
+                    format!(" /W [{}]", entries.join(" "))
+                }
+            };
+
+            // Object F5: Type0 (composite) font wrapper.
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(
+                format!(
+                    "{f5_obj} 0 obj\n<< /Type /Font /Subtype /Type0 \
+                     /BaseFont /NotoSansCJK-Regular-Subset /Encoding /Identity-H \
+                     /DescendantFonts [{cid_dict_obj} 0 R] \
+                     /ToUnicode {to_unicode_obj} 0 R >>\nendobj\n"
+                )
+                .as_bytes(),
+            );
+
+            // Object CIDFontType0: CFF-based CIDFont.
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(
+                format!(
+                    "{cid_dict_obj} 0 obj\n<< /Type /Font /Subtype /CIDFontType0 \
+                     /BaseFont /NotoSansCJK-Regular-Subset \
+                     /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> \
+                     /FontDescriptor {desc_obj} 0 R /DW {DW}{width_array} >>\nendobj\n"
+                )
+                .as_bytes(),
+            );
+
+            // Object FontDescriptor.
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(
+                format!(
+                    "{desc_obj} 0 obj\n<< /Type /FontDescriptor \
+                     /FontName /NotoSansCJK-Regular-Subset /Flags 6 \
+                     /FontBBox [{llx} {lly} {urx} {ury}] /ItalicAngle 0 \
+                     /Ascent {ascender} /Descent {descender} /CapHeight {cap_height} \
+                     /StemV 80 /FontFile3 {font_file_obj} 0 R >>\nendobj\n"
+                )
+                .as_bytes(),
+            );
+
+            // Object FontFile3: raw CFF table bytes (not the full OTF wrapper).
+            // PDF spec §9.9 requires /FontFile3 with /Subtype /CIDFontType0C to contain
+            // the bare CFF font program, not a complete OpenType container.
+            let cff_bytes = unicode_cff_bytes();
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(
+                format!(
+                    "{font_file_obj} 0 obj\n<< /Subtype /CIDFontType0C /Length {} >>\nstream\n",
+                    cff_bytes.len()
+                )
+                .as_bytes(),
+            );
+            pdf.extend_from_slice(cff_bytes);
+            pdf.extend_from_slice(b"\nendstream\nendobj\n");
+
+            // Object ToUnicode CMap: maps GIDs back to Unicode for text extraction.
+            offsets.push(pdf.len());
+            let cmap_body = build_to_unicode_cmap(&self.cid_glyphs);
+            pdf.extend_from_slice(
+                format!(
+                    "{to_unicode_obj} 0 obj\n<< /Length {} >>\nstream\n",
+                    cmap_body.len()
+                )
+                .as_bytes(),
+            );
+            pdf.extend_from_slice(cmap_body.as_bytes());
+            pdf.extend_from_slice(b"\nendstream\nendobj\n");
         }
 
         // Image XObject streams
@@ -2887,9 +3294,78 @@ mod tests {
 
     #[test]
     fn test_pdf_escape_non_latin1_replaced() {
-        // CJK and emoji are outside WinAnsiEncoding
+        // pdf_escape() handles WinAnsiEncoding only; CJK characters that arrive
+        // here are replaced with '?'. In practice, `text_at*` methods route
+        // non-Latin-1 characters to the CID font path (encode_cid_text) and
+        // never call pdf_escape() on them.
         assert_eq!(pdf_escape("日本語"), "???");
         assert_eq!(pdf_escape("hello 世界"), "hello ??");
+    }
+
+    /// CJK characters in song titles and lyrics must appear in the PDF via the
+    /// CID composite font (/F5), not as '?' placeholders.
+    #[test]
+    fn test_cjk_renders_via_cid_font() {
+        let song = chordsketch_core::parse("{title: 桜}\n日本語の歌詞").unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF"), "must produce a PDF");
+
+        let text = String::from_utf8_lossy(&bytes);
+        // The CID composite font object must be present.
+        assert!(
+            text.contains("/Subtype /CIDFontType0"),
+            "CIDFontType0 object must appear when CJK glyphs are used"
+        );
+        assert!(
+            text.contains("/Subtype /Type0"),
+            "Type0 composite font wrapper must be present"
+        );
+        assert!(
+            text.contains("/Encoding /Identity-H"),
+            "Identity-H encoding must be specified for the CID font"
+        );
+        // CJK text is encoded as hex GID sequences, never as '?' literals.
+        // The title '桜' is a single kanji; verify at least one <GGGG> sequence
+        // appears (4 uppercase hex digits enclosed in angle brackets).
+        assert!(
+            bytes.windows(6).any(|w| {
+                w[0] == b'<' && w[1..5].iter().all(|b| b.is_ascii_hexdigit()) && w[5] == b'>'
+            }),
+            "CID hex glyph sequence must appear in content stream"
+        );
+    }
+
+    /// Mixed ASCII and CJK in the same song must produce a valid PDF that
+    /// contains both Helvetica segments and CID font segments.
+    #[test]
+    fn test_mixed_ascii_and_cjk() {
+        let song =
+            chordsketch_core::parse("{title: Sakura 桜}\n[Am]Hello [G]世界\nEnd of song").unwrap();
+        let bytes = render_song(&song);
+        assert!(bytes.starts_with(b"%PDF"));
+        let text = String::from_utf8_lossy(&bytes);
+        // Both Latin-1 and CID fonts must be present.
+        assert!(
+            text.contains("Helvetica"),
+            "Helvetica Type1 font must be present"
+        );
+        assert!(
+            text.contains("CIDFontType0"),
+            "CID font must be present for kanji"
+        );
+    }
+
+    /// A song with only ASCII content must NOT include the CID font objects —
+    /// the CID font chain is a conditional overhead.
+    #[test]
+    fn test_ascii_only_has_no_cid_font() {
+        let song = chordsketch_core::parse("{title: Test}\n[G]Hello world").unwrap();
+        let bytes = render_song(&song);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(
+            !text.contains("CIDFontType0"),
+            "CID font must not appear in ASCII-only PDFs"
+        );
     }
 
     #[test]
@@ -3955,6 +4431,36 @@ mod toc_tests {
         assert!(bytes.ends_with(b"%%EOF\n"));
         let content = String::from_utf8_lossy(&bytes);
         assert!(content.contains("Table of Contents"));
+    }
+
+    #[test]
+    fn test_toc_multi_song_cjk_includes_cid_font() {
+        // Regression test for the HIGH finding: when CJK characters appear in body
+        // pages of a multi-song document, render_songs_with_warnings must merge
+        // body_doc.cid_glyphs into combined.cid_glyphs so that build_pdf() emits
+        // the CID font objects. Without the merge, body pages reference /F5 but no
+        // CID font dictionary is written, producing a corrupt PDF.
+        let songs = chordsketch_core::parse_multi(
+            "{title: Song A}\nこんにちは\n{new_song}\n{title: Song B}\n日本語",
+        )
+        .unwrap();
+        let bytes = render_songs(&songs);
+        let content = String::from_utf8_lossy(&bytes);
+        // CID font chain must be present.
+        assert!(
+            content.contains("/Type /Font") && content.contains("/Subtype /Type0"),
+            "multi-song CJK PDF must contain a Type0 CID font"
+        );
+        assert!(
+            content.contains("Identity-H"),
+            "multi-song CJK PDF must use Identity-H encoding"
+        );
+        assert!(
+            content.contains("/ToUnicode"),
+            "multi-song CJK PDF must contain a ToUnicode CMap"
+        );
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert!(bytes.ends_with(b"%%EOF\n"));
     }
 }
 
