@@ -158,11 +158,15 @@ pub fn invoke_abc2svg(abc_content: &str) -> Result<String, String> {
     let sanitized = sanitize_abc_content(abc_content);
 
     let tmp_path = unique_temp_path("chordsketch_abc", "abc");
-    write_temp_file_exclusive(&tmp_path, &sanitized)?;
-    // Guard ensures the temp file is removed on any exit path.
+    // Guard is created before the write so that if write_temp_file_exclusive
+    // creates the file with O_EXCL but then fails on write_all, the guard's
+    // Drop still runs and removes the partially-created file. The `let _ =`
+    // in Drop silently handles the case where the file was never created
+    // (e.g. if O_EXCL open fails before any bytes are written).
     let _guard = TempFileGuard {
         path: tmp_path.clone(),
     };
+    write_temp_file_exclusive(&tmp_path, &sanitized)?;
 
     let output = Command::new("abc2svg")
         .arg("tosvg.js")
