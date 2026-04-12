@@ -313,11 +313,17 @@ fn render_song_body(
                     continue;
                 }
                 if directive.kind == DirectiveKind::Transpose {
-                    let file_offset: i8 = directive
-                        .value
-                        .as_deref()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(0);
+                    let raw_value = directive.value.as_deref().unwrap_or("");
+                    let file_offset: i8 = match raw_value.parse() {
+                        Ok(v) => v,
+                        Err(_) => {
+                            warnings.push(format!(
+                                "{{transpose}} value {raw_value:?} cannot be \
+                                 parsed as i8, ignored (using 0)"
+                            ));
+                            0
+                        }
+                    };
                     let (combined, saturated) =
                         chordsketch_core::transpose::combine_transpose(file_offset, cli_transpose);
                     if saturated {
@@ -2129,6 +2135,23 @@ mod transpose_tests {
         let html = render_song_with_transpose(&song, 3, &Config::defaults());
         // 2 + 3 = 5, C+5=F
         assert!(html.contains("<span class=\"chord\">F</span>"));
+    }
+
+    #[test]
+    fn test_transpose_out_of_i8_range_emits_warning() {
+        // 999 cannot be represented as i8; should fall back to 0 with a warning
+        let input = "{transpose: 999}\n[G]Hello";
+        let song = chordsketch_core::parse(input).unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert!(
+            result.output.contains("<span class=\"chord\">G</span>"),
+            "chord should be untransposed"
+        );
+        assert!(
+            result.warnings.iter().any(|w| w.contains("\"999\"")),
+            "expected warning about out-of-range value, got: {:?}",
+            result.warnings
+        );
     }
 
     // --- Issue #109: {chorus} recall ---

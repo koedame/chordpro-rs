@@ -525,8 +525,17 @@ fn render_song_into_doc(
                     continue;
                 }
                 if d.kind == DirectiveKind::Transpose {
-                    let file_offset: i8 =
-                        d.value.as_deref().and_then(|v| v.parse().ok()).unwrap_or(0);
+                    let raw_value = d.value.as_deref().unwrap_or("");
+                    let file_offset: i8 = match raw_value.parse() {
+                        Ok(v) => v,
+                        Err(_) => {
+                            warnings.push(format!(
+                                "{{transpose}} value {raw_value:?} cannot be \
+                                 parsed as i8, ignored (using 0)"
+                            ));
+                            0
+                        }
+                    };
                     let (combined, saturated) =
                         chordsketch_core::transpose::combine_transpose(file_offset, cli_transpose);
                     if saturated {
@@ -3202,6 +3211,22 @@ mod transpose_tests {
         // 2+3=5, C+5=F
         let content = String::from_utf8_lossy(&bytes);
         assert!(content.contains("(F)"));
+    }
+
+    #[test]
+    fn test_transpose_out_of_i8_range_emits_warning() {
+        // 999 cannot be represented as i8; should fall back to 0 with a warning
+        let input = "{transpose: 999}\n[G]Hello";
+        let song = chordsketch_core::parse(input).unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        // G + 0 transposition = G
+        let content = String::from_utf8_lossy(&result.output);
+        assert!(content.contains("(G)"), "chord should be untransposed");
+        assert!(
+            result.warnings.iter().any(|w| w.contains("\"999\"")),
+            "expected warning about out-of-range value, got: {:?}",
+            result.warnings
+        );
     }
 }
 
