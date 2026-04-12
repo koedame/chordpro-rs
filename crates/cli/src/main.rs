@@ -21,6 +21,7 @@ const MAX_INPUT_BYTES: u64 = 52_428_800;
 ///
 /// [`fs::metadata`] is used for an early, cheap size check that avoids
 /// loading oversized files into memory at all.
+#[must_use = "I/O errors from reading the file must be handled"]
 fn read_file_clamped(path: &str) -> Result<String, String> {
     match fs::metadata(path) {
         Ok(meta) if meta.len() > MAX_INPUT_BYTES => {
@@ -41,6 +42,7 @@ fn read_file_clamped(path: &str) -> Result<String, String> {
 /// Uses [`Read::take`] to avoid buffering more than `MAX_INPUT_BYTES + 1`
 /// bytes; if the read fills the cap the stream is rejected without consuming
 /// the remainder.
+#[must_use = "I/O errors from reading stdin must be handled"]
 fn read_stdin_clamped() -> Result<String, String> {
     let mut buf = String::new();
     io::stdin()
