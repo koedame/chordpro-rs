@@ -978,7 +978,10 @@ mod transpose_tests {
         let song = chordsketch_core::parse(input).unwrap();
         let result =
             render_song_with_warnings(&song, 0, &chordsketch_core::config::Config::defaults());
-        assert!(result.output.contains("G\nHello"), "chord should be untransposed");
+        assert!(
+            result.output.contains("G\nHello"),
+            "chord should be untransposed"
+        );
         assert!(
             result.warnings.iter().any(|w| w.contains("\"999\"")),
             "expected warning about out-of-range value, got: {:?}",
