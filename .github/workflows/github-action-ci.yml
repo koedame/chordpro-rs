@@ -202,3 +202,22 @@ jobs:
             exit 1
           fi
           echo "Correctly rejected invalid transpose 'abc'"
+
+      - name: Test leading-zero transpose (should fail)
+        id: test-leading-zero-transpose
+        uses: ./packages/github-action
+        continue-on-error: true
+        with:
+          input: packages/github-action/fixtures/simple.cho
+          output: out/should-not-exist-3.txt
+          transpose: '007'
+
+      - name: Verify leading-zero transpose was rejected
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.test-leading-zero-transpose.outcome }}" != "failure" ]; then
+            echo "Expected action to fail with leading-zero transpose '007' but it succeeded"
+            exit 1
+          fi
+          echo "Correctly rejected leading-zero transpose '007'"

@@ -87,7 +87,7 @@ struct Cli {
     format: Format,
 
     /// Transpose all chords by N semitones (positive = up, negative = down).
-    #[arg(short, long, default_value = "0")]
+    #[arg(short, long, default_value = "0", allow_negative_numbers = true)]
     transpose: i8,
 
     /// Load a custom configuration file or preset name (may be specified multiple times).

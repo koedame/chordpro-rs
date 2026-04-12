@@ -17,7 +17,7 @@ inputs:
     required: false
     default: 'text'
   transpose:
-    description: 'Semitones to transpose, integer in range -128..=127 (positive = up, negative = down; 0 = no change). No leading zeros (e.g., use 2 not 02).'
+    description: 'Semitones to transpose (positive = up, negative = down; 0 = no change). Must be an integer with no leading zeros (e.g., 2 or -2, not 02). Values outside -128..=127 are clamped by the CLI.'
     required: false
     default: '0'
   version:
