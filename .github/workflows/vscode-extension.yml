@@ -206,7 +206,9 @@ jobs:
           path: packages/vscode-extension/
 
       - name: Publish to Open VSX
+        # ovsx reads OVSX_PAT from the environment natively (no --pat flag
+        # needed), matching the pattern used for vsce + VSCE_PAT above.
         env:
           OVSX_PAT: ${{ secrets.OPEN_VSX_TOKEN }}
-        run: npx ovsx publish *.vsix --pat "$OVSX_PAT"
+        run: ./node_modules/.bin/ovsx publish *.vsix
         working-directory: packages/vscode-extension
