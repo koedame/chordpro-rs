@@ -91,6 +91,7 @@ fn flush_warnings<T>(result: RenderResult<T>) -> T {
 ///   (`-128..=127`); musically meaningful values are typically `-24..=24`
 ///   (two octaves). If the combined offset (API value + in-file directive)
 ///   saturates the `i8` range, it is clamped and a warning is emitted.
+#[must_use = "callers must handle parse and render errors"]
 pub fn parse_and_render_text(
     input: String,
     config_json: Option<String>,
@@ -117,6 +118,7 @@ pub fn parse_and_render_text(
 /// forwarded to stderr via `flush_warnings`.
 ///
 /// See [`parse_and_render_text`] for `transpose` parameter documentation.
+#[must_use = "callers must handle parse and render errors"]
 pub fn parse_and_render_html(
     input: String,
     config_json: Option<String>,
@@ -143,6 +145,7 @@ pub fn parse_and_render_html(
 /// forwarded to stderr via `flush_warnings`.
 ///
 /// See [`parse_and_render_text`] for `transpose` parameter documentation.
+#[must_use = "callers must handle parse and render errors"]
 pub fn parse_and_render_pdf(
     input: String,
     config_json: Option<String>,
@@ -167,6 +170,7 @@ pub fn validate(input: String) -> Vec<String> {
 }
 
 /// Return the ChordSketch library version.
+#[must_use]
 pub fn version() -> String {
     chordsketch_core::version().to_string()
 }

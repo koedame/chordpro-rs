@@ -294,6 +294,7 @@ pub fn render_pdf_with_options(input: &str, options: JsValue) -> Result<Vec<u8>,
 }
 
 /// Returns the ChordSketch library version.
+#[must_use]
 #[wasm_bindgen]
 pub fn version() -> String {
     chordsketch_core::version().to_string()

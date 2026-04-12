@@ -219,6 +219,7 @@ pub fn validate(input: String) -> Vec<String> {
 }
 
 /// Return the ChordSketch library version.
+#[must_use]
 #[napi]
 pub fn version() -> String {
     chordsketch_core::version().to_string()
