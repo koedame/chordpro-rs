@@ -97,6 +97,50 @@ fn write_temp_file_exclusive(path: &std::path::Path, content: &str) -> Result<()
     Ok(())
 }
 
+/// RAII guard that removes a temporary file when dropped.
+///
+/// Ensures the temp file is cleaned up regardless of how the enclosing
+/// scope exits (normal return, early `?` return, or panic). Because
+/// `chordsketch-core` has zero external dependencies, this is implemented
+/// as a stdlib-only `Drop` type rather than using `scopeguard` or `tempfile`.
+///
+/// # Usage
+///
+/// Bind with `let _guard = TempFileGuard { … }`, **not** `let _ = …`.
+/// `let _ = expr` drops the value immediately; `let _guard = …` keeps
+/// the guard alive until it goes out of scope.
+struct TempFileGuard {
+    path: std::path::PathBuf,
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// RAII guard that removes a temporary directory (recursively) when dropped.
+///
+/// Ensures the temp directory is cleaned up regardless of how the enclosing
+/// scope exits (normal return, early `?` return, or panic). Because
+/// `chordsketch-core` has zero external dependencies, this is implemented
+/// as a stdlib-only `Drop` type rather than using `scopeguard` or `tempfile`.
+///
+/// # Usage
+///
+/// Bind with `let _guard = TempDirGuard { … }`, **not** `let _ = …`.
+/// `let _ = expr` drops the value immediately; `let _guard = …` keeps
+/// the guard alive until it goes out of scope.
+struct TempDirGuard {
+    path: std::path::PathBuf,
+}
+
+impl Drop for TempDirGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 /// Invoke `abc2svg` on ABC notation content and return the rendered SVG fragment.
 ///
 /// Writes `abc_content` to a temporary file, runs `abc2svg tosvg.js <file>`,
@@ -114,19 +158,17 @@ pub fn invoke_abc2svg(abc_content: &str) -> Result<String, String> {
     let sanitized = sanitize_abc_content(abc_content);
 
     let tmp_path = unique_temp_path("chordsketch_abc", "abc");
-
     write_temp_file_exclusive(&tmp_path, &sanitized)?;
+    // Guard ensures the temp file is removed on any exit path.
+    let _guard = TempFileGuard {
+        path: tmp_path.clone(),
+    };
 
     let output = Command::new("abc2svg")
         .arg("tosvg.js")
         .arg(&tmp_path)
         .output()
-        .map_err(|e| {
-            let _ = std::fs::remove_file(&tmp_path);
-            format!("failed to invoke abc2svg: {e}")
-        })?;
-
-    let _ = std::fs::remove_file(&tmp_path);
+        .map_err(|e| format!("failed to invoke abc2svg: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -310,15 +352,17 @@ pub fn invoke_lilypond(ly_content: &str) -> Result<String, String> {
     // Use create_dir (not create_dir_all) to fail if the directory already exists,
     // preventing symlink-based attacks on predictable paths.
     std::fs::create_dir(&tmp_dir).map_err(|e| format!("failed to create temp directory: {e}"))?;
+    // Guard ensures the temp directory is removed on any exit path.
+    let _guard = TempDirGuard {
+        path: tmp_dir.clone(),
+    };
 
     let ly_path = tmp_dir.join("input.ly");
     let output_prefix = tmp_dir.join("output");
 
     // Use create_new(true) / O_EXCL to prevent a TOCTOU race between the
     // freshly created directory and the file write inside it.
-    write_temp_file_exclusive(&ly_path, &sanitized).inspect_err(|_| {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-    })?;
+    write_temp_file_exclusive(&ly_path, &sanitized)?;
 
     // Use -dsafe to sandbox Lilypond's embedded Scheme interpreter,
     // preventing arbitrary code execution from untrusted .cho files.
@@ -330,25 +374,16 @@ pub fn invoke_lilypond(ly_content: &str) -> Result<String, String> {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .output()
-        .map_err(|e| {
-            let _ = std::fs::remove_dir_all(&tmp_dir);
-            format!("failed to invoke lilypond: {e}")
-        })?;
+        .map_err(|e| format!("failed to invoke lilypond: {e}"))?;
 
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
-        let _ = std::fs::remove_dir_all(&tmp_dir);
         return Err(format!("lilypond exited with error: {stderr}"));
     }
 
     let svg_path = tmp_dir.join("output.svg");
-    let svg = std::fs::read_to_string(&svg_path).map_err(|e| {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-        format!("failed to read lilypond SVG output: {e}")
-    })?;
-
-    let _ = std::fs::remove_dir_all(&tmp_dir);
-    Ok(svg)
+    std::fs::read_to_string(&svg_path)
+        .map_err(|e| format!("failed to read lilypond SVG output: {e}"))
 }
 
 /// Returns the name of the MuseScore executable available on this system.
@@ -522,15 +557,17 @@ pub fn invoke_musescore(musicxml_content: &str) -> Result<String, String> {
     let tmp_dir = std::env::temp_dir().join(format!("chordsketch_mxl_{pid}_{counter}"));
 
     std::fs::create_dir(&tmp_dir).map_err(|e| format!("failed to create temp directory: {e}"))?;
+    // Guard ensures the temp directory is removed on any exit path.
+    let _guard = TempDirGuard {
+        path: tmp_dir.clone(),
+    };
 
     let input_path = tmp_dir.join("input.xml");
     let output_svg = tmp_dir.join("output.svg");
 
     // Use create_new(true) / O_EXCL to prevent a TOCTOU race between the
     // freshly created directory and the file write inside it.
-    write_temp_file_exclusive(&input_path, &sanitized).inspect_err(|_| {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-    })?;
+    write_temp_file_exclusive(&input_path, &sanitized)?;
 
     let result = Command::new(cmd_name)
         .arg("-o")
@@ -539,42 +576,30 @@ pub fn invoke_musescore(musicxml_content: &str) -> Result<String, String> {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .output()
-        .map_err(|e| {
-            let _ = std::fs::remove_dir_all(&tmp_dir);
-            format!("failed to invoke {cmd_name}: {e}")
-        })?;
+        .map_err(|e| format!("failed to invoke {cmd_name}: {e}"))?;
 
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
-        let _ = std::fs::remove_dir_all(&tmp_dir);
         return Err(format!("{cmd_name} exited with error: {stderr}"));
     }
 
     // MuseScore 4.x writes output.svg; MuseScore 3.x writes output-1.svg,
     // output-2.svg, … (page-numbered) even for single-page scores.
-    let svg = if output_svg.exists() {
+    if output_svg.exists() {
         // MuseScore 4.x path: single file.
-        std::fs::read_to_string(&output_svg).map_err(|e| {
-            let _ = std::fs::remove_dir_all(&tmp_dir);
-            format!("failed to read MuseScore SVG output: {e}")
-        })?
+        std::fs::read_to_string(&output_svg)
+            .map_err(|e| format!("failed to read MuseScore SVG output: {e}"))
     } else {
         // MuseScore 3.x path: collect output-1.svg, output-2.svg, …
-        let pages = collect_musescore_pages(&tmp_dir).inspect_err(|_| {
-            let _ = std::fs::remove_dir_all(&tmp_dir);
-        })?;
+        let pages = collect_musescore_pages(&tmp_dir)?;
         if pages.is_empty() {
-            let _ = std::fs::remove_dir_all(&tmp_dir);
             return Err(
                 "MuseScore produced no SVG output (expected output.svg or output-1.svg)"
                     .to_string(),
             );
         }
-        pages
-    };
-
-    let _ = std::fs::remove_dir_all(&tmp_dir);
-    Ok(svg)
+        Ok(pages)
+    }
 }
 
 /// Returns `true` if the Perl `chordpro` reference implementation is available.
@@ -615,6 +640,37 @@ mod tests {
         let result = super::write_temp_file_exclusive(&path, "world");
         assert!(result.is_err());
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn temp_file_guard_removes_file_on_drop() {
+        let path = super::unique_temp_path("test_guard_file", "tmp");
+        super::write_temp_file_exclusive(&path, "data").unwrap();
+        assert!(path.exists(), "file should exist before guard drops");
+        {
+            let _guard = super::TempFileGuard { path: path.clone() };
+        } // guard drops here
+        assert!(
+            !path.exists(),
+            "file should be removed after TempFileGuard drops"
+        );
+    }
+
+    #[test]
+    fn temp_dir_guard_removes_dir_on_drop() {
+        let dir =
+            std::env::temp_dir().join(format!("chordsketch_test_guard_{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        // Write a file inside so we exercise recursive removal.
+        std::fs::write(dir.join("inner.txt"), "hello").unwrap();
+        assert!(dir.exists(), "dir should exist before guard drops");
+        {
+            let _guard = super::TempDirGuard { path: dir.clone() };
+        } // guard drops here
+        assert!(
+            !dir.exists(),
+            "dir should be removed after TempDirGuard drops"
+        );
     }
 
     // The following tests are #[ignore] because they depend on external tools.
