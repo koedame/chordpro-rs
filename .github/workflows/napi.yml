@@ -144,6 +144,21 @@ jobs:
             console.log("All smoke tests passed!");
           '
 
+      - name: Jest warning-routing test (host target only)
+        # Exercises the full Rust flush_warnings → eprintln! → stderr path.
+        # Must run after the .node artifact is built and on the same host
+        # targets as the smoke test (cross-compiled artifacts cannot be
+        # required on the build host).  See #1568.
+        if: |
+          (matrix.os == 'ubuntu-latest' && matrix.target == 'x86_64-unknown-linux-gnu') ||
+          (matrix.os == 'macos-latest' && matrix.target == 'aarch64-apple-darwin') ||
+          (matrix.os == 'windows-latest' && matrix.target == 'x86_64-pc-windows-msvc')
+        working-directory: crates/napi
+        shell: bash
+        run: |
+          npm install --ignore-scripts
+          npx jest --no-coverage
+
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
