@@ -1,0 +1,43 @@
+name: Nix
+
+# Verify that the Nix flake builds the chordsketch CLI correctly.
+# Runs on every PR and push to main; no paths: filter because this is a
+# guarantee-style check (see .claude/rules/feedback_unconditional_ci.md).
+#
+# Cache note: nix downloads pre-built packages from cache.nixos.org (the
+# public binary cache). The chordsketch crates themselves are not in the
+# public cache and will be compiled from source on each run. Build times are
+# typically 4-6 minutes on a cold cache. Swatinem/rust-cache is NOT used here
+# because nix compiles in an isolated store outside the standard Cargo target/
+# directory; the nix store is managed by nix's own GC and binary-cache
+# protocol. Per ci-parallelization.md, rust-cache applies only to jobs that
+# invoke cargo directly — not to nix-wrapped builds.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: nix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: nix build (x86_64-linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@4cbb444a961f7f17a9ce421956b09f42343cf780 # v9
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build chordsketch CLI
+        run: nix build .#chordsketch
+
+      - name: Verify binary runs
+        # Matches the user-facing command: nix run github:koedame/chordsketch -- --version
+        run: nix run . -- --version
