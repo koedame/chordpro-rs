@@ -219,9 +219,6 @@ jobs:
           pkgname = chordsketch
           SRCINFO
 
-          # Strip leading whitespace added by the heredoc indentation
-          sed -i 's/^          //' .SRCINFO
-
           echo "=== PKGBUILD ==="
           cat PKGBUILD
           echo "=== .SRCINFO ==="
