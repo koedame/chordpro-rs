@@ -49,6 +49,10 @@ Additionally, these non-Rust packages exist:
 | Kotlin (`chordsketch`) | `packages/kotlin` | Kotlin/JVM package via JNI |
 | Ruby (`chordsketch`) | `packages/ruby` | Ruby gem via UniFFI |
 | `@chordsketch/syntaxes` | `syntaxes/` | TextMate grammar and language configuration for ChordPro files (private, not published) |
+| VS Code extension | `packages/vscode-extension` | VS Code / Open VSX extension with TextMate highlighting, live preview, and LSP integration |
+| GitHub Action | `packages/github-action` | Composite GitHub Action for rendering ChordPro files in CI |
+| `tree-sitter-chordpro` | `packages/tree-sitter-chordpro` | Tree-sitter grammar for ChordPro syntax highlighting |
+| ChordPro (Zed extension) | `packages/zed-extension` | Zed editor extension with tree-sitter highlighting and LSP integration (not in workspace; targets wasm32-wasi) |
 
 ### Dependency Policy
 
