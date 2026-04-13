@@ -1,8 +1,7 @@
 name: Nix
 
 # Verify that the Nix flake builds the chordsketch CLI correctly.
-# Runs on every PR and push to main; no paths: filter because this is a
-# guarantee-style check (see .claude/rules/feedback_unconditional_ci.md).
+# Runs on every PR and push to main; no paths: filter (guarantee-style check).
 #
 # Cache note: nix downloads pre-built packages from cache.nixos.org (the
 # public binary cache). The chordsketch crates themselves are not in the
