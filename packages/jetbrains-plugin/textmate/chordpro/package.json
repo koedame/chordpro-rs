@@ -1,0 +1,20 @@
+{
+    "name": "chordpro",
+    "contributes": {
+        "languages": [
+            {
+                "id": "chordpro",
+                "aliases": ["ChordPro"],
+                "extensions": [".cho", ".chordpro", ".chopro"],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "chordpro",
+                "scopeName": "source.chordpro",
+                "path": "./chordpro.tmLanguage.json"
+            }
+        ]
+    }
+}

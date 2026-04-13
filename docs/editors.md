@@ -118,6 +118,31 @@ vim.api.nvim_create_autocmd("FileType", {
 })
 ```
 
+## JetBrains IDEs (IntelliJ IDEA, PyCharm, WebStorm, etc.)
+
+Install the **ChordPro** plugin from the
+[JetBrains Marketplace](https://plugins.jetbrains.com/):
+
+1. Open **Settings** → **Plugins** → **Marketplace**
+2. Search for **ChordPro**
+3. Click **Install**
+
+The plugin provides syntax highlighting for `.cho`, `.chordpro`, and `.chopro`
+files via a TextMate grammar. It requires IntelliJ Platform 2024.1 or later.
+
+### Manual installation (alternative)
+
+If the plugin is not yet available on the Marketplace, build it from source:
+
+```bash
+cd packages/jetbrains-plugin
+./gradlew buildPlugin
+```
+
+Then install the generated ZIP from **Settings** → **Plugins** →
+**⚙** → **Install Plugin from Disk…** and select
+`build/distributions/chordsketch-*.zip`.
+
 ## Helix
 
 ChordPro support in Helix requires manual configuration until the

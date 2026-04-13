@@ -53,6 +53,7 @@ Additionally, these non-Rust packages exist:
 | GitHub Action | `packages/github-action` | Composite GitHub Action for rendering ChordPro files in CI |
 | `tree-sitter-chordpro` | `packages/tree-sitter-chordpro` | Tree-sitter grammar for ChordPro syntax highlighting |
 | ChordPro (Zed extension) | `packages/zed-extension` | Zed editor extension with tree-sitter highlighting and LSP integration (not in workspace; targets wasm32-wasi) |
+| ChordPro (JetBrains plugin) | `packages/jetbrains-plugin` | JetBrains IDE plugin with TextMate syntax highlighting for ChordPro files |
 
 ### Dependency Policy
 
