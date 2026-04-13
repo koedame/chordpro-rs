@@ -232,6 +232,69 @@ jobs:
             --source https://push.chocolatey.org/ `
             --api-key $env:CHOCOLATEY_API_KEY
 
+  update-snap:
+    name: Update Snap package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Determine version
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$RELEASE_TAG"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download binary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ steps.version.outputs.tag }}" \
+            -p "chordsketch-${{ steps.version.outputs.tag }}-x86_64-unknown-linux-gnu.tar.gz"
+          mkdir -p stage
+          tar xzf "chordsketch-${{ steps.version.outputs.tag }}-x86_64-unknown-linux-gnu.tar.gz" \
+            --strip-components=1 -C stage
+          chmod +x stage/chordsketch
+          ls -la stage/
+
+      - name: Generate snapcraft.yaml
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p snap
+          sed -e "s/{{VERSION}}/${VERSION}/g" \
+            packaging/snap/snapcraft.yaml.template > snap/snapcraft.yaml
+          cat snap/snapcraft.yaml
+
+      - name: Install snapcraft
+        run: |
+          sudo snap install snapcraft --classic
+
+      - name: Build snap
+        run: |
+          snapcraft --destructive-mode
+
+      - name: Upload and release
+        env:
+          SNAP_STORE_TOKEN: ${{ secrets.SNAP_STORE_TOKEN }}
+        run: |
+          if [ -z "$SNAP_STORE_TOKEN" ]; then
+            echo "SNAP_STORE_TOKEN secret is not set; skipping Snap Store upload."
+            echo "To enable automatic Snap updates, add the token"
+            echo "as a repository secret named SNAP_STORE_TOKEN."
+            exit 0
+          fi
+
+          export SNAPCRAFT_STORE_CREDENTIALS="$SNAP_STORE_TOKEN"
+          SNAP_FILE=$(ls chordsketch_*.snap)
+          snapcraft upload "$SNAP_FILE" --release=stable
+
   update-aur:
     name: Update AUR package
     runs-on: ubuntu-latest
