@@ -18,9 +18,9 @@ use chordsketch_core::render_result::RenderResult;
 use chordsketch_core::resolve_diagrams_instrument;
 use chordsketch_core::transpose::transpose_chord;
 
+use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
-use flate2::Compression;
 use std::collections::BTreeMap;
 use std::io::{Read as IoRead, Write as IoWrite};
 
@@ -4836,7 +4836,7 @@ mod jpeg_tests {
         // Build a JPEG with valid SOI, then >64 KB of padding before the SOF.
         // The parser should bail out before reaching the SOF marker.
         let mut data = vec![0xFF, 0xD8]; // SOI
-                                         // Fill with non-marker bytes (not 0xFF) to force byte-by-byte scanning
+        // Fill with non-marker bytes (not 0xFF) to force byte-by-byte scanning
         data.resize(70_000, 0x00);
         // Append a valid SOF0 marker well past the 64 KB scan limit
         data.extend_from_slice(&[0xFF, 0xC0]);
