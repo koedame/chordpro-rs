@@ -2165,6 +2165,14 @@ struct PdfDocument {
     /// Populated when CID-font segments are rendered (any character outside
     /// the WinAnsiEncoding range). Used in `build_pdf` to emit the ToUnicode
     /// CMap and the glyph-width `/W` array for the embedded CID font.
+    ///
+    /// **GID 0 (`.notdef`) entries may be present.** Characters absent from
+    /// the bundled font fall back to GID 0 in the content stream, and those
+    /// GID 0 entries are recorded here so that `cid_needed =
+    /// !self.cid_glyphs.is_empty()` stays `true` whenever `/F5` was
+    /// referenced — even when every non-Latin-1 character maps to `.notdef`.
+    /// GID 0 is excluded from the ToUnicode CMap in `build_to_unicode_cmap`
+    /// (PDF spec §9.10.3 forbids it as a source entry).
     cid_glyphs: BTreeMap<u16, char>,
 }
 
