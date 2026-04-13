@@ -1,0 +1,17 @@
+id = "chordpro"
+name = "ChordPro"
+version = "0.1.0"
+schema_version = 1
+authors = ["koedame <koedame@users.noreply.github.com>"]
+description = "ChordPro language support with syntax highlighting and LSP integration for chord sheets and lead sheets"
+repository = "https://github.com/koedame/chordsketch"
+
+[grammars.chordpro]
+repository = "https://github.com/koedame/chordsketch"
+# Update this to the commit hash after merging to main
+rev = "REPLACE_WITH_MERGED_COMMIT"
+path = "packages/tree-sitter-chordpro"
+
+[language_servers.chordsketch-lsp]
+name = "ChordSketch LSP"
+languages = ["ChordPro"]

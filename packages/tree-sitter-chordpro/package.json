@@ -1,0 +1,45 @@
+{
+  "name": "tree-sitter-chordpro",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for ChordPro music notation files",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/koedame/chordsketch.git",
+    "directory": "packages/tree-sitter-chordpro"
+  },
+  "keywords": [
+    "tree-sitter",
+    "chordpro",
+    "music",
+    "chord",
+    "parser",
+    "syntax-highlighting"
+  ],
+  "main": "bindings/node",
+  "types": "bindings/node",
+  "files": [
+    "grammar.js",
+    "binding.gyp",
+    "prebuilds/**",
+    "bindings/node/*",
+    "queries/*",
+    "src/**",
+    "*.wasm"
+  ],
+  "tree-sitter": [
+    {
+      "scope": "source.chordpro",
+      "file-types": ["cho", "chordpro", "chopro"],
+      "highlights": "queries/highlights.scm"
+    }
+  ],
+  "devDependencies": {
+    "tree-sitter-cli": ">=0.24.0"
+  },
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "test": "tree-sitter test",
+    "parse": "tree-sitter parse"
+  }
+}

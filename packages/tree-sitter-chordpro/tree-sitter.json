@@ -1,0 +1,25 @@
+{
+  "grammars": [
+    {
+      "name": "chordpro",
+      "camelCase": false,
+      "scope": "source.chordpro",
+      "path": ".",
+      "file-types": ["cho", "chordpro", "chopro"],
+      "highlights": "queries/highlights.scm"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Tree-sitter grammar for ChordPro music notation files",
+    "authors": [
+      {
+        "name": "koedame"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/koedame/chordsketch"
+    }
+  }
+}

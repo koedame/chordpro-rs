@@ -1,0 +1,190 @@
+[
+  {
+    "type": "block_content",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "block_end_directive",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "directive_name",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "block_start_directive",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "directive_name",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "chord",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "chord_name",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "content_line",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "chord",
+          "named": true
+        },
+        {
+          "type": "lyrics",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "delegate_block",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "block_content",
+          "named": true
+        },
+        {
+          "type": "block_end_directive",
+          "named": true
+        },
+        {
+          "type": "block_start_directive",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "directive",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "directive_name",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "directive_value",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "source_file",
+    "named": true,
+    "root": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "comment",
+          "named": true
+        },
+        {
+          "type": "content_line",
+          "named": true
+        },
+        {
+          "type": "delegate_block",
+          "named": true
+        },
+        {
+          "type": "directive",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "\n",
+    "named": false
+  },
+  {
+    "type": "[",
+    "named": false
+  },
+  {
+    "type": "]",
+    "named": false
+  },
+  {
+    "type": "chord_name",
+    "named": true
+  },
+  {
+    "type": "comment",
+    "named": true
+  },
+  {
+    "type": "directive_name",
+    "named": true
+  },
+  {
+    "type": "directive_value",
+    "named": true
+  },
+  {
+    "type": "lyrics",
+    "named": true
+  },
+  {
+    "type": "{",
+    "named": false
+  },
+  {
+    "type": "}",
+    "named": false
+  }
+]

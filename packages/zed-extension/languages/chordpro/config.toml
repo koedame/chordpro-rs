@@ -1,0 +1,10 @@
+name = "ChordPro"
+grammar = "chordpro"
+path_suffixes = ["cho", "chordpro", "chopro"]
+line_comments = ["# "]
+block_comment = []
+brackets = [
+  { start = "{", end = "}", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+]
+tab_size = 2
