@@ -26,3 +26,11 @@ modules:
         url: https://github.com/koedame/chordsketch/releases/download/v{{VERSION}}/chordsketch-v{{VERSION}}-x86_64-unknown-linux-gnu.tar.gz
         sha256: {{SHA256_X86_64_UNKNOWN_LINUX_GNU}}
         strip-components: 1
+        only-arches:
+          - x86_64
+      - type: archive
+        url: https://github.com/koedame/chordsketch/releases/download/v{{VERSION}}/chordsketch-v{{VERSION}}-aarch64-unknown-linux-gnu.tar.gz
+        sha256: {{SHA256_AARCH64_UNKNOWN_LINUX_GNU}}
+        strip-components: 1
+        only-arches:
+          - aarch64

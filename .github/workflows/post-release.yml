@@ -694,16 +694,21 @@ jobs:
             exit 1
           fi
 
-          SHA_LINUX=$(grep "x86_64-unknown-linux-gnu" checksums.txt | awk '{print $1}')
+          SHA_X86_64=$(grep "x86_64-unknown-linux-gnu" checksums.txt | awk '{print $1}')
+          SHA_AARCH64=$(grep "aarch64-unknown-linux-gnu" checksums.txt | awk '{print $1}')
 
-          if [[ ! "$SHA_LINUX" =~ ^[0-9a-fA-F]{64}$ ]]; then
-            echo "ERROR: missing or invalid SHA256 for x86_64-unknown-linux-gnu: '${SHA_LINUX}'" >&2
-            exit 1
-          fi
+          for var_name in SHA_X86_64 SHA_AARCH64; do
+            val="${!var_name}"
+            if [[ ! "$val" =~ ^[0-9a-fA-F]{64}$ ]]; then
+              echo "ERROR: missing or invalid SHA256 for ${var_name}: '${val}'" >&2
+              exit 1
+            fi
+          done
 
           sed \
             -e "s/{{VERSION}}/${VERSION}/g" \
-            -e "s/{{SHA256_X86_64_UNKNOWN_LINUX_GNU}}/${SHA_LINUX}/g" \
+            -e "s/{{SHA256_X86_64_UNKNOWN_LINUX_GNU}}/${SHA_X86_64}/g" \
+            -e "s/{{SHA256_AARCH64_UNKNOWN_LINUX_GNU}}/${SHA_AARCH64}/g" \
             packaging/flatpak/me.koeda.chordsketch.yml.template > me.koeda.chordsketch.yml
 
           cat me.koeda.chordsketch.yml
@@ -755,7 +760,8 @@ jobs:
 ## Update chordsketch to ${VERSION}
 
 - **Version**: ${VERSION}
-- **Source**: Pre-built x86_64-linux-gnu binary from [GitHub Release](https://github.com/koedame/chordsketch/releases/tag/v${VERSION})
+- **Architectures**: x86_64, aarch64
+- **Source**: Pre-built binaries from [GitHub Release](https://github.com/koedame/chordsketch/releases/tag/v${VERSION})
 
 Automated update from the [chordsketch post-release workflow](https://github.com/koedame/chordsketch/blob/main/.github/workflows/post-release.yml).
 PR_BODY
