@@ -643,3 +643,113 @@ jobs:
             --head "$BRANCH" \
             --title "Update Swift Package.swift to ${TAG}" \
             --body "$BODY"
+
+  update-flatpak:
+    name: Update Flathub manifest
+    runs-on: ubuntu-latest
+    # Prerequisites: the Flathub app repo (flathub/me.koeda.chordsketch)
+    # must exist before this job can run. Unlike AUR or Homebrew, Flathub
+    # requires a separate application submission (PR to flathub/flathub)
+    # that must be accepted first. The FLATHUB_TOKEN guard below ensures
+    # the job is a no-op until both the repo and the token are set up.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Determine version
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$RELEASE_TAG"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ steps.version.outputs.tag }}" -p checksums.txt
+
+      - name: Generate manifest
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Validate VERSION format to prevent sed injection from crafted
+          # workflow_dispatch tags.
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "ERROR: invalid version format: '${VERSION}'" >&2
+            exit 1
+          fi
+
+          SHA_LINUX=$(grep "x86_64-unknown-linux-gnu" checksums.txt | awk '{print $1}')
+
+          if [[ ! "$SHA_LINUX" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "ERROR: missing or invalid SHA256 for x86_64-unknown-linux-gnu: '${SHA_LINUX}'" >&2
+            exit 1
+          fi
+
+          sed \
+            -e "s/{{VERSION}}/${VERSION}/g" \
+            -e "s/{{SHA256_X86_64_UNKNOWN_LINUX_GNU}}/${SHA_LINUX}/g" \
+            packaging/flatpak/me.koeda.chordsketch.yml.template > me.koeda.chordsketch.yml
+
+          cat me.koeda.chordsketch.yml
+
+      - name: Push to Flathub
+        env:
+          FLATHUB_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
+        run: |
+          if [ -z "$FLATHUB_TOKEN" ]; then
+            echo "FLATHUB_TOKEN secret is not set; skipping Flathub push."
+            echo "To enable automatic Flathub updates:"
+            echo "  1. Submit the initial Flathub application (PR to flathub/flathub)"
+            echo "  2. After acceptance, add a GitHub PAT with push access to"
+            echo "     flathub/me.koeda.chordsketch as FLATHUB_TOKEN secret."
+            exit 0
+          fi
+
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # See the credential-persistence note on `update-homebrew` above.
+          # The token IS written to `flathub/.git/config`; do not artifact
+          # this directory. #1086.
+          git clone "https://x-access-token:${FLATHUB_TOKEN}@github.com/flathub/me.koeda.chordsketch.git" flathub
+          cd flathub
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create a new branch for the version update
+          BRANCH="update-v${VERSION}"
+          git checkout -b "$BRANCH"
+          cp ../me.koeda.chordsketch.yml .
+          git add me.koeda.chordsketch.yml
+          # If nothing changed (re-run on same release), skip the push.
+          if git diff --cached --quiet; then
+            echo "Flathub manifest already up-to-date for ${VERSION}; nothing to do."
+            exit 0
+          fi
+          git commit -m "Update to ${VERSION}"
+          git push -u origin "$BRANCH"
+
+          # Open a PR on the Flathub repo for review
+          cd ..
+          GH_TOKEN="$FLATHUB_TOKEN" gh pr create \
+            --repo flathub/me.koeda.chordsketch \
+            --base master \
+            --head "$BRANCH" \
+            --title "Update chordsketch to ${VERSION}" \
+            --body "$(cat <<PR_BODY
+## Update chordsketch to ${VERSION}
+
+- **Version**: ${VERSION}
+- **Source**: Pre-built x86_64-linux-gnu binary from [GitHub Release](https://github.com/koedame/chordsketch/releases/tag/v${VERSION})
+
+Automated update from the [chordsketch post-release workflow](https://github.com/koedame/chordsketch/blob/main/.github/workflows/post-release.yml).
+PR_BODY
+          )"
