@@ -1,0 +1,36 @@
+# -*- coding: utf-8; mode: tcl; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- vim:fenc=utf-8:ft=tcl:et:sw=4:ts=4:sts=4
+
+PortSystem          1.0
+PortGroup           github 1.0
+PortGroup           cargo 1.0
+
+github.setup        koedame chordsketch 0.2.0 v
+revision            0
+categories          textproc music
+license             MIT
+maintainers         {koeda.me:oss @koedame} openmaintainer
+description         ChordPro file format parser and renderer
+long_description    ChordSketch is a Rust implementation of the ChordPro file \
+                    format. It parses .cho files and renders them to plain text, \
+                    HTML, or PDF output. Full compatibility with the ChordPro \
+                    specification.
+
+checksums           rmd160  0 \
+                    sha256  0 \
+                    size    0
+
+# The CLI crate is at crates/cli within the workspace.
+# cargo.crates is populated by running:
+#   sudo port -v extract chordsketch && cd <workdir> && cargo2port.py
+# See the MacPorts Rust PortGroup documentation for details.
+
+build.dir           ${worksrcpath}
+cargo.bin           ${worksrcpath}/target/[cargo.rust_platform]/release/chordsketch
+
+destroot {
+    xinstall -m 0755 ${cargo.bin} ${destroot}${prefix}/bin/chordsketch
+}
+
+notes "
+ChordSketch has been installed. Run 'chordsketch --help' to get started.
+"

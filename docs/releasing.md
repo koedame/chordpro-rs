@@ -269,7 +269,30 @@ After the release workflow completes and the GitHub Release is published:
       koedame.chordsketch` becomes available within minutes. The next
       `readme-smoke.yml` run will turn the `winget (Windows)` job green.
 
-5. **Automated channel rollup** — `.github/workflows/release-verify.yml`
+5. **MacPorts Portfile** — MacPorts does **not** have an automated update
+   mechanism. After each release, the Portfile must be updated manually and
+   submitted as a PR to `macports/macports-ports`:
+
+   1. A reference Portfile lives at `packaging/macports/Portfile`. Update
+      the `github.setup` version and the `checksums` block. To compute the
+      checksums, download the source tarball that GitHub auto-generates for
+      the tag:
+      ```bash
+      TAG=vX.Y.Z
+      curl -L -o chordsketch-${TAG}.tar.gz \
+        "https://github.com/koedame/chordsketch/archive/refs/tags/${TAG}.tar.gz"
+      openssl dgst -rmd160 chordsketch-${TAG}.tar.gz
+      openssl dgst -sha256 chordsketch-${TAG}.tar.gz
+      wc -c chordsketch-${TAG}.tar.gz
+      ```
+   2. If the `cargo.crates` block needs updating (dependency versions
+      changed), regenerate it using MacPorts' `cargo2port.py` tool from a
+      local MacPorts install.
+   3. Fork `macports/macports-ports` (or use the existing fork), place the
+      Portfile in `textproc/chordsketch/Portfile`, and open a PR.
+   4. Wait for MacPorts CI and maintainer review.
+
+6. **Automated channel rollup** — `.github/workflows/release-verify.yml`
    runs automatically on `release: published`, queries every registry
    listed in `ci/release-channels.toml`, and appends a
    `## Channel Verification` section to the release body. Wait for that
@@ -295,7 +318,7 @@ After the release workflow completes and the GitHub Release is published:
      -f tag=vX.Y.Z -f force_stale_channel=crates-io-cli
    ```
 
-6. **Manual verification** — confirm every documented install path works for
+7. **Manual verification** — confirm every documented install path works for
    end users. Easiest: trigger `readme-smoke.yml` via `workflow_dispatch` and
    confirm every job is green. `gh workflow run` does not print the run id,
    so resolve it from the workflow's most recent run before passing it to
