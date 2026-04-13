@@ -24,6 +24,9 @@
       forEachSystem = f:
         nixpkgs.lib.genAttrs systems
           (system: f (import nixpkgs { inherit system; }));
+
+      # Read version from the CLI crate so it stays in sync automatically.
+      cliCargoToml = builtins.fromTOML (builtins.readFile ./crates/cli/Cargo.toml);
     in {
       packages = forEachSystem (pkgs: rec {
         # Build the `chordsketch` CLI from the Cargo workspace.
@@ -34,7 +37,7 @@
         # additional `buildInputs` are needed.
         chordsketch = pkgs.rustPlatform.buildRustPackage {
           pname = "chordsketch";
-          version = "0.2.0";
+          version = cliCargoToml.package.version;
 
           src = ./.;
 
@@ -51,7 +54,7 @@
             license = licenses.mit;
             maintainers = [ ];
             mainProgram = "chordsketch";
-            platforms = platforms.all;
+            platforms = systems;
           };
         };
 
