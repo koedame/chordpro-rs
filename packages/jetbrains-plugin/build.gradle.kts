@@ -18,7 +18,6 @@ dependencies {
     intellijPlatform {
         intellijIdeaCommunity("2024.1")
         bundledPlugin("org.jetbrains.plugins.textmate")
-        pluginVerifier()
     }
 }
 
@@ -34,7 +33,10 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
 tasks {
     patchPluginXml {
         sinceBuild.set("241")
-        untilBuild.set("253.*")
+        // TextMate-only plugin with no internal API usage; omitting untilBuild
+        // allows the plugin to remain compatible with future IDE releases without
+        // requiring a version bump on every IntelliJ major release.
+        untilBuild.set(provider { null })
     }
 
     // Copy TextMate bundle files into the plugin sandbox alongside the JAR.
