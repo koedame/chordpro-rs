@@ -179,7 +179,10 @@ fn build_to_unicode_cmap(cid_glyphs: &BTreeMap<u16, char>) -> String {
     cmap.push_str("/CMapName /Adobe-Identity-UCS def\n");
     cmap.push_str("/CMapType 2 def\n");
 
-    let entries: Vec<_> = cid_glyphs.iter().collect();
+    // GID 0 (.notdef) must never appear in a ToUnicode CMap (PDF spec §9.10.3).
+    // Filter it here rather than at recording time so that cid_glyphs accurately
+    // reflects whether /F5 was referenced in the content stream.
+    let entries: Vec<_> = cid_glyphs.iter().filter(|&(&gid, _)| gid != 0).collect();
     for chunk in entries.chunks(100) {
         cmap.push_str(&format!("{} beginbfchar\n", chunk.len()));
         for &(gid, ch) in chunk {
@@ -2399,6 +2402,9 @@ impl PdfDocument {
         }
         self.current_page_mut().extend(ops_batch);
         for (gid, ch) in cid_mappings {
+            // Record all GIDs (including GID 0 for .notdef) so that cid_needed
+            // remains true whenever the /F5 font was referenced in the content stream.
+            // GID 0 is filtered out of the ToUnicode CMap in build_to_unicode_cmap.
             self.cid_glyphs.entry(gid).or_insert(ch);
         }
     }
@@ -2454,6 +2460,9 @@ impl PdfDocument {
         }
         self.current_page_mut().extend(ops_batch);
         for (gid, ch) in cid_mappings {
+            // Record all GIDs (including GID 0 for .notdef) so that cid_needed
+            // remains true whenever the /F5 font was referenced in the content stream.
+            // GID 0 is filtered out of the ToUnicode CMap in build_to_unicode_cmap.
             self.cid_glyphs.entry(gid).or_insert(ch);
         }
     }
@@ -2511,6 +2520,9 @@ impl PdfDocument {
         }
         self.current_page_mut().extend(ops_batch);
         for (gid, ch) in cid_mappings {
+            // Record all GIDs (including GID 0 for .notdef) so that cid_needed
+            // remains true whenever the /F5 font was referenced in the content stream.
+            // GID 0 is filtered out of the ToUnicode CMap in build_to_unicode_cmap.
             self.cid_glyphs.entry(gid).or_insert(ch);
         }
     }
@@ -2801,7 +2813,19 @@ impl PdfDocument {
             let to_unicode_obj = f5_obj + 4;
 
             // Derive scaled font metrics from the bundled face.
+            //
+            // The `scale()` closure converts design-unit values to PDF glyph-space
+            // units (1/1000 em) correctly for any UPM. However, the /W array below
+            // uses raw glyph_hor_advance values without scaling, which is only correct
+            // when UPM=1000. If the bundled font is ever swapped for one with a
+            // different UPM (e.g. 2048), /W would silently produce wrong metrics.
+            // The debug_assert fires before any metric computation to catch this.
             let face = unicode_face();
+            debug_assert_eq!(
+                face.units_per_em(),
+                1000,
+                "CID font /W values assume UPM=1000; scale advances by 1000/upe if the font changes"
+            );
             let upe = face.units_per_em() as i32;
             // Scale a font-design-unit value to PDF glyph-space units (1/1000 em).
             let scale = |v: i32| v * 1000 / upe;
@@ -2820,6 +2844,8 @@ impl PdfDocument {
 
             // Build /W width array for glyphs that differ from the default (1000).
             // Format: gid [width] gid [width] ...
+            // Values are raw advances from ttf-parser, valid in PDF glyph-space units
+            // only because UPM=1000 (see debug_assert above).
             const DW: u16 = 1000;
             let width_array: String = {
                 let entries: Vec<String> = self
@@ -3365,6 +3391,38 @@ mod tests {
         assert!(
             !text.contains("CIDFontType0"),
             "CID font must not appear in ASCII-only PDFs"
+        );
+    }
+
+    #[test]
+    fn test_missing_glyph_gid0_not_in_to_unicode_cmap() {
+        // Regression test for #1676: characters absent from the bundled font map to
+        // GID 0 (.notdef) in the content stream. GID 0 must NOT appear in the
+        // ToUnicode CMap (PDF spec §9.10.3).
+        //
+        // U+1F600 (😀) and U+1F601 (😁) are emoji not present in the Noto Sans CJK
+        // subset, so both produce GID 0 in the hex string. The CID font chain MUST
+        // still be emitted (cid_needed=true) because /F5 was referenced in the
+        // content stream — even though no non-GID-0 mappings exist.
+        let song = chordsketch_core::parse("{title: T}\n\u{1F600}\u{1F601}").unwrap();
+        let bytes = render_song(&song);
+        let text = String::from_utf8_lossy(&bytes);
+        // The hex content stream should encode both characters as GID 0.
+        assert!(
+            text.contains("<00000000>"),
+            "both missing glyphs should emit GID 0"
+        );
+        // GID 0 must not appear as a source entry in the ToUnicode CMap.
+        assert!(
+            !text.contains("<0000> <"),
+            "GID 0 (.notdef) must not appear as a CMap source entry"
+        );
+        // The CID font chain must still be present because /F5 was used in the
+        // content stream. Absence would produce an invalid PDF referencing an
+        // undeclared font resource (PDF spec §7.8.3).
+        assert!(
+            text.contains("CIDFontType0"),
+            "CID font chain must be emitted even when all glyphs map to GID 0"
         );
     }
 
