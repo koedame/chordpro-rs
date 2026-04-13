@@ -1,0 +1,27 @@
+<idea-plugin>
+    <id>me.koeda.chordsketch</id>
+    <name>ChordPro</name>
+    <vendor email="noreply@koeda.me" url="https://github.com/koedame/chordsketch">koedame</vendor>
+
+    <description><![CDATA[
+<p>Syntax highlighting for <a href="https://www.chordpro.org/">ChordPro</a>
+(.cho, .chordpro, .chopro) files via a TextMate grammar.</p>
+
+<p>Part of the <a href="https://github.com/koedame/chordsketch">ChordSketch</a>
+project &mdash; a Rust implementation of the ChordPro file format.</p>
+
+<h3>Features</h3>
+<ul>
+  <li>Syntax highlighting for directives, chords, comments, and delegate blocks</li>
+  <li>File type recognition for .cho, .chordpro, and .chopro extensions</li>
+  <li>Bracket matching and auto-closing for { } and [ ]</li>
+</ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.plugins.textmate</depends>
+
+    <extensions defaultExtensionNs="org.jetbrains.plugins.textmate">
+        <bundleProvider implementation="me.koeda.chordsketch.ChordProBundleProvider"/>
+    </extensions>
+</idea-plugin>

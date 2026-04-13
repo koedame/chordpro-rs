@@ -1,0 +1,55 @@
+name: JetBrains Plugin
+
+# Builds and verifies the JetBrains IDE plugin for ChordPro syntax highlighting.
+# This is a component-specific check (only the JetBrains plugin project can
+# break this workflow), so a paths: filter is appropriate.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/jetbrains-plugin/**"
+      - "syntaxes/chordpro.tmLanguage.json"
+      - "syntaxes/language-configuration.json"
+      - ".github/workflows/jetbrains.yml"
+  pull_request:
+    paths:
+      - "packages/jetbrains-plugin/**"
+      - "syntaxes/chordpro.tmLanguage.json"
+      - "syntaxes/language-configuration.json"
+      - ".github/workflows/jetbrains.yml"
+
+concurrency:
+  group: jetbrains-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and verify plugin
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/jetbrains-plugin
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Build plugin
+        run: ./gradlew buildPlugin
+
+      - name: Verify plugin project configuration
+        run: ./gradlew verifyPluginProjectConfiguration
+
+      - name: Verify TextMate grammar is in sync with syntaxes/
+        working-directory: .
+        run: |
+          diff syntaxes/chordpro.tmLanguage.json packages/jetbrains-plugin/textmate/chordpro/chordpro.tmLanguage.json
+          diff syntaxes/language-configuration.json packages/jetbrains-plugin/textmate/chordpro/language-configuration.json
