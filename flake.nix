@@ -4,7 +4,11 @@
   # Only nixpkgs is needed as an input.  The Rust toolchain bundled with
   # nixpkgs unstable supports Rust 1.85+ and the 2024 edition used by this
   # workspace, so no rust-overlay or similar overlay is required.
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  #
+  # The input is pinned to a specific nixpkgs commit so the derivation is
+  # reproducible without requiring a committed flake.lock.  Update this SHA
+  # (and re-verify the build) when bumping nixpkgs.
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/4c1018dae018162ec878d42fec712642d214fdfa"; # nixos-unstable 2026-04-09
 
   outputs = { self, nixpkgs }:
     let
