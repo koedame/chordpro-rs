@@ -295,6 +295,46 @@ jobs:
           SNAP_FILE=$(ls chordsketch_*.snap)
           snapcraft upload "$SNAP_FILE" --release=stable
 
+  update-cocoapods:
+    name: Update CocoaPods podspec
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Determine version
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$RELEASE_TAG"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate podspec
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sed -e "s/{{VERSION}}/${VERSION}/g" \
+            packaging/cocoapods/ChordSketch.podspec.template > ChordSketch.podspec
+          cat ChordSketch.podspec
+
+      - name: Push to CocoaPods trunk
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+        run: |
+          if [ -z "$COCOAPODS_TRUNK_TOKEN" ]; then
+            echo "COCOAPODS_TRUNK_TOKEN secret is not set; skipping CocoaPods push."
+            echo "To enable automatic CocoaPods updates, add the trunk token"
+            echo "as a repository secret named COCOAPODS_TRUNK_TOKEN."
+            exit 0
+          fi
+
+          pod trunk push ChordSketch.podspec --allow-warnings
+
   update-aur:
     name: Update AUR package
     runs-on: ubuntu-latest
