@@ -229,6 +229,49 @@ How sweet the sound
     (lyrics)))
 
 ==================
+Hash mid-line is lyrics not comment
+==================
+
+Play the C# note
+
+---
+
+(source_file
+  (content_line
+    (lyrics)))
+
+==================
+Chord with sharp in lyrics context
+==================
+
+[G]She said C# is her key
+
+---
+
+(source_file
+  (content_line
+    (chord
+      (chord_name))
+    (lyrics)))
+
+==================
+Sharp chord in brackets unaffected
+==================
+
+[C#]text [F#/C#]more
+
+---
+
+(source_file
+  (content_line
+    (chord
+      (chord_name))
+    (lyrics)
+    (chord
+      (chord_name))
+    (lyrics)))
+
+==================
 Mixed content
 ==================
 

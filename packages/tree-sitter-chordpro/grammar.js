@@ -7,6 +7,12 @@ module.exports = grammar({
   // Carriage returns are ignored (handle \r\n gracefully)
   extras: (_) => [/\r/],
 
+  // The comment token is handled by an external scanner so that `#` is
+  // only recognised as a comment start at column 0 (the beginning of a
+  // line).  Mid-line `#` (e.g. in `C#` or `Play the C# note`) must be
+  // treated as ordinary lyric text.
+  externals: ($) => [$.comment],
+
   rules: {
     source_file: ($) => repeat($._line),
 
@@ -20,9 +26,6 @@ module.exports = grammar({
       ),
 
     _empty_line: (_) => /\n/,
-
-    // Lines starting with # are comments
-    comment: (_) => token(seq("#", /[^\n]*/)),
 
     // Delegate blocks: {start_of_X} ... {end_of_X}
     // These wrap content like ABC notation, Lilypond, etc.
@@ -84,8 +87,9 @@ module.exports = grammar({
 
     chord_name: (_) => /[^\[\]\n]+/,
 
-    // Lyric text: any text that is not a chord, directive, or comment.
-    // Excludes [, {, }, #, and newline to avoid consuming syntax characters.
-    lyrics: (_) => /[^\[\n{}#]+/,
+    // Lyric text: any text that is not a chord, directive, or syntax delimiter.
+    // `#` is allowed mid-line (e.g. `C#`, `F# note`) because the external
+    // scanner only matches comments at column 0.
+    lyrics: (_) => /[^\[\n{}]+/,
   },
 });

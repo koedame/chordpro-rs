@@ -38,22 +38,6 @@
       "type": "PATTERN",
       "value": "\\n"
     },
-    "comment": {
-      "type": "TOKEN",
-      "content": {
-        "type": "SEQ",
-        "members": [
-          {
-            "type": "STRING",
-            "value": "#"
-          },
-          {
-            "type": "PATTERN",
-            "value": "[^\\n]*"
-          }
-        ]
-      }
-    },
     "delegate_block": {
       "type": "SEQ",
       "members": [
@@ -319,7 +303,7 @@
     },
     "lyrics": {
       "type": "PATTERN",
-      "value": "[^\\[\\n{}#]+"
+      "value": "[^\\[\\n{}]+"
     }
   },
   "extras": [
@@ -330,7 +314,12 @@
   ],
   "conflicts": [],
   "precedences": [],
-  "externals": [],
+  "externals": [
+    {
+      "type": "SYMBOL",
+      "name": "comment"
+    }
+  ],
   "inline": [],
   "supertypes": [],
   "reserved": {}
