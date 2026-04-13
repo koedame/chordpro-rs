@@ -150,6 +150,10 @@ name = "chordpro"
 source = { git = "https://github.com/koedame/chordsketch", rev = "main", subpath = "packages/tree-sitter-chordpro" }
 ```
 
+> **Tip:** For reproducible builds, replace `rev = "main"` with a specific
+> commit hash (e.g. `rev = "404b0a9"`). Using `"main"` always fetches the
+> latest grammar on `hx --grammar fetch`.
+
 ### Building the grammar
 
 Fetch and build the tree-sitter grammar:
