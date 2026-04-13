@@ -37,6 +37,9 @@ module.exports = grammar({
       seq(
         "{",
         field("name", alias(/start_of_[a-zA-Z][a-zA-Z0-9_-]*/, $.directive_name)),
+        optional(
+          seq(token.immediate(/[: ]\s*/), field("value", $.directive_value)),
+        ),
         "}",
         optional("\n"),
       ),

@@ -67,6 +67,25 @@ K:C
       name: (directive_name))))
 
 ==================
+Labeled delegate block
+==================
+
+{start_of_verse: Verse 1}
+[G]Amazing grace
+{end_of_verse}
+
+---
+
+(source_file
+  (delegate_block
+    (block_start_directive
+      name: (directive_name)
+      value: (directive_value))
+    (block_content)
+    (block_end_directive
+      name: (directive_name))))
+
+==================
 Chord line
 ==================
 

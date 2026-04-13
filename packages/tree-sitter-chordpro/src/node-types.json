@@ -33,6 +33,16 @@
             "named": true
           }
         ]
+      },
+      "value": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "directive_value",
+            "named": true
+          }
+        ]
       }
     }
   },
