@@ -159,6 +159,79 @@ jobs:
           git commit -m "Update chordsketch to ${VERSION}"
           git push
 
+  update-chocolatey:
+    name: Update Chocolatey package
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Determine version
+        id: version
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$RELEASE_TAG"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ steps.version.outputs.tag }}" -p checksums.txt
+
+      - name: Generate package
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          SHA_WINDOWS=$(grep "x86_64-pc-windows-msvc" checksums.txt | awk '{print $1}')
+
+          if [[ ! "$SHA_WINDOWS" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "ERROR: missing or invalid SHA256 for x86_64-pc-windows-msvc: '${SHA_WINDOWS}'" >&2
+            exit 1
+          fi
+
+          mkdir -p choco-pkg/tools
+
+          sed \
+            -e "s/{{VERSION}}/${VERSION}/g" \
+            packaging/chocolatey/chordsketch.nuspec.template > choco-pkg/chordsketch.nuspec
+
+          sed \
+            -e "s/{{VERSION}}/${VERSION}/g" \
+            -e "s/{{SHA256_X86_64_PC_WINDOWS_MSVC}}/${SHA_WINDOWS}/g" \
+            packaging/chocolatey/tools/chocolateyInstall.ps1.template > choco-pkg/tools/chocolateyInstall.ps1
+
+          echo "=== chordsketch.nuspec ==="
+          cat choco-pkg/chordsketch.nuspec
+          echo "=== chocolateyInstall.ps1 ==="
+          cat choco-pkg/tools/chocolateyInstall.ps1
+
+      - name: Pack and push
+        shell: pwsh
+        env:
+          CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+        run: |
+          if (-not $env:CHOCOLATEY_API_KEY) {
+            Write-Host "CHOCOLATEY_API_KEY secret is not set; skipping Chocolatey push."
+            Write-Host "To enable automatic Chocolatey updates, add the API key"
+            Write-Host "as a repository secret named CHOCOLATEY_API_KEY."
+            exit 0
+          }
+
+          cd choco-pkg
+          choco pack chordsketch.nuspec
+          choco push chordsketch.${{ steps.version.outputs.version }}.nupkg `
+            --source https://push.chocolatey.org/ `
+            --api-key $env:CHOCOLATEY_API_KEY
+
   update-aur:
     name: Update AUR package
     runs-on: ubuntu-latest
