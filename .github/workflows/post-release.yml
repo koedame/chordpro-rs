@@ -159,6 +159,114 @@ jobs:
           git commit -m "Update chordsketch to ${VERSION}"
           git push
 
+  update-aur:
+    name: Update AUR package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Determine version
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$RELEASE_TAG"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ steps.version.outputs.tag }}" -p checksums.txt
+
+      - name: Generate PKGBUILD and .SRCINFO
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          SHA_LINUX=$(grep "x86_64-unknown-linux-gnu" checksums.txt | awk '{print $1}')
+
+          if [[ ! "$SHA_LINUX" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "ERROR: missing or invalid SHA256 for x86_64-unknown-linux-gnu: '${SHA_LINUX}'" >&2
+            exit 1
+          fi
+
+          # Generate PKGBUILD from template
+          sed \
+            -e "s/{{VERSION}}/${VERSION}/g" \
+            -e "s/{{SHA256_X86_64_UNKNOWN_LINUX_GNU}}/${SHA_LINUX}/g" \
+            packaging/aur/PKGBUILD.template > PKGBUILD
+
+          # Generate .SRCINFO deterministically (the format is a flat
+          # key-value representation of PKGBUILD fields).
+          cat > .SRCINFO <<SRCINFO
+          pkgbase = chordsketch
+          	pkgdesc = ChordPro file format parser and renderer
+          	pkgver = ${VERSION}
+          	pkgrel = 1
+          	url = https://github.com/koedame/chordsketch
+          	arch = x86_64
+          	license = MIT
+          	provides = chordsketch
+          	conflicts = chordsketch-git
+          	source = https://github.com/koedame/chordsketch/releases/download/v${VERSION}/chordsketch-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz
+          	sha256sums = ${SHA_LINUX}
+
+          pkgname = chordsketch
+          SRCINFO
+
+          # Strip leading whitespace added by the heredoc indentation
+          sed -i 's/^          //' .SRCINFO
+
+          echo "=== PKGBUILD ==="
+          cat PKGBUILD
+          echo "=== .SRCINFO ==="
+          cat .SRCINFO
+
+      - name: Push to AUR
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          if [ -z "$AUR_SSH_KEY" ]; then
+            echo "AUR_SSH_KEY secret is not set; skipping AUR push."
+            echo "To enable automatic AUR updates, add the AUR SSH private key"
+            echo "as a repository secret named AUR_SSH_KEY."
+            exit 0
+          fi
+
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Set up SSH for AUR access
+          mkdir -p ~/.ssh
+          echo "$AUR_SSH_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host aur.archlinux.org
+            IdentityFile ~/.ssh/aur
+            User aur
+          SSH_CONFIG
+
+          # Clone, update, and push
+          git clone ssh://aur@aur.archlinux.org/chordsketch.git aur-repo
+          cd aur-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp ../PKGBUILD .
+          cp ../.SRCINFO .
+          git add PKGBUILD .SRCINFO
+          # If nothing changed (re-run on same release), skip the push.
+          if git diff --cached --quiet; then
+            echo "AUR package already up-to-date for ${VERSION}; nothing to do."
+            exit 0
+          fi
+          git commit -m "Update to ${VERSION}"
+          git push
+
   update-swift-package:
     name: Update Swift Package.swift
     runs-on: ubuntu-latest
