@@ -1,0 +1,4 @@
+G         C
+Hello world
+Am        D
+Goodbye now

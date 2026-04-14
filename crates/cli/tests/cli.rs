@@ -578,3 +578,159 @@ fn test_completions_powershell() {
         .success()
         .stdout(predicate::str::contains("Register-ArgumentCompleter"));
 }
+
+// --- convert subcommand ---
+
+#[test]
+fn test_convert_plaintext_from_file() {
+    Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args(["convert", &fixture("plain.txt"), "--from", "plaintext"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[G]Hello"))
+        .stdout(predicate::str::contains("[C]"))
+        .stdout(predicate::str::contains("[Am]Goodbye"));
+}
+
+#[test]
+fn test_convert_plaintext_from_stdin() {
+    Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args(["convert", "-", "--from", "plaintext"])
+        .write_stdin("G         C\nHello world\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[G]Hello"))
+        .stdout(predicate::str::contains("[C]"));
+}
+
+#[test]
+fn test_convert_plaintext_auto_detect() {
+    // Auto-detection should recognise plain chord+lyrics from content.
+    Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args(["convert", &fixture("plain.txt")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[G]Hello"))
+        .stdout(predicate::str::contains("[Am]Goodbye"));
+}
+
+#[test]
+fn test_convert_abc() {
+    Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args(["convert", &fixture("simple.abc"), "--from", "abc"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("{title: Simple ABC Tune}"));
+}
+
+#[test]
+fn test_convert_musicxml_import() {
+    Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args(["convert", &fixture("simple.xml")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[C]"))
+        .stdout(predicate::str::contains("[Am]"))
+        .stdout(predicate::str::contains("Hello"));
+}
+
+#[test]
+fn test_convert_musicxml_import_forced() {
+    Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args(["convert", &fixture("simple.xml"), "--from", "musicxml"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[C]"))
+        .stdout(predicate::str::contains("Hello"));
+}
+
+#[test]
+fn test_convert_musicxml_export() {
+    Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args(["convert", &fixture("simple.cho"), "--to", "musicxml"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<score-partwise"))
+        .stdout(predicate::str::contains("<root-step>G</root-step>"));
+}
+
+#[test]
+fn test_convert_musicxml_export_to_file() {
+    let output_file = NamedTempFile::new().unwrap();
+    let output_path = output_file.path().to_string_lossy().to_string();
+
+    Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args([
+            "convert",
+            &fixture("simple.cho"),
+            "--to",
+            "musicxml",
+            "-o",
+            &output_path,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+
+    let content = std::fs::read_to_string(&output_path).unwrap();
+    assert!(content.contains("<score-partwise"));
+}
+
+#[test]
+fn test_convert_chordpro_passthrough() {
+    // A .cho file with auto-detection should pass through unchanged.
+    Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args(["convert", &fixture("simple.cho")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("{title: Simple Song}"))
+        .stdout(predicate::str::contains("[G]Hello [C]world"));
+}
+
+#[test]
+fn test_convert_nonexistent_file() {
+    Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args(["convert", "/tmp/nonexistent-chordpro-convert-test.txt"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("error:"));
+}
+
+#[test]
+fn test_convert_export_multiple_files_rejected() {
+    // --to musicxml with multiple files should fail.
+    Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args([
+            "convert",
+            &fixture("simple.cho"),
+            &fixture("second.cho"),
+            "--to",
+            "musicxml",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("single input file"));
+}
+
+#[test]
+fn test_convert_help() {
+    Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args(["convert", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--from"))
+        .stdout(predicate::str::contains("--to"))
+        .stdout(predicate::str::contains("musicxml"));
+}
