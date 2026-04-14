@@ -30,6 +30,19 @@ into a structured AST and rendering to plain text, HTML, and PDF.
 **[ChordSketch Playground](https://koedame.github.io/chordsketch/)** — try
 ChordPro rendering directly in your browser, no installation required.
 
+## Editor Integration
+
+ChordSketch provides syntax highlighting and Language Server Protocol (LSP)
+support for multiple editors:
+
+- **VS Code / Cursor / Windsurf / VSCodium** — install the [ChordSketch extension](https://marketplace.visualstudio.com/items?itemName=koedame.chordsketch)
+- **JetBrains IDEs** (IntelliJ IDEA, PyCharm, WebStorm, etc.) — install the ChordPro plugin
+- **Zed** — install the ChordPro extension from the extensions panel
+- **Neovim** — manual tree-sitter + LSP configuration
+- **Helix** — manual grammar + LSP configuration
+
+See [docs/editors.md](docs/editors.md) for detailed setup instructions.
+
 ## Installation
 
 ### npm (WASM)
@@ -129,7 +142,9 @@ println!("{text}");
 | [`chordsketch-render-html`](crates/render-html) | HTML renderer |
 | [`chordsketch-render-pdf`](crates/render-pdf) | PDF renderer |
 | [`chordsketch`](crates/cli) | Command-line tool |
+| [`chordsketch-lsp`](crates/lsp) | Language Server Protocol server |
 | [`chordsketch-wasm`](crates/wasm) | WebAssembly bindings via wasm-bindgen |
+| [`chordsketch-convert-musicxml`](crates/convert-musicxml) | MusicXML ↔ ChordPro bidirectional converter |
 
 ### Packages
 
