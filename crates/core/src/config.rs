@@ -179,6 +179,7 @@ impl Config {
     /// # Errors
     ///
     /// Returns a [`rrjson::ParseError`] if the input is malformed.
+    #[must_use = "parse errors should not be silently discarded"]
     pub fn parse(input: &str) -> Result<Self, rrjson::ParseError> {
         let root = rrjson::parse_rrjson(input)?;
         Ok(Self { root })
@@ -259,6 +260,7 @@ impl Config {
     /// Returns [`ConfigError::Io`] if the file cannot be read, or
     /// [`ConfigError::Parse`] if the content is malformed.
     #[cfg(not(target_arch = "wasm32"))]
+    #[must_use = "config resolution errors should not be silently discarded"]
     pub fn resolve(name: &str) -> Result<ConfigResolveResult, ConfigError> {
         // Try preset first
         if let Some(preset) = Self::preset(name) {
@@ -297,6 +299,7 @@ impl Config {
     ///
     /// Returns [`DefineError`] if the input has no `=`, the key is empty,
     /// or the dotted key exceeds the maximum nesting depth.
+    #[must_use = "define errors should not be silently discarded"]
     pub fn with_define(mut self, define: &str) -> Result<Self, DefineError> {
         self.apply_define(define)?;
         Ok(self)
@@ -313,6 +316,7 @@ impl Config {
     /// Returns [`DefineError`] if the input has no `=`, the key is empty,
     /// or the dotted key exceeds the maximum nesting depth. On error,
     /// `self` is not modified.
+    #[must_use = "define errors should not be silently discarded"]
     pub fn apply_define(&mut self, define: &str) -> Result<(), DefineError> {
         let Some(eq_pos) = define.find('=') else {
             return Err(DefineError::MissingEquals);

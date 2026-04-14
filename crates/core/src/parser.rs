@@ -181,6 +181,7 @@ impl Parser {
     /// Returns a [`ParseError`] on the first structural problem encountered
     /// (e.g., unclosed directives or chords). Use [`parse_lenient`] to
     /// collect all errors and obtain a partial AST.
+    #[must_use = "callers must handle the parse result"]
     pub fn parse(mut self) -> Result<Song, ParseError> {
         let mut song = Song::new();
 
@@ -210,12 +211,14 @@ impl Parser {
     /// skips to the next line to continue. The returned [`ParseResult`]
     /// contains the partial AST (all successfully parsed lines) and a
     /// list of all errors encountered.
+    #[must_use = "callers must handle the parse result"]
     pub fn parse_lenient(self) -> ParseResult {
         self.parse_lenient_limited(0)
     }
 
     /// Like [`parse_lenient`](Self::parse_lenient), but stops collecting errors
     /// after `max_errors` have been recorded. Set to `0` to disable the limit.
+    #[must_use = "callers must handle the parse result"]
     pub fn parse_lenient_limited(mut self, max_errors: usize) -> ParseResult {
         let mut song = Song::new();
         let mut errors = Vec::new();

@@ -268,6 +268,7 @@ pub struct ParseResult {
 /// # Errors
 ///
 /// Returns a [`ParseError`] if the input is malformed.
+#[must_use = "parse errors should not be silently discarded"]
 pub fn parse_rrjson(input: &str) -> Result<Value, ParseError> {
     parse_rrjson_with_warnings(input).map(|r| r.value)
 }
@@ -278,6 +279,7 @@ pub fn parse_rrjson(input: &str) -> Result<Value, ParseError> {
 /// # Errors
 ///
 /// Returns a [`ParseError`] if the input is malformed.
+#[must_use = "parse errors should not be silently discarded"]
 pub fn parse_rrjson_with_warnings(input: &str) -> Result<ParseResult, ParseError> {
     let mut parser = Parser::new(input);
     parser.skip_ws_and_comments()?;

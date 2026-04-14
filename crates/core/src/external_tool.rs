@@ -154,6 +154,7 @@ impl Drop for TempDirGuard {
 /// - The temporary file cannot be written
 /// - `abc2svg` is not available or fails to execute
 /// - The output does not contain a recognizable `<body>` section
+#[must_use = "invocation errors should not be silently discarded"]
 pub fn invoke_abc2svg(abc_content: &str) -> Result<String, String> {
     let sanitized = sanitize_abc_content(abc_content);
 
@@ -346,6 +347,7 @@ fn extract_body_content(html: &str) -> Option<String> {
 /// - The temporary directory or file cannot be created
 /// - `lilypond` is not available or fails to execute
 /// - The output SVG file cannot be read
+#[must_use = "invocation errors should not be silently discarded"]
 pub fn invoke_lilypond(ly_content: &str) -> Result<String, String> {
     let sanitized = sanitize_lilypond_content(ly_content);
 
@@ -548,6 +550,7 @@ fn collect_musescore_pages(tmp_dir: &std::path::Path) -> Result<String, String> 
 /// - The temporary file cannot be written
 /// - Neither `mscore` nor `musescore` is available or they fail to execute
 /// - No SVG output file can be found after a successful run
+#[must_use = "invocation errors should not be silently discarded"]
 pub fn invoke_musescore(musicxml_content: &str) -> Result<String, String> {
     // Check tool availability before creating any temp files so that a missing
     // tool never leaves an orphaned directory behind.
