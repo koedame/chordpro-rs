@@ -83,6 +83,7 @@ at post-release verification rather than before the tag is cut.
      publish has succeeded and its allowlist entry has been retired)
    - `crates/napi/package.json` — both the main package and the per-platform
      manifests under `crates/napi/npm/<triple>/package.json`
+   - `packages/tree-sitter-chordpro/package.json`
 
    Hardcoded pins in CI:
    - `.github/workflows/readme-smoke.yml` ~line 204:

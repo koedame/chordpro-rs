@@ -49,6 +49,7 @@ def _build_repo(
     npm_version: str = "0.2.0",
     vscode_version: str = "0.2.0",
     napi_version: str = "0.2.0",
+    tree_sitter_version: str = "0.2.0",
     smoke_npm_pin: str = "0.2.0",
     smoke_caret: str = "0.2",
 ) -> None:
@@ -102,6 +103,14 @@ def _build_repo(
     npm_dir.mkdir(parents=True, exist_ok=True)
     (npm_dir / "package.json").write_text(
         f'{{\n  "name": "@chordsketch/wasm",\n  "version": "{npm_version}"\n}}\n',
+        encoding="utf-8",
+    )
+
+    # packages/tree-sitter-chordpro/package.json
+    ts_dir = root / "packages" / "tree-sitter-chordpro"
+    ts_dir.mkdir(parents=True, exist_ok=True)
+    (ts_dir / "package.json").write_text(
+        f'{{\n  "name": "tree-sitter-chordpro",\n  "version": "{tree_sitter_version}"\n}}\n',
         encoding="utf-8",
     )
 

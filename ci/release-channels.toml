@@ -102,6 +102,17 @@ expected_version = "tag"
 required_secrets = ["NPM_TOKEN"]
 notes = "Patch skew from workspace is allowed; see ci/version-skew-allowlist.toml."
 
+# ---------------------------------------------------------------- npm (tree-sitter)
+
+[[channels]]
+id = "npm-tree-sitter"
+display = "npm — tree-sitter-chordpro"
+kind = "npm"
+package = "tree-sitter-chordpro"
+expected_version = "tag"
+required_secrets = ["NPM_TOKEN"]
+notes = "Unscoped package; version tracks workspace releases."
+
 # ---------------------------------------------------------------- installers
 
 [[channels]]

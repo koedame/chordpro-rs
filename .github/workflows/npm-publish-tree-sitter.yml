@@ -1,0 +1,74 @@
+name: Publish tree-sitter-chordpro
+
+# Publishes the tree-sitter-chordpro grammar package to npm.
+# The generated parser files (src/parser.c, src/grammar.json) are already
+# committed, so no build step is needed — this is a pure publish job.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 0.1.0). Required for manual triggers.'
+        required: true
+        type: string
+
+jobs:
+  publish:
+    name: Publish tree-sitter-chordpro
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/tree-sitter-chordpro
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: packages/tree-sitter-chordpro
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Check required secrets present
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: python3 ../../scripts/check-env-secrets.py --channel npm-tree-sitter
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Derive version from git tag
+        if: github.event_name == 'release'
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Set version from workflow input
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ inputs.version }}
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Check if version already published
+        id: check
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          PKG_NAME=$(node -p "require('./package.json').name")
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if npm view "$PKG_NAME@$PKG_VERSION" version 2>/dev/null; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm
+        if: steps.check.outputs.skip != 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

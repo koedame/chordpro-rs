@@ -16,6 +16,7 @@ Sources checked:
   2. `packages/npm/package.json` `version`
   3. `packages/vscode-extension/package.json` `version`
   4. `crates/napi/package.json` `version`
+  4b. `packages/tree-sitter-chordpro/package.json` `version`
   5. `.github/workflows/readme-smoke.yml` — the two hardcoded pins:
        a. L~204: `npm install '@chordsketch/wasm@<version>'`
        b. L~450–451: `chordsketch-core = "<caret>"` and
@@ -199,6 +200,11 @@ def load_all_sources(repo_root: Path) -> list[Source]:
         load_package_json_version(repo_root, "packages/vscode-extension/package.json")
     )
     sources.append(load_package_json_version(repo_root, "crates/napi/package.json"))
+    sources.append(
+        load_package_json_version(
+            repo_root, "packages/tree-sitter-chordpro/package.json"
+        )
+    )
     sources.extend(load_napi_platform_package_versions(repo_root))
     sources.extend(load_readme_smoke_pins(repo_root))
     return sources
