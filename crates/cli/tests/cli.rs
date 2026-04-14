@@ -57,7 +57,8 @@ fn test_nonexistent_file() {
         .arg(&nonexistent)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("error:"));
+        .stderr(predicate::str::contains("error:"))
+        .stderr(predicate::str::contains(&nonexistent));
 }
 
 #[test]
@@ -466,12 +467,16 @@ fn test_define_value_containing_spaces() {
 fn test_no_default_configs_with_missing_config_file() {
     // --no-default-configs combined with --config pointing to a nonexistent file
     // should fail gracefully with an error message.
+    let nonexistent = {
+        let f = NamedTempFile::new().unwrap();
+        f.path().to_string_lossy().to_string()
+    };
     Command::cargo_bin("chordsketch")
         .unwrap()
         .args([
             "--no-default-configs",
             "--config",
-            "/tmp/nonexistent_chordpro_config_12345.json",
+            &nonexistent,
             &fixture("simple.cho"),
         ])
         .assert()
@@ -716,7 +721,8 @@ fn test_convert_nonexistent_file() {
         .args(["convert", &nonexistent])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("error:"));
+        .stderr(predicate::str::contains("error:"))
+        .stderr(predicate::str::contains(&nonexistent));
 }
 
 #[test]
