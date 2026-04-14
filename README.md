@@ -141,16 +141,28 @@ println!("{text}");
 | [`chordsketch-render-text`](crates/render-text) | Plain text renderer |
 | [`chordsketch-render-html`](crates/render-html) | HTML renderer |
 | [`chordsketch-render-pdf`](crates/render-pdf) | PDF renderer |
+| [`chordsketch-convert-musicxml`](crates/convert-musicxml) | MusicXML ↔ ChordPro bidirectional converter |
 | [`chordsketch`](crates/cli) | Command-line tool |
 | [`chordsketch-lsp`](crates/lsp) | Language Server Protocol server |
 | [`chordsketch-wasm`](crates/wasm) | WebAssembly bindings via wasm-bindgen |
-| [`chordsketch-convert-musicxml`](crates/convert-musicxml) | MusicXML ↔ ChordPro bidirectional converter |
+| [`chordsketch-ffi`](crates/ffi) | UniFFI bindings for Python, Ruby, Swift, and Kotlin |
+| [`chordsketch-napi`](crates/napi) | Native Node.js addon via napi-rs |
 
 ### Packages
 
 | Package | Path | Description |
 |---|---|---|
-| [`@chordsketch/wasm`](packages/npm) | `packages/npm` | npm package with TypeScript types |
+| [`@chordsketch/wasm`](packages/npm) | `packages/npm` | npm WASM package with TypeScript types |
+| [`@chordsketch/node`](crates/napi) | `crates/napi` | Native Node.js addon (prebuilt binaries, no Rust required) |
+| [Python `chordsketch`](crates/ffi) | `crates/ffi` | Python package via UniFFI + maturin |
+| [Swift `ChordSketch`](packages/swift) | `packages/swift` | Swift package with XCFramework |
+| [Kotlin `chordsketch`](packages/kotlin) | `packages/kotlin` | Kotlin/JVM package via JNI |
+| [Ruby `chordsketch`](packages/ruby) | `packages/ruby` | Ruby gem via UniFFI |
+| [VS Code extension](packages/vscode-extension) | `packages/vscode-extension` | Syntax highlighting, live preview, and LSP integration |
+| [JetBrains plugin](packages/jetbrains-plugin) | `packages/jetbrains-plugin` | TextMate syntax highlighting for JetBrains IDEs |
+| [Zed extension](packages/zed-extension) | `packages/zed-extension` | Tree-sitter highlighting and LSP for Zed |
+| [`tree-sitter-chordpro`](packages/tree-sitter-chordpro) | `packages/tree-sitter-chordpro` | Tree-sitter grammar for ChordPro |
+| [GitHub Action](packages/github-action) | `packages/github-action` | Composite action for rendering ChordPro in CI |
 | [Playground](packages/playground) | `packages/playground` | Browser-based ChordPro editor and renderer |
 
 ## GitHub Actions
