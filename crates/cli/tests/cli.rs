@@ -481,7 +481,8 @@ fn test_no_default_configs_with_missing_config_file() {
         ])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("error:"));
+        .stderr(predicate::str::contains("error:"))
+        .stderr(predicate::str::contains(&nonexistent));
 }
 
 #[test]
