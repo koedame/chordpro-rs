@@ -31,7 +31,8 @@ This is a Cargo workspace with the following crates:
 | `chordsketch-render-text` | `crates/render-text` | lib | `chordsketch-core` |
 | `chordsketch-render-html` | `crates/render-html` | lib | `chordsketch-core` |
 | `chordsketch-render-pdf` | `crates/render-pdf` | lib | `chordsketch-core` |
-| `chordsketch` (CLI) | `crates/cli` | bin | `chordsketch-core`, `chordsketch-render-text`, `chordsketch-render-html`, `chordsketch-render-pdf` |
+| `chordsketch-convert-musicxml` | `crates/convert-musicxml` | lib | `chordsketch-core` |
+| `chordsketch` (CLI) | `crates/cli` | bin | `chordsketch-core`, `chordsketch-render-text`, `chordsketch-render-html`, `chordsketch-render-pdf`, `chordsketch-convert-musicxml` |
 | `chordsketch-lsp` | `crates/lsp` | bin | `chordsketch-core`, `tower-lsp`, `tokio` |
 | `chordsketch-wasm` | `crates/wasm` | cdylib | `chordsketch-core`, all renderers, `wasm-bindgen`, `serde` |
 | `chordsketch-ffi` | `crates/ffi` | cdylib/staticlib/lib | `chordsketch-core`, all renderers, `uniffi`, `thiserror` |
