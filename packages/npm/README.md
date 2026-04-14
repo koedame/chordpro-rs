@@ -36,6 +36,7 @@ import init, {
   render_html,
   render_text,
   render_pdf,
+  validate,
   version,
 } from '@chordsketch/wasm';
 
@@ -47,6 +48,7 @@ const chordpro = `{title: Amazing Grace}
 
 [G]Amazing [G7]grace, how [C]sweet the [G]sound`;
 
+const errors = validate(chordpro); // [] if valid
 const html = render_html(chordpro);
 const text = render_text(chordpro);
 const pdfBytes = render_pdf(chordpro); // Uint8Array
@@ -62,6 +64,7 @@ import {
   render_html,
   render_text,
   render_pdf,
+  validate,
   version,
 } from '@chordsketch/wasm';
 
@@ -70,6 +73,7 @@ const chordpro = `{title: Amazing Grace}
 
 [G]Amazing [G7]grace, how [C]sweet the [G]sound`;
 
+const errors = validate(chordpro); // [] if valid
 const html = render_html(chordpro);
 const text = render_text(chordpro);
 const pdfBytes = render_pdf(chordpro); // Uint8Array
@@ -118,6 +122,12 @@ interface RenderOptions {
   config?: string;     // Preset name ("guitar", "ukulele") or inline RRJSON
 }
 ```
+
+### Validation
+
+| Function | Input | Output |
+|----------|-------|--------|
+| `validate(input)` | ChordPro string | `string[]` — parse errors (empty if valid) |
 
 ### Utility
 
