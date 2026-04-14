@@ -34,6 +34,13 @@ const MAX_CHORUS_RECALLS: usize = 1000;
 /// Matches `MAX_COLUMNS` in the PDF renderer.
 const MAX_COLUMNS: u32 = 32;
 
+/// Minimum font size (in points) accepted from user directives.
+/// Matches `MIN_FONT_SIZE` in the PDF renderer.
+const MIN_FONT_SIZE: f32 = 0.5;
+/// Maximum font size (in points) accepted from user directives.
+/// Matches `MAX_FONT_SIZE` in the PDF renderer.
+const MAX_FONT_SIZE: f32 = 200.0;
+
 // ---------------------------------------------------------------------------
 // Formatting state
 // ---------------------------------------------------------------------------
@@ -89,29 +96,39 @@ struct FormattingState {
 
 impl FormattingState {
     /// Apply a formatting directive, updating the appropriate style.
+    ///
+    /// Font size values are clamped to `[MIN_FONT_SIZE, MAX_FONT_SIZE]` to
+    /// prevent degenerate CSS output from extreme values. This matches the
+    /// clamping applied in the PDF renderer per `renderer-parity.md`.
     fn apply(&mut self, kind: &DirectiveKind, value: &Option<String>) {
         let val = value.clone();
+        let clamped_size = || -> Option<String> {
+            value
+                .as_deref()
+                .and_then(|v| v.parse::<f32>().ok())
+                .map(|s| s.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE).to_string())
+        };
         match kind {
             DirectiveKind::TextFont => self.text.font = val,
-            DirectiveKind::TextSize => self.text.size = val,
+            DirectiveKind::TextSize => self.text.size = clamped_size(),
             DirectiveKind::TextColour => self.text.colour = val,
             DirectiveKind::ChordFont => self.chord.font = val,
-            DirectiveKind::ChordSize => self.chord.size = val,
+            DirectiveKind::ChordSize => self.chord.size = clamped_size(),
             DirectiveKind::ChordColour => self.chord.colour = val,
             DirectiveKind::TabFont => self.tab.font = val,
-            DirectiveKind::TabSize => self.tab.size = val,
+            DirectiveKind::TabSize => self.tab.size = clamped_size(),
             DirectiveKind::TabColour => self.tab.colour = val,
             DirectiveKind::TitleFont => self.title.font = val,
-            DirectiveKind::TitleSize => self.title.size = val,
+            DirectiveKind::TitleSize => self.title.size = clamped_size(),
             DirectiveKind::TitleColour => self.title.colour = val,
             DirectiveKind::ChorusFont => self.chorus.font = val,
-            DirectiveKind::ChorusSize => self.chorus.size = val,
+            DirectiveKind::ChorusSize => self.chorus.size = clamped_size(),
             DirectiveKind::ChorusColour => self.chorus.colour = val,
             DirectiveKind::LabelFont => self.label.font = val,
-            DirectiveKind::LabelSize => self.label.size = val,
+            DirectiveKind::LabelSize => self.label.size = clamped_size(),
             DirectiveKind::LabelColour => self.label.colour = val,
             DirectiveKind::GridFont => self.grid.font = val,
-            DirectiveKind::GridSize => self.grid.size = val,
+            DirectiveKind::GridSize => self.grid.size = clamped_size(),
             DirectiveKind::GridColour => self.grid.colour = val,
             // Header/Footer/TOC directives are not rendered in the main body
             _ => {}
@@ -4008,6 +4025,50 @@ mod delegate_tests {
         assert!(
             !html.to_lowercase().contains("<image"),
             "SVG <image> element must be stripped entirely; got: {html}"
+        );
+    }
+
+    // --- Font size clamping (renderer parity with PDF) ---
+
+    #[test]
+    fn test_extreme_textsize_is_clamped_to_max() {
+        // Font size must be clamped to MAX_FONT_SIZE (200), not 99999.
+        // Matches the equivalent test in the PDF renderer.
+        let input = "{title: T}\n{textsize: 99999}\n[C]Hello";
+        let html = render(input);
+        assert!(
+            !html.contains("99999"),
+            "extreme textsize should be clamped, not passed through"
+        );
+        assert!(
+            html.contains("200"),
+            "extreme textsize should be clamped to MAX_FONT_SIZE (200)"
+        );
+    }
+
+    #[test]
+    fn test_negative_textsize_is_clamped_to_min() {
+        // Negative size must be clamped to MIN_FONT_SIZE (0.5).
+        // Matches the equivalent test in the PDF renderer.
+        let input = "{title: T}\n{textsize: -10}\n[C]Hello";
+        let html = render(input);
+        assert!(
+            html.contains("0.5"),
+            "negative textsize should be clamped to MIN_FONT_SIZE (0.5)"
+        );
+    }
+
+    #[test]
+    fn test_extreme_chordsize_is_clamped_to_max() {
+        let input = "{title: T}\n{chordsize: 50000}\n[C]Hello";
+        let html = render(input);
+        assert!(
+            !html.contains("50000"),
+            "extreme chordsize should be clamped"
+        );
+        assert!(
+            html.contains("200"),
+            "extreme chordsize should be clamped to MAX_FONT_SIZE (200)"
         );
     }
 }
