@@ -4,11 +4,11 @@
 # Place it at pkgs/by-name/ch/chordsketch/package.nix in a nixpkgs
 # checkout and submit a PR.
 #
-# Before submitting, update:
-#   - `version` to match the latest release tag
-#   - `hash` and `cargoHash` — leave both as "" initially, run
-#     `nix-build`, and copy the SRI hashes from the error messages.
-#   - `maintainers` — add your nixpkgs maintainer handle
+# Verified: builds and passes tests on x86_64-linux with nixpkgs unstable.
+#
+# When bumping to a new release, update `version` and recompute `hash`
+# and `cargoHash` by setting both to "" and building once — nix will
+# report the correct SRI hashes in the error messages.
 
 {
   lib,
@@ -24,10 +24,10 @@ rustPlatform.buildRustPackage rec {
     owner = "koedame";
     repo = "chordsketch";
     tag = "v${version}";
-    hash = ""; # leave empty; build once and copy the SRI hash from the error
+    hash = "sha256-8i5rDUVmE5MKqXtXY8bgumEHr8jVS6bk9XClZATwC6E=";
   };
 
-  cargoHash = ""; # leave empty; build once and copy the SRI hash from the error
+  cargoHash = "sha256-52vnW3E7Fdl2aLOKh+w13Tmf0PaD6FdXqf+YyCV6Yec=";
 
   cargoBuildFlags = [ "--package" "chordsketch" ];
   cargoTestFlags = [ "--package" "chordsketch" ];
