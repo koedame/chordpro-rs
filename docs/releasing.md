@@ -380,8 +380,8 @@ following as the rotation policy:
 | `DOCKERHUB_TOKEN` | Every 90 days | <https://hub.docker.com/settings/security> |
 | `TAP_GITHUB_TOKEN` | Every 90 days, or whenever the issuing GitHub account changes 2FA / recovery setup | <https://github.com/settings/tokens> |
 | `AUR_SSH_KEY` | Only if the key is compromised or the AUR account changes | <https://aur.archlinux.org/account/koedame> (replace SSH public key, then `gh secret set AUR_SSH_KEY < new_key`) |
-| `SNAP_STORE_TOKEN` | Before expiry date (shown in `snapcraft whoami`; current session expires 2027-08-21) | `snapcraft export-login ~/snap-token.txt` then `gh secret set SNAP_STORE_TOKEN < ~/snap-token.txt` |
-| `COCOAPODS_TRUNK_TOKEN` | Sessions last ~4 months; re-register if expired | `pod trunk register <email> <name>`, confirm email, then copy token from `~/.netrc` (`grep -A2 trunk.cocoapods.org ~/.netrc`) |
+| `SNAP_STORE_TOKEN` | Before expiry date (check current expiry with `snapcraft whoami`) | `snapcraft export-login ~/snap-token.txt && gh secret set SNAP_STORE_TOKEN < ~/snap-token.txt && rm -f ~/snap-token.txt` |
+| `COCOAPODS_TRUNK_TOKEN` | Sessions last ~4 months; re-register if expired | `pod trunk register <email> <name>`, confirm email, then pipe token directly: `grep -A2 trunk.cocoapods.org ~/.netrc \| awk '/password/{print $2}' \| gh secret set COCOAPODS_TRUNK_TOKEN` |
 | `DOCKERHUB_USERNAME` | Only if the Docker Hub namespace owner changes | n/a (string, not a credential) |
 | `GITHUB_TOKEN` | Provided automatically per workflow run; no rotation needed | n/a |
 
@@ -811,8 +811,12 @@ Set up on 2026-04-15. Automated via `post-release.yml` `update-aur`.
    sed -e "s/{{VERSION}}/X.Y.Z/g" \
        -e "s/{{SHA256_X86_64_UNKNOWN_LINUX_GNU}}/$SHA/g" \
        packaging/aur/PKGBUILD.template > PKGBUILD
-   # Generate .SRCINFO (see post-release.yml for the exact format)
-   # Commit and push to master
+   # Generate .SRCINFO (on Arch: makepkg --printsrcinfo > .SRCINFO)
+   # On non-Arch, see the heredoc in post-release.yml update-aur job
+   # for the exact format, or use the docker approach:
+   #   docker run --rm -v "$PWD:/pkg" archlinux:latest \
+   #     bash -c "cd /pkg && makepkg --printsrcinfo > .SRCINFO"
+   # Commit and push to master (AUR rejects any other branch)
    git add PKGBUILD .SRCINFO
    git commit -m "Initial upload: X.Y.Z"
    GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key" git push
@@ -829,6 +833,10 @@ Set up on 2026-04-15. Automated via `post-release.yml` `update-snap`.
 Uses **strict confinement** with `home` + `removable-media` plugs
 (classic confinement requires Snap Store manual review and is not
 needed for a file-processing CLI).
+
+> **Note:** The `removable-media` plug is not auto-connected by default.
+> Users who need to process files on USB drives must run:
+> `sudo snap connect chordsketch:removable-media`
 
 1. Create an Ubuntu One account at <https://login.ubuntu.com>.
 2. Export login credentials:
@@ -857,9 +865,10 @@ needed for a file-processing CLI).
    SNAPCRAFT_STORE_CREDENTIALS="$(cat ~/snap-token.txt)" \
      snapcraft upload chordsketch_X.Y.Z_amd64.snap --release=stable
    ```
-5. Store the credentials as a GitHub secret:
+5. Store the credentials as a GitHub secret and clean up:
    ```bash
    gh secret set SNAP_STORE_TOKEN -R koedame/chordsketch < ~/snap-token.txt
+   rm -f ~/snap-token.txt
    ```
 
 ### CocoaPods
@@ -880,8 +889,9 @@ The pod ships a prebuilt XCFramework (same artifact as the Swift package).
      packaging/cocoapods/ChordSketch.podspec.template > ChordSketch.podspec
    pod trunk push ChordSketch.podspec --allow-warnings
    ```
-4. Store the trunk token as a GitHub secret. The token is in `~/.netrc`:
+4. Store the trunk token as a GitHub secret. The token is in `~/.netrc`.
+   Pipe it directly to avoid leaking the value into shell history:
    ```bash
-   TOKEN=$(grep -A2 trunk.cocoapods.org ~/.netrc | grep password | awk '{print $2}')
-   echo "$TOKEN" | gh secret set COCOAPODS_TRUNK_TOKEN -R koedame/chordsketch
+   grep -A2 trunk.cocoapods.org ~/.netrc | awk '/password/{print $2}' \
+     | gh secret set COCOAPODS_TRUNK_TOKEN -R koedame/chordsketch
    ```
