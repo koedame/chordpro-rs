@@ -183,6 +183,8 @@ When adding a new channel, update both.
 | npm (tree-sitter) | `tree-sitter-chordpro` | `npm-publish-tree-sitter.yml` on `release: published` | `NPM_TOKEN` | `npm-tree-sitter` rollup entry |
 | Homebrew tap | `koedame/tap/chordsketch` | `post-release.yml` on `release: published` | `TAP_GITHUB_TOKEN` | `homebrew` job |
 | Scoop bucket | `koedame/scoop-bucket/chordsketch` | `post-release.yml` on `release: published` | `TAP_GITHUB_TOKEN` | `scoop` job |
+| AUR | `chordsketch` | `post-release.yml` on `release: published` | `AUR_SSH_KEY` | `aur` rollup entry |
+| Snap Store | `chordsketch` | `post-release.yml` on `release: published` | `SNAP_STORE_TOKEN` | `snap` rollup entry |
 | nixpkgs | `pkgs.chordsketch` | manual PR to `NixOS/nixpkgs` | none | `nixpkgs` rollup entry |
 | winget | `koedame.chordsketch` | manual PR to `microsoft/winget-pkgs` (Step 8) | none (uses your `gh` token to fork+push) | `winget` job |
 | VS Code Marketplace | `koedame.chordsketch` | `vscode-extension.yml` on `release: published` | `VSCE_PAT` (PAT, Marketplace Publish scope) | `vscode-marketplace` rollup entry |
@@ -356,6 +358,9 @@ After the release workflow completes and the GitHub Release is published:
 | `DOCKERHUB_USERNAME` | string | Docker Hub username under which images are pushed (currently `koedame`) |
 | `DOCKERHUB_TOKEN` | Docker Hub Personal Access Token, "Read & Write" | Authenticate `docker push` against `docker.io/koedame/chordsketch` from `docker.yml` |
 | `NPM_TOKEN` | npm Granular Access Token, scope `@chordsketch` Read & Write, org `chordsketch` Read & Write | ⚠️ Authenticate `npm publish` against the `@chordsketch/*` scope from `npm-publish.yml`. The org-level grant is the **empirically working** configuration, not necessarily the minimal one — see "npm publish via CI" quirk below for what we tried. Narrowing the scope is an open question; if you experiment with it, file a follow-up issue and link results back here. |
+| `AUR_SSH_KEY` | ed25519 SSH private key registered with AUR account `koedame` | Authenticate `git push` to `ssh://aur@aur.archlinux.org/chordsketch.git` from `post-release.yml` |
+| `SNAP_STORE_TOKEN` | Snapcraft exported credentials (`snapcraft export-login`) | Authenticate `snapcraft upload` + `snapcraft release` from `post-release.yml` |
+| `COCOAPODS_TRUNK_TOKEN` | CocoaPods trunk session token (from `~/.netrc` after `pod trunk register`) | Authenticate `pod trunk push` from `post-release.yml` |
 | `GITHUB_TOKEN` | provided automatically | Used by `docker.yml` to push to GHCR, by `release.yml` to upload assets, by `npm-publish.yml` checkout |
 
 If any of these secrets are missing or wrong, the corresponding distribution
@@ -374,6 +379,9 @@ following as the rotation policy:
 | `NPM_TOKEN` | Every 90 days, or immediately if the value has ever been pasted into chat / shared logs | <https://www.npmjs.com/settings/~/tokens> (sign in as the npm account that owns `@chordsketch`) |
 | `DOCKERHUB_TOKEN` | Every 90 days | <https://hub.docker.com/settings/security> |
 | `TAP_GITHUB_TOKEN` | Every 90 days, or whenever the issuing GitHub account changes 2FA / recovery setup | <https://github.com/settings/tokens> |
+| `AUR_SSH_KEY` | Only if the key is compromised or the AUR account changes | <https://aur.archlinux.org/account/koedame> (replace SSH public key, then `gh secret set AUR_SSH_KEY < new_key`) |
+| `SNAP_STORE_TOKEN` | Before expiry date (shown in `snapcraft whoami`; current session expires 2027-08-21) | `snapcraft export-login ~/snap-token.txt` then `gh secret set SNAP_STORE_TOKEN < ~/snap-token.txt` |
+| `COCOAPODS_TRUNK_TOKEN` | Sessions last ~4 months; re-register if expired | `pod trunk register <email> <name>`, confirm email, then copy token from `~/.netrc` (`grep -A2 trunk.cocoapods.org ~/.netrc`) |
 | `DOCKERHUB_USERNAME` | Only if the Docker Hub namespace owner changes | n/a (string, not a credential) |
 | `GITHUB_TOKEN` | Provided automatically per workflow run; no rotation needed | n/a |
 
@@ -767,4 +775,113 @@ package.
    ```bash
    gh workflow run npm-publish-<name>.yml \
      -R koedame/chordsketch -f version=X.Y.Z
+   ```
+
+## First-Time Channel Setup
+
+These procedures document how each distribution channel was initially
+set up. They are needed only once per channel; subsequent releases are
+automated via `post-release.yml` or dedicated publish workflows.
+
+### AUR (Arch Linux)
+
+Set up on 2026-04-15. Automated via `post-release.yml` `update-aur`.
+
+1. Create an account at <https://aur.archlinux.org/register>.
+   The CAPTCHA answer can be computed with:
+   ```bash
+   docker run --rm archlinux:latest bash -c \
+     "LC_ALL=C pacman -V|sed -r 's#[0-9]+#aeb#g'|md5sum|cut -c1-6"
+   ```
+2. Generate an SSH key and register the public key in the AUR account:
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/aur_key -C "aur" -N ""
+   # Paste ~/.ssh/aur_key.pub into AUR account → SSH Public Key
+   ```
+3. Clone the (empty) AUR package repo, generate PKGBUILD + .SRCINFO,
+   and push. AUR only accepts the `master` branch:
+   ```bash
+   GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key" \
+     git clone ssh://aur@aur.archlinux.org/chordsketch.git /tmp/aur
+   cd /tmp/aur
+   # Download checksums from the GitHub release
+   gh release download vX.Y.Z -R koedame/chordsketch -p checksums.txt
+   SHA=$(grep "x86_64-unknown-linux-gnu" checksums.txt | awk '{print $1}')
+   # Generate PKGBUILD from template
+   sed -e "s/{{VERSION}}/X.Y.Z/g" \
+       -e "s/{{SHA256_X86_64_UNKNOWN_LINUX_GNU}}/$SHA/g" \
+       packaging/aur/PKGBUILD.template > PKGBUILD
+   # Generate .SRCINFO (see post-release.yml for the exact format)
+   # Commit and push to master
+   git add PKGBUILD .SRCINFO
+   git commit -m "Initial upload: X.Y.Z"
+   GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key" git push
+   ```
+4. Store the SSH private key as a GitHub secret:
+   ```bash
+   gh secret set AUR_SSH_KEY -R koedame/chordsketch < ~/.ssh/aur_key
+   ```
+
+### Snap Store
+
+Set up on 2026-04-15. Automated via `post-release.yml` `update-snap`.
+
+Uses **strict confinement** with `home` + `removable-media` plugs
+(classic confinement requires Snap Store manual review and is not
+needed for a file-processing CLI).
+
+1. Create an Ubuntu One account at <https://login.ubuntu.com>.
+2. Export login credentials:
+   ```bash
+   snapcraft export-login ~/snap-token.txt
+   ```
+3. Register the snap name:
+   ```bash
+   SNAPCRAFT_STORE_CREDENTIALS="$(cat ~/snap-token.txt)" \
+     snapcraft register chordsketch
+   ```
+4. Build and upload the snap:
+   ```bash
+   mkdir -p /tmp/snap-build/stage /tmp/snap-build/snap
+   cd /tmp/snap-build
+   # Download and extract the prebuilt binary
+   gh release download vX.Y.Z -R koedame/chordsketch \
+     -p "chordsketch-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz"
+   tar xzf chordsketch-vX.Y.Z-*.tar.gz --strip-components=1 -C stage
+   chmod +x stage/chordsketch
+   # Generate snapcraft.yaml from template
+   sed -e "s/{{VERSION}}/X.Y.Z/g" \
+     packaging/snap/snapcraft.yaml.template > snap/snapcraft.yaml
+   # Build and upload
+   snapcraft --destructive-mode
+   SNAPCRAFT_STORE_CREDENTIALS="$(cat ~/snap-token.txt)" \
+     snapcraft upload chordsketch_X.Y.Z_amd64.snap --release=stable
+   ```
+5. Store the credentials as a GitHub secret:
+   ```bash
+   gh secret set SNAP_STORE_TOKEN -R koedame/chordsketch < ~/snap-token.txt
+   ```
+
+### CocoaPods
+
+Set up on 2026-04-15. Automated via `post-release.yml` `update-cocoapods`.
+
+The pod ships a prebuilt XCFramework (same artifact as the Swift package).
+
+1. Install CocoaPods: `gem install cocoapods`
+2. Register a trunk session:
+   ```bash
+   pod trunk register <email> <name>
+   # Click the confirmation link in the email
+   ```
+3. Generate and push the podspec:
+   ```bash
+   sed -e "s/{{VERSION}}/X.Y.Z/g" \
+     packaging/cocoapods/ChordSketch.podspec.template > ChordSketch.podspec
+   pod trunk push ChordSketch.podspec --allow-warnings
+   ```
+4. Store the trunk token as a GitHub secret. The token is in `~/.netrc`:
+   ```bash
+   TOKEN=$(grep -A2 trunk.cocoapods.org ~/.netrc | grep password | awk '{print $2}')
+   echo "$TOKEN" | gh secret set COCOAPODS_TRUNK_TOKEN -R koedame/chordsketch
    ```

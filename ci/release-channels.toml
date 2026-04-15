@@ -198,17 +198,14 @@ id = "cocoapods"
 display = "CocoaPods — ChordSketch"
 kind = "manual"
 package = "ChordSketch"
-expected_version = "skip"
-skip_reason = """
-CocoaPods trunk push requires COCOAPODS_TRUNK_TOKEN which has not been
-configured yet. The post-release.yml job exists but skips gracefully
-when the secret is absent. Once the token is added and the first
-`pod trunk push` succeeds, change expected_version to "tag" and kind
-to "cocoapods" (once a _check_cocoapods verifier is implemented) or
-keep kind = "manual" for paper-trail-only verification.
-"""
+expected_version = "tag"
 required_secrets = ["COCOAPODS_TRUNK_TOKEN"]
-notes = "Published by post-release.yml update-cocoapods job."
+notes = """
+Published by post-release.yml update-cocoapods job. First publish was
+done manually on 2026-04-15. kind = "manual" because no automated
+_check_cocoapods verifier exists yet — the rollup passes without
+querying the CocoaPods registry.
+"""
 
 # ---------------------------------------------------------------- language bindings
 
