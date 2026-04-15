@@ -135,6 +135,19 @@ required_secrets = []
 notes = "Updated by .github/workflows/post-release.yml via PR to koedame/scoop-bucket."
 
 [[channels]]
+id = "nixpkgs"
+display = "nixpkgs — pkgs.chordsketch"
+kind = "manual"
+expected_version = "skip"
+skip_reason = """
+nixpkgs PR has not been submitted yet. The reference derivation is at
+packaging/nix/package.nix. Once the PR is merged and the package is
+available in a nixpkgs release channel, change expected_version to "tag".
+"""
+required_secrets = []
+notes = "Manual PR to NixOS/nixpkgs. See packaging/nix/package.nix."
+
+[[channels]]
 id = "winget"
 display = "winget — microsoft/winget-pkgs"
 kind = "manual"
