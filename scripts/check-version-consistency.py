@@ -16,8 +16,8 @@ Sources checked:
   2. `packages/npm/package.json` `version`
   3. `packages/vscode-extension/package.json` `version`
   4. `crates/napi/package.json` `version`
-  4b. `packages/tree-sitter-chordpro/package.json` `version`
-  5. `.github/workflows/readme-smoke.yml` — the two hardcoded pins:
+  5. `packages/tree-sitter-chordpro/package.json` `version`
+  6. `.github/workflows/readme-smoke.yml` — the two hardcoded pins:
        a. L~204: `npm install '@chordsketch/wasm@<version>'`
        b. L~450–451: `chordsketch-core = "<caret>"` and
           `chordsketch-render-text = "<caret>"` (matched by both)

@@ -180,6 +180,7 @@ When adding a new channel, update both.
 | Docker Hub | `docker.io/koedame/chordsketch` | `docker.yml` on `release: published` | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | `docker-hub` job |
 | npm (wasm) | `@chordsketch/wasm` | `npm-publish.yml` `workflow_dispatch` (Step 7) | `NPM_TOKEN` (Granular Token, see quirks) | `npm-wasm` job |
 | npm (napi) | `@chordsketch/node` + 5 prebuilt platform packages | `napi.yml` on `release: published` | `NPM_TOKEN` | `napi-node` job |
+| npm (tree-sitter) | `tree-sitter-chordpro` | `npm-publish-tree-sitter.yml` on `release: published` | `NPM_TOKEN` | `npm-tree-sitter` rollup entry |
 | Homebrew tap | `koedame/tap/chordsketch` | `post-release.yml` on `release: published` | `TAP_GITHUB_TOKEN` | `homebrew` job |
 | Scoop bucket | `koedame/scoop-bucket/chordsketch` | `post-release.yml` on `release: published` | `TAP_GITHUB_TOKEN` | `scoop` job |
 | winget | `koedame.chordsketch` | manual PR to `microsoft/winget-pkgs` (Step 8) | none (uses your `gh` token to fork+push) | `winget` job |
@@ -718,7 +719,9 @@ package.
    - If no build step is needed (e.g., pre-committed generated files),
      omit the build steps
 
-2. **Add a channel entry** to `ci/release-channels.toml`:
+2. **Add a channel entry** to `ci/release-channels.toml` **and** a
+   matching row to the Distribution Channels table in `docs/releasing.md`
+   (both must stay in sync):
    ```toml
    [[channels]]
    id = "npm-<short-name>"
@@ -739,8 +742,9 @@ package.
      `_build_repo()` fixture builder so unit tests create the file in
      their temp directories
 
-5. **Sync the package version** with the workspace version (currently
-   0.2.0), or add an entry to `ci/version-skew-allowlist.toml` if the
+5. **Sync the package version** with the workspace version (run
+   `python3 scripts/check-version-consistency.py` to find the canonical
+   version), or add an entry to `ci/version-skew-allowlist.toml` if the
    skew is intentional.
 
 6. **Regenerate any derived files** if the version is embedded in them

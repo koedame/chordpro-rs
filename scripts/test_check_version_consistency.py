@@ -177,6 +177,13 @@ class CheckRunTests(unittest.TestCase):
             rc = check_version_consistency.run(root, root / "nonexistent.toml")
             self.assertEqual(rc, 1)
 
+    def test_tree_sitter_drift_detected(self) -> None:
+        with TemporaryDirectory() as td:
+            root = Path(td)
+            _build_repo(root, tree_sitter_version="0.1.0")
+            rc = check_version_consistency.run(root, root / "nonexistent.toml")
+            self.assertEqual(rc, 1)
+
     def test_allowlisted_drift_passes(self) -> None:
         with TemporaryDirectory() as td:
             root = Path(td)
