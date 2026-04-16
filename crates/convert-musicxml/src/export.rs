@@ -161,21 +161,18 @@ fn build_measures(song: &Song) -> Vec<Measure> {
                 DirectiveKind::EndOfChorus
                 | DirectiveKind::EndOfVerse
                 | DirectiveKind::EndOfBridge => {}
-                DirectiveKind::Key => {
-                    if first_measure || current.notes.is_empty() {
-                        if let Some(ref kv) = dir.value {
-                            let (f, m) = key_to_fifths(kv);
-                            current.key = Some((f, m));
-                        }
+                DirectiveKind::Key if first_measure || current.notes.is_empty() => {
+                    if let Some(ref kv) = dir.value {
+                        let (f, m) = key_to_fifths(kv);
+                        current.key = Some((f, m));
                     }
                 }
-                DirectiveKind::Tempo => {
-                    if first_measure || current.notes.is_empty() {
-                        if let Some(ref tv) = dir.value {
-                            current.tempo = Some(tv.clone());
-                        }
+                DirectiveKind::Tempo if first_measure || current.notes.is_empty() => {
+                    if let Some(ref tv) = dir.value {
+                        current.tempo = Some(tv.clone());
                     }
                 }
+                DirectiveKind::Key | DirectiveKind::Tempo => {}
                 _ => {}
             },
 

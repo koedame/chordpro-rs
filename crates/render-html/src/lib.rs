@@ -1428,8 +1428,8 @@ fn render_directive_inner(
         DirectiveKind::Image(attrs) => {
             render_image(attrs, html);
         }
-        DirectiveKind::Define => {
-            if show_diagrams {
+        DirectiveKind::Define if show_diagrams => {
+            {
                 if let Some(ref value) = directive.value {
                     let def = chordsketch_core::ast::ChordDefinition::parse_value(value);
                     // Keyboard defines: render a piano keyboard SVG.
@@ -1476,6 +1476,7 @@ fn render_directive_inner(
                 }
             }
         }
+        DirectiveKind::Define => {}
         _ => {}
     }
 }

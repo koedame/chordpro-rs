@@ -323,14 +323,13 @@ fn document_end_position(text: &str) -> Position {
                 line += 1;
                 last_newline_byte = i + 1;
             }
-            b'\r' => {
-                // A bare \r (CR-only) is a line break.  A \r\n pair is handled
-                // by the \n branch on the next iteration, so skip the \r here.
-                if i + 1 >= len || bytes[i + 1] != b'\n' {
-                    line += 1;
-                    last_newline_byte = i + 1;
-                }
+            // A bare \r (CR-only) is a line break.  A \r\n pair is handled
+            // by the \n branch on the next iteration, so skip the \r here.
+            b'\r' if i + 1 >= len || bytes[i + 1] != b'\n' => {
+                line += 1;
+                last_newline_byte = i + 1;
             }
+            b'\r' => {}
             _ => {}
         }
         i += 1;

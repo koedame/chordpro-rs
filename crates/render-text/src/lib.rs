@@ -509,11 +509,10 @@ fn render_directive(directive: &chordsketch_core::ast::Directive, output: &mut V
             let label = chordsketch_core::capitalize(section_name);
             render_section_header(&label, &directive.value, output);
         }
-        DirectiveKind::Image(attrs) => {
-            if attrs.has_src() {
-                output.push(format!("[Image: {}]", attrs.src));
-            }
+        DirectiveKind::Image(attrs) if attrs.has_src() => {
+            output.push(format!("[Image: {}]", attrs.src));
         }
+        DirectiveKind::Image(_) => {}
         // Page-layout directives are intentionally no-ops in plain-text output:
         // plain text has no concept of pages, columns, or column breaks.
         // Explicit arms here make the omission visible to future contributors

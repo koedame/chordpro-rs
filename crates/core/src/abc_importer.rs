@@ -155,19 +155,17 @@ fn convert_tune(input: &str) -> String {
                 'T' => title = Some(value.to_string()),
                 'C' => composer = Some(value.to_string()),
                 'Q' => tempo = extract_tempo_bpm(value),
-                'K' => {
-                    if in_header {
-                        // K: is the last required header field; emit directives now.
-                        emit_header_directives(
-                            title.as_deref(),
-                            composer.as_deref(),
-                            tempo.as_deref(),
-                            Some(value),
-                            &mut out,
-                        );
-                        out.push('\n');
-                        in_header = false;
-                    }
+                'K' if in_header => {
+                    // K: is the last required header field; emit directives now.
+                    emit_header_directives(
+                        title.as_deref(),
+                        composer.as_deref(),
+                        tempo.as_deref(),
+                        Some(value),
+                        &mut out,
+                    );
+                    out.push('\n');
+                    in_header = false;
                 }
                 'P' if !in_header => {
                     // Part label in body: close previous section, open new one.

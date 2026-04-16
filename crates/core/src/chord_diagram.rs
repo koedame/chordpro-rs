@@ -137,13 +137,12 @@ impl DiagramData {
         while i < tokens.len() {
             let tok_lower = tokens[i].to_ascii_lowercase();
             match tok_lower.as_str() {
+                "base-fret" if i + 1 < tokens.len() => {
+                    base_fret = tokens[i + 1].parse().unwrap_or(1).clamp(1, MAX_BASE_FRET);
+                    i += 2;
+                }
                 "base-fret" => {
-                    if i + 1 < tokens.len() {
-                        base_fret = tokens[i + 1].parse().unwrap_or(1).clamp(1, MAX_BASE_FRET);
-                        i += 2;
-                    } else {
-                        i += 1;
-                    }
+                    i += 1;
                 }
                 "frets" => {
                     i += 1;
