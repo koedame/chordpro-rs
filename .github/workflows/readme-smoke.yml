@@ -435,6 +435,7 @@ jobs:
 
       - name: Install via Snap
         run: |
+          set -euo pipefail
           sudo snap install chordsketch
           chordsketch --version
 
