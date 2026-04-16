@@ -405,6 +405,48 @@ jobs:
       - name: Render smoke
         uses: ./.github/actions/cli-render-smoke
 
+  chocolatey:
+    name: Chocolatey (Windows)
+    runs-on: windows-latest
+    # Chocolatey package is published automatically by post-release.yml
+    # on each release. On PR runs (before the first release with Chocolatey),
+    # this job will fail because the package does not yet exist on the
+    # Chocolatey Community Repository. That is expected and does not block
+    # the PR. Once the first release lands, this job will start passing.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install via Chocolatey
+        shell: powershell
+        run: |
+          choco install chordsketch -y --no-progress
+          # choco shims are on PATH by default on GitHub Actions runners
+          chordsketch --version
+
+      - name: Render smoke
+        uses: ./.github/actions/cli-render-smoke
+
+  snap:
+    name: Snap (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install via Snap
+        run: |
+          sudo snap install chordsketch
+          chordsketch --version
+
+      - name: Render smoke
+        uses: ./.github/actions/cli-render-smoke
+
+  # AUR smoke is intentionally omitted. GitHub-hosted runners do not have
+  # yay/paru or an Arch Linux base, and installing an AUR helper in CI
+  # would require bootstrapping pacman on Ubuntu — fragile and slow.
+  # AUR package correctness is verified by the PKGBUILD template in
+  # packaging/aur/ and the post-release.yml update-aur job.
+
   library-smoke:
     name: Library Usage
     runs-on: ubuntu-latest
@@ -523,6 +565,8 @@ jobs:
       - homebrew
       - scoop
       - winget
+      - chocolatey
+      - snap
       - library-smoke
       - usage-smoke
     if: failure() && github.event_name != 'pull_request'

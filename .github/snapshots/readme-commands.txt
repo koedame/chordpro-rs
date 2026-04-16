@@ -4,6 +4,9 @@
 [Installation] scoop bucket add koedame https://github.com/koedame/scoop-bucket
 [Installation] scoop install chordsketch
 [Installation] winget install koedame.chordsketch
+[Installation] choco install chordsketch
+[Installation] sudo snap install chordsketch
+[Installation] yay -S chordsketch
 [Installation] docker run --rm ghcr.io/koedame/chordsketch --version
 [Installation] docker run --rm -v "$PWD:/data" ghcr.io/koedame/chordsketch /data/song.cho
 [Installation] cargo install chordsketch
