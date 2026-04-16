@@ -124,21 +124,39 @@ at post-release verification rather than before the tag is cut.
    cargo publish -p chordsketch-render-text
    cargo publish -p chordsketch-render-html
    cargo publish -p chordsketch-render-pdf
-   # Wait ~30 seconds for renderer crates to propagate
+   cargo publish -p chordsketch-convert-musicxml
+   # Wait ~30 seconds for renderer/converter crates to propagate
    cargo publish -p chordsketch
    ```
 
-7. **Publish `@chordsketch/wasm` to npm**: trigger
-   `.github/workflows/npm-publish.yml` via `workflow_dispatch` with the
-   version input:
+7. **Manually trigger all publish workflows.** The release created in
+   step 5 uses `GITHUB_TOKEN`, which does NOT trigger `release: published`
+   workflows (GitHub anti-recursion rule). Every workflow that depends on
+   that event must be dispatched manually:
    ```bash
-   gh workflow run npm-publish.yml -f version=X.Y.Z -R koedame/chordsketch
+   V=X.Y.Z  # replace with the actual version
+   gh workflow run npm-publish.yml           -f version=$V -R koedame/chordsketch
+   gh workflow run npm-publish-tree-sitter.yml -f version=$V -R koedame/chordsketch
+   gh workflow run post-release.yml          -f tag=v$V    -R koedame/chordsketch
+   gh workflow run docker.yml                -f tag=v$V    -R koedame/chordsketch
+   gh workflow run vscode-extension.yml      -f tag=v$V    -R koedame/chordsketch
+   gh workflow run napi.yml                  -f tag=v$V    -R koedame/chordsketch
    ```
-   ⚠️ **First publish of any new `@chordsketch/*` package needs the manual
-   local fallback** — see "Known operational quirks" below. The CI publish
-   path can only update *existing* packages reliably.
+   ⚠️ **npm packages** (`@chordsketch/wasm`, `tree-sitter-chordpro`,
+   `@chordsketch/node-*`): if the CI publish fails with 404, publish
+   manually — see "Known operational quirks" below.
 
-8. **Submit winget-pkgs PR**: see "Post-Release > winget" below. This is the
+8. **Wait for all workflows to complete** and verify each channel:
+   ```bash
+   # Watch the triggered runs
+   gh run list -R koedame/chordsketch --limit 10
+   ```
+   Check that post-release.yml updates Homebrew, Scoop, AUR, Snap,
+   Chocolatey, CocoaPods, Swift, and Flathub. Docker pushes to both
+   GHCR and Docker Hub. VS Code publishes to Marketplace (and Open VSX
+   if `OPEN_VSX_TOKEN` is configured).
+
+9. **Submit winget-pkgs PR**: see "Post-Release > winget" below. This is the
    only post-release step that involves an external repo (`microsoft/winget-pkgs`).
 
 ## crates.io Publishing Order
@@ -408,6 +426,25 @@ next release will fail until you set the new value.
 These are non-obvious gotchas discovered during real publishing. They are not
 derivable from the code; check this section before assuming the simple path
 will work.
+
+### `release: published` workflows do not auto-trigger
+
+`release.yml` creates the GitHub Release using `GITHUB_TOKEN`. GitHub's
+anti-recursion rule prevents events created by `GITHUB_TOKEN` from
+triggering further workflows. This means every workflow with
+`on: release: types: [published]` — Docker, VS Code extension, napi,
+post-release, and the npm publish workflows — will NOT fire automatically.
+
+**All of these must be manually dispatched via `gh workflow run` after
+step 5 of the Release Checklist.** See step 7 for the exact commands.
+
+Discovered during the v0.2.1 release (2026-04-16) when post-release
+automation (Homebrew, Scoop, AUR, Snap, Chocolatey, CocoaPods, Swift,
+Flathub, Docker) silently did not run.
+
+Long-term fix: use a PAT or GitHub App token in `release.yml` instead
+of `GITHUB_TOKEN` so the release event propagates normally. This would
+eliminate step 7 entirely.
 
 ### npm publish via CI cannot create new packages (scoped or unscoped)
 
