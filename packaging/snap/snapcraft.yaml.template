@@ -11,11 +11,11 @@ contact: https://github.com/koedame/chordsketch/issues
 issues: https://github.com/koedame/chordsketch/issues
 source-code: https://github.com/koedame/chordsketch
 website: https://chordsketch.koeda.me
-base: core22
+base: core24
 confinement: strict
 grade: stable
-architectures:
-  - build-on: [amd64]
+platforms:
+  amd64:
 
 parts:
   chordsketch:
