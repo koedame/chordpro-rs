@@ -1,6 +1,6 @@
 [package]
 name = "chordsketch-render-html"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -13,4 +13,4 @@ description = "HTML renderer for ChordPro documents"
 readme = "README.md"
 
 [dependencies]
-chordsketch-core = { version = "0.2.0", path = "../core" }
+chordsketch-core = { version = "0.2.1", path = "../core" }

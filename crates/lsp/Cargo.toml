@@ -1,6 +1,6 @@
 [package]
 name = "chordsketch-lsp"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -17,7 +17,7 @@ name = "chordsketch-lsp"
 path = "src/main.rs"
 
 [dependencies]
-chordsketch-core = { version = "0.2.0", path = "../core" }
+chordsketch-core = { version = "0.2.1", path = "../core" }
 tower-lsp = "0.20"
 tokio = { version = "1", features = ["rt", "macros", "io-std"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

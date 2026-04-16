@@ -1,6 +1,6 @@
 {
   "name": "@chordsketch/node",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Native Node.js addon for ChordPro parsing and rendering via napi-rs.",
   "license": "MIT",
   "repository": {
@@ -30,11 +30,11 @@
     "index.d.ts"
   ],
   "optionalDependencies": {
-    "@chordsketch/node-linux-x64-gnu": "0.2.0",
-    "@chordsketch/node-linux-arm64-gnu": "0.2.0",
-    "@chordsketch/node-darwin-x64": "0.2.0",
-    "@chordsketch/node-darwin-arm64": "0.2.0",
-    "@chordsketch/node-win32-x64-msvc": "0.2.0"
+    "@chordsketch/node-linux-x64-gnu": "0.2.1",
+    "@chordsketch/node-linux-arm64-gnu": "0.2.1",
+    "@chordsketch/node-darwin-x64": "0.2.1",
+    "@chordsketch/node-darwin-arm64": "0.2.1",
+    "@chordsketch/node-win32-x64-msvc": "0.2.1"
   },
   "napi": {
     "binaryName": "chordsketch-napi",

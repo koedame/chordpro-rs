@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-16
+
+### Added
+
+- Publish `tree-sitter-chordpro` grammar to npm with CI workflow (#1745)
+- Publish chordsketch to AUR (`yay -S chordsketch`) (#1609)
+- Publish chordsketch to Snap Store (`sudo snap install chordsketch`) (#1613)
+- Publish ChordSketch podspec to CocoaPods (#1614)
+- Register chordsketch on Chocolatey (auto-publish on next release) (#1611)
+- Add nixpkgs reference derivation with verified hashes (#1762)
+- Submit nixpkgs PR (NixOS/nixpkgs#510263) (#1610)
+- Add CLI `convert` subcommand integration tests (13 tests) (#1732)
+- Add Chocolatey, AUR, Snap install sections to README (#1773)
+
+### Fixed
+
+- Replace hardcoded `/tmp` paths in CLI tests with `NamedTempFile` (#1736, #1739, #1741, #1743)
+- Switch Snap base from core22 to core24 for glibc 2.39 compatibility (#1774)
+
+### Changed
+
+- Add missing crates and packages to README workspace tables (#1731)
+- Document npm new-package publish procedure in releasing.md (#1748)
+- Document AUR, Snap, CocoaPods first-time setup procedures (#1766)
+
 ## [0.2.0] - 2026-04-12
 
 ### Added

@@ -1,6 +1,6 @@
 [package]
 name = "chordsketch-napi"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -15,10 +15,10 @@ description = "Native Node.js addon for ChordPro parsing and rendering via napi-
 crate-type = ["cdylib"]
 
 [dependencies]
-chordsketch-core = { version = "0.2.0", path = "../core" }
-chordsketch-render-text = { version = "0.2.0", path = "../render-text" }
-chordsketch-render-html = { version = "0.2.0", path = "../render-html" }
-chordsketch-render-pdf = { version = "0.2.0", path = "../render-pdf" }
+chordsketch-core = { version = "0.2.1", path = "../core" }
+chordsketch-render-text = { version = "0.2.1", path = "../render-text" }
+chordsketch-render-html = { version = "0.2.1", path = "../render-html" }
+chordsketch-render-pdf = { version = "0.2.1", path = "../render-pdf" }
 # `napi` and `napi-derive` are pinned to exact patch versions because the
 # `#[napi]` macro emits ABI-sensitive C glue against the Node-API ABI.
 # Caret ranges (`"3"`) would let a 3.5 release land via a casual `cargo

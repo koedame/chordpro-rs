@@ -201,7 +201,7 @@ jobs:
           # 0.1.0 → 0.1.1 fix, in the publish PR itself). The README sync
           # check (.github/workflows/readme-sync.yml) does not catch this
           # automatically because the version string lives only here.
-          npm install '@chordsketch/wasm@0.2.0'
+          npm install '@chordsketch/wasm@0.2.1'
 
       - name: Smoke test text + HTML + PDF render
         run: |

@@ -1,6 +1,6 @@
 {
   "name": "@chordsketch/node-linux-x64-gnu",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Prebuilt @chordsketch/node binary for Linux x86_64 (glibc).",
   "license": "MIT",
   "repository": {
