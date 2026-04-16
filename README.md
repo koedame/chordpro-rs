@@ -74,6 +74,24 @@ scoop install chordsketch
 winget install koedame.chordsketch
 ```
 
+### Chocolatey (Windows)
+
+```bash
+choco install chordsketch
+```
+
+### Snap (Linux)
+
+```bash
+sudo snap install chordsketch
+```
+
+### AUR (Arch Linux)
+
+```bash
+yay -S chordsketch
+```
+
 ### Docker
 
 ```bash
