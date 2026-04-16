@@ -751,18 +751,17 @@ jobs:
 
           # Open a PR on the Flathub repo for review
           cd ..
+          PR_BODY="## Update chordsketch to ${VERSION}
+
+          - **Version**: ${VERSION}
+          - **Architectures**: x86_64, aarch64
+          - **Source**: Pre-built binaries from [GitHub Release](https://github.com/koedame/chordsketch/releases/tag/v${VERSION})
+
+          Automated update from the [chordsketch post-release workflow](https://github.com/koedame/chordsketch/blob/main/.github/workflows/post-release.yml)."
+
           GH_TOKEN="$FLATHUB_TOKEN" gh pr create \
             --repo flathub/me.koeda.chordsketch \
             --base master \
             --head "$BRANCH" \
             --title "Update chordsketch to ${VERSION}" \
-            --body "$(cat <<PR_BODY
-## Update chordsketch to ${VERSION}
-
-- **Version**: ${VERSION}
-- **Architectures**: x86_64, aarch64
-- **Source**: Pre-built binaries from [GitHub Release](https://github.com/koedame/chordsketch/releases/tag/v${VERSION})
-
-Automated update from the [chordsketch post-release workflow](https://github.com/koedame/chordsketch/blob/main/.github/workflows/post-release.yml).
-PR_BODY
-          )"
+            --body "$PR_BODY"
