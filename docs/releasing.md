@@ -782,7 +782,9 @@ package.
      template
    - Triggers: `release: [published]` and `workflow_dispatch` with a
      `version` input
-   - Environment: `npm` (gates access to `NPM_TOKEN`)
+   - Do **not** add an `environment:` block — `NPM_TOKEN` is a repo-level
+     secret. An environment block was removed from `npm-publish.yml` in
+     #1791 to avoid stale deployment entries (see #1790).
    - Include the duplicate-publish check (skip if version already exists)
    - Use `--access public` on the `npm publish` command
    - If no build step is needed (e.g., pre-committed generated files),
