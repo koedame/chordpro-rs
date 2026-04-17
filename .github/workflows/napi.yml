@@ -342,13 +342,13 @@ jobs:
         # and be silently invisible to anonymous pulls.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           for triple in linux-x64-gnu linux-arm64-gnu darwin-x64 darwin-arm64 win32-x64-msvc; do
             pkg="@chordsketch/node-${triple}"
-            version="${{ steps.version.outputs.version }}"
-            if npm view "$pkg@$version" version >/dev/null 2>&1; then
-              echo "$pkg@$version already published — skipping"
+            if npm view "$pkg@$VERSION" version >/dev/null 2>&1; then
+              echo "$pkg@$VERSION already published — skipping"
               continue
             fi
             (cd "crates/napi/npm/${triple}" && npm publish --access public)
@@ -360,11 +360,11 @@ jobs:
         # platform loop above.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          version="${{ steps.version.outputs.version }}"
-          if npm view "@chordsketch/node@$version" version >/dev/null 2>&1; then
-            echo "@chordsketch/node@$version already published — skipping"
+          if npm view "@chordsketch/node@$VERSION" version >/dev/null 2>&1; then
+            echo "@chordsketch/node@$VERSION already published — skipping"
             exit 0
           fi
           cd crates/napi
