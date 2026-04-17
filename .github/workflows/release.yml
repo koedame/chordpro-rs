@@ -103,12 +103,15 @@ jobs:
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TARGET: ${{ matrix.target }}
         run: |
-          ARCHIVE_NAME="chordsketch-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz"
-          STAGING="chordsketch-${{ steps.version.outputs.version }}-${{ matrix.target }}"
+          ARCHIVE_NAME="chordsketch-${VERSION}-${TARGET}.tar.gz"
+          STAGING="chordsketch-${VERSION}-${TARGET}"
           mkdir "$STAGING"
-          cp "target/${{ matrix.target }}/release/chordsketch" "$STAGING/"
-          cp "target/${{ matrix.target }}/release/chordsketch-lsp" "$STAGING/"
+          cp "target/${TARGET}/release/chordsketch" "$STAGING/"
+          cp "target/${TARGET}/release/chordsketch-lsp" "$STAGING/"
           cp LICENSE README.md "$STAGING/"
           tar czf "$ARCHIVE_NAME" "$STAGING"
           echo "ARCHIVE=$ARCHIVE_NAME" >> "$GITHUB_ENV"
@@ -116,14 +119,15 @@ jobs:
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TARGET: ${{ matrix.target }}
         run: |
-          $Version = "${{ steps.version.outputs.version }}"
-          $Target = "${{ matrix.target }}"
-          $ArchiveName = "chordsketch-$Version-$Target.zip"
-          $Staging = "chordsketch-$Version-$Target"
+          $ArchiveName = "chordsketch-$env:VERSION-$env:TARGET.zip"
+          $Staging = "chordsketch-$env:VERSION-$env:TARGET"
           New-Item -ItemType Directory -Path $Staging
-          Copy-Item "target/$Target/release/chordsketch.exe" "$Staging/"
-          Copy-Item "target/$Target/release/chordsketch-lsp.exe" "$Staging/"
+          Copy-Item "target/$env:TARGET/release/chordsketch.exe" "$Staging/"
+          Copy-Item "target/$env:TARGET/release/chordsketch-lsp.exe" "$Staging/"
           Copy-Item LICENSE, README.md "$Staging/"
           Compress-Archive -Path "$Staging/*" -DestinationPath $ArchiveName
           echo "ARCHIVE=$ArchiveName" >> $env:GITHUB_ENV
@@ -171,6 +175,7 @@ jobs:
             VERSION="$REF_NAME"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        shell: bash
 
       - name: Generate checksums
         run: |
@@ -181,8 +186,8 @@ jobs:
       - name: Create Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           gh release create "$VERSION" \
             --title "$VERSION" \
             --notes "See [CHANGELOG.md](https://github.com/koedame/chordsketch/blob/main/CHANGELOG.md) for details." \
