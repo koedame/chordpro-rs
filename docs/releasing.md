@@ -42,9 +42,11 @@ at post-release verification rather than before the tag is cut.
    ```bash
    gh api repos/koedame/chordsketch/environments --jq '.environments[].name'
    ```
-   Every `environment:` name used in a publish job (`npm`, `docker-hub`,
-   `vscode-marketplace`, `pypi`, `rubygems`, `maven-central`, `napi`) must
-   appear in the output.
+   Every `environment:` name used in a publish job (`docker-hub`,
+   `vscode-marketplace`, `pypi`, `rubygems`, `maven-central`) must
+   appear in the output. (`npm` and `napi` environment blocks were
+   removed in #1790 — those channels are published manually; see step 7
+   and the "napi distribution" section.)
 3. **`ci.yml` and `readme-smoke.yml` are green on the target commit.** The
    release workflow builds from that commit, so a red CI is a release
    blocker:
