@@ -156,6 +156,7 @@ at post-release verification rather than before the tag is cut.
    gh workflow run docker.yml                -f tag=v$V    -R koedame/chordsketch
    gh workflow run vscode-extension.yml      -f tag=v$V    -R koedame/chordsketch
    gh workflow run napi.yml                  -f tag=v$V    -R koedame/chordsketch
+   gh workflow run release-verify.yml        -f tag=v$V    -R koedame/chordsketch
    ```
    ⚠️ **napi** (`@chordsketch/node-*`): the CI workflow will likely fail
    with 404 due to the same granular token limitation. napi publish
@@ -342,8 +343,12 @@ After the release workflow completes and the GitHub Release is published:
    4. Wait for MacPorts CI and maintainer review.
 
 6. **Automated channel rollup** — `.github/workflows/release-verify.yml`
-   runs automatically on `release: published`, queries every registry
-   listed in `ci/release-channels.toml`, and appends a
+   has `on: release: types: [published]`, but like the other publish
+   workflows it does **not** auto-trigger when `release.yml` creates the
+   release with `GITHUB_TOKEN` (anti-recursion rule, see Known
+   Operational Quirks). Manual dispatch is included in step 8 of the
+   Release Checklist. Once dispatched, it queries every registry listed
+   in `ci/release-channels.toml` and appends a
    `## Channel Verification` section to the release body. Wait for that
    workflow to complete, then read the appended table on the GitHub Release
    page:
@@ -458,10 +463,11 @@ will work.
 anti-recursion rule prevents events created by `GITHUB_TOKEN` from
 triggering further workflows. This means every workflow with
 `on: release: types: [published]` — Docker, VS Code extension, napi,
-post-release, and the npm publish workflows — will NOT fire automatically.
+post-release, the npm publish workflows, and **release-verify** — will
+NOT fire automatically.
 
 **All of these must be manually dispatched via `gh workflow run` after
-step 5 of the Release Checklist.** See step 7 for the exact commands.
+step 5 of the Release Checklist.** See step 8 for the exact commands.
 
 Discovered during the v0.2.1 release (2026-04-16) when post-release
 automation (Homebrew, Scoop, AUR, Snap, Chocolatey, CocoaPods, Swift,
