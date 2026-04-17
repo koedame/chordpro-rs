@@ -18,10 +18,9 @@ jobs:
   publish:
     name: Publish tree-sitter-chordpro
     runs-on: ubuntu-latest
+    # See npm-publish.yml comment — environment block removed to avoid
+    # stale deployment entries (#1790).
     continue-on-error: true
-    environment:
-      name: npm
-      url: https://www.npmjs.com/package/tree-sitter-chordpro
     permissions:
       contents: read
     defaults:

@@ -42,9 +42,11 @@ at post-release verification rather than before the tag is cut.
    ```bash
    gh api repos/koedame/chordsketch/environments --jq '.environments[].name'
    ```
-   Every `environment:` name used in a publish job (`npm`, `docker-hub`,
-   `vscode-marketplace`, `pypi`, `rubygems`, `maven-central`, `napi`) must
-   appear in the output.
+   Every `environment:` name used in a publish job (`docker-hub`,
+   `vscode-marketplace`, `pypi`, `rubygems`, `maven-central`) must
+   appear in the output. (`npm` and `napi` environment blocks were
+   removed in #1790 — those channels are published manually; see step 7
+   and the "napi distribution" section.)
 3. **`ci.yml` and `readme-smoke.yml` are green on the target commit.** The
    release workflow builds from that commit, so a red CI is a release
    blocker:
@@ -129,24 +131,38 @@ at post-release verification rather than before the tag is cut.
    cargo publish -p chordsketch
    ```
 
-7. **Manually trigger all publish workflows.** The release created in
-   step 5 uses `GITHUB_TOKEN`, which does NOT trigger `release: published`
-   workflows (GitHub anti-recursion rule). Every workflow that depends on
-   that event must be dispatched manually:
+7. **Publish npm packages manually.** The granular `NPM_TOKEN` cannot
+   reliably publish via CI (see "Known operational quirks" below). Publish
+   from your local machine:
+   ```bash
+   # @chordsketch/wasm
+   cd packages/npm && npm run build && npm publish && cd ../..
+   # tree-sitter-chordpro
+   cd packages/tree-sitter-chordpro && npm publish --access public && cd ../..
+   ```
+   Verify:
+   ```bash
+   npm view @chordsketch/wasm version        # should show X.Y.Z
+   npm view tree-sitter-chordpro version      # should show X.Y.Z
+   ```
+
+8. **Manually trigger all remaining publish workflows.** The release
+   created in step 5 uses `GITHUB_TOKEN`, which does NOT trigger
+   `release: published` workflows (GitHub anti-recursion rule). Every
+   workflow that depends on that event must be dispatched manually:
    ```bash
    V=X.Y.Z  # replace with the actual version
-   gh workflow run npm-publish.yml           -f version=$V -R koedame/chordsketch
-   gh workflow run npm-publish-tree-sitter.yml -f version=$V -R koedame/chordsketch
    gh workflow run post-release.yml          -f tag=v$V    -R koedame/chordsketch
    gh workflow run docker.yml                -f tag=v$V    -R koedame/chordsketch
    gh workflow run vscode-extension.yml      -f tag=v$V    -R koedame/chordsketch
    gh workflow run napi.yml                  -f tag=v$V    -R koedame/chordsketch
    ```
-   ⚠️ **npm packages** (`@chordsketch/wasm`, `tree-sitter-chordpro`,
-   `@chordsketch/node-*`): if the CI publish fails with 404, publish
-   manually — see "Known operational quirks" below.
+   ⚠️ **napi** (`@chordsketch/node-*`): the CI workflow will likely fail
+   with 404 due to the same granular token limitation. napi publish
+   requires manually downloading CI build artifacts — see
+   "napi distribution" section below for the full procedure.
 
-8. **Wait for all workflows to complete** and verify each channel:
+9. **Wait for all workflows to complete** and verify each channel:
    ```bash
    # Watch the triggered runs
    gh run list -R koedame/chordsketch --limit 10
@@ -156,7 +172,7 @@ at post-release verification rather than before the tag is cut.
    GHCR and Docker Hub. VS Code publishes to Marketplace (and Open VSX
    if `OPEN_VSX_TOKEN` is configured).
 
-9. **Submit winget-pkgs PR**: see "Post-Release > winget" below. This is the
+10. **Submit winget-pkgs PR**: see "Post-Release > winget" below. This is the
    only post-release step that involves an external repo (`microsoft/winget-pkgs`).
 
 ## crates.io Publishing Order
