@@ -88,6 +88,18 @@ jobs:
           npm version "$VERSION" --no-git-tag-version --allow-same-version
         if: github.event_name == 'release'
 
+      - name: Validate workflow_dispatch version
+        # Format-validate the user-supplied `inputs.version` before
+        # passing it to `npm version`. `npm version` also rejects
+        # non-semver, but the earlier, narrower check here matches
+        # the validation point the rest of the release workflows
+        # use (#1797) and fails with a consistent error message
+        # instead of npm's opaque "not a valid version" output.
+        if: github.event_name == 'workflow_dispatch'
+        uses: ./.github/actions/validate-release-version
+        with:
+          version: ${{ inputs.version }}
+
       - name: Set version from workflow input
         env:
           VERSION: ${{ inputs.version }}

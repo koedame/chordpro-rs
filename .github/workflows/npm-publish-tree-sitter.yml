@@ -47,6 +47,15 @@ jobs:
           VERSION="${TAG#v}"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
+      - name: Validate workflow_dispatch version
+        # See rationale in npm-publish.yml. Consistent validation
+        # point across every workflow that accepts a version / tag
+        # input. Per #1797 / #1815.
+        if: github.event_name == 'workflow_dispatch'
+        uses: ./.github/actions/validate-release-version
+        with:
+          version: ${{ inputs.version }}
+
       - name: Set version from workflow input
         if: github.event_name == 'workflow_dispatch'
         env:

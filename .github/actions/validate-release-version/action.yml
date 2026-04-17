@@ -1,0 +1,35 @@
+name: "Validate release version format"
+description: >
+  Validate that a string matches a bare semver release version
+  `<major>.<minor>.<patch>[-prerelease]` (no `v` prefix). For use by
+  workflows whose `workflow_dispatch` input is a bare npm / cargo
+  version string rather than a tag. Paired with routing
+  `inputs.version` through `env:` so user-controlled values never
+  reach YAML expression interpolation in a `run:` body without first
+  being format-validated. See #1797 / #1815.
+
+  For `v`-prefixed tag strings, use `validate-release-tag` instead.
+inputs:
+  version:
+    description: >
+      The bare version string to validate (e.g. `0.2.1` or
+      `0.2.1-rc.1`). Caller should pass `${{ inputs.version }}`.
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Validate version format
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if [ -z "$VERSION" ]; then
+          echo "Rejecting empty release version (workflow must supply inputs.version)." >&2
+          exit 1
+        fi
+        if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
+          echo "Rejecting malformed release version: $VERSION" >&2
+          echo "Expected format: <major>.<minor>.<patch>[-<prerelease>]" >&2
+          exit 1
+        fi
