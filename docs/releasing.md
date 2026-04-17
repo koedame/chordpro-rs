@@ -475,7 +475,7 @@ Flathub, Docker) silently did not run.
 
 Long-term fix: use a PAT or GitHub App token in `release.yml` instead
 of `GITHUB_TOKEN` so the release event propagates normally. This would
-eliminate step 7 entirely.
+eliminate step 8 entirely.
 
 ### npm publish via CI cannot create new packages (scoped or unscoped)
 
