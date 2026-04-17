@@ -21,6 +21,17 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    # Intentionally fail-closed: if any build matrix cell fails, the
+    # downstream `release` job (needs: build) is skipped and no GitHub
+    # Release is created. This is correct because release.yml creates
+    # the authoritative artifact set that every downstream channel
+    # (Docker, VS Code, napi, post-release rollup) keys off. A partial
+    # release with one missing archive would silently degrade every
+    # install path for that platform; holding the release until all
+    # cells pass is the safer failure mode. Contrast with
+    # `vscode-extension.yml build-platform`, which ships a universal
+    # VSIX so users on a failing platform still get a working extension
+    # (see #1795). See #1806.
     strategy:
       fail-fast: false
       matrix:

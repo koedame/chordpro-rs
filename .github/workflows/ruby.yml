@@ -62,6 +62,15 @@ jobs:
   build-native-others:
     name: Build native library (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    # Intentionally fail-closed: if any native-library matrix cell
+    # fails, the downstream `publish` job (needs: build-native-linux-x64,
+    # build-native-others, generate-and-test) is skipped. The RubyGems
+    # gem bundles every platform's native library; a missing triple
+    # means `require 'chordsketch'` fails at runtime on that platform
+    # with no fallback. Blocking the release until all cells succeed
+    # is the safer failure mode. Contrast with
+    # `vscode-extension.yml build-platform`, which has a universal
+    # VSIX fallback (#1795). See #1806.
     strategy:
       fail-fast: false
       matrix:

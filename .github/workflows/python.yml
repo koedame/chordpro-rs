@@ -43,6 +43,16 @@ jobs:
 
   # Build Linux wheels (x86_64 and aarch64) in parallel.
   # test-ubuntu waits only on this job, not on macOS or Windows builds (#1463).
+  #
+  # build-wheels-* matrices are intentionally fail-closed: if any cell
+  # fails, the downstream `publish` job (needs: every build-wheels-*
+  # cell and every test-* cell) is skipped. The PyPI release ships
+  # wheels per (python-version, os, arch) triple; a missing triple
+  # means `pip install chordsketch` falls back to sdist compilation on
+  # that platform, which requires a Rust toolchain and fails for most
+  # end users. Blocking the release until all cells succeed is the
+  # safer failure mode. Contrast with `vscode-extension.yml
+  # build-platform`, which has a universal VSIX fallback (#1795). See #1806.
   build-wheels-ubuntu:
     name: Build ${{ matrix.target }} wheels on ubuntu-latest
     runs-on: ubuntu-latest

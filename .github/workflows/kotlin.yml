@@ -62,6 +62,15 @@ jobs:
   build-jni-others:
     name: Build JNI library (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    # Intentionally fail-closed: if any JNI matrix cell fails, the
+    # downstream `publish` job (needs: build-jni-linux-x64,
+    # build-jni-others, generate-and-test) is skipped. The published
+    # Maven Central artifact bundles every platform's JNI .so/.dylib/.dll
+    # inside the JAR; a missing triple means the JNI library loader
+    # fails at runtime on that platform with no fallback. Blocking
+    # the release until all cells succeed is the safer failure mode.
+    # Contrast with `vscode-extension.yml build-platform`, which has
+    # a universal VSIX fallback (#1795). See #1806.
     strategy:
       fail-fast: false
       matrix:

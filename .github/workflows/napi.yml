@@ -37,6 +37,15 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    # Intentionally fail-closed: if any build matrix cell fails, the
+    # downstream `publish` job is skipped. The published
+    # `@chordsketch/node` package resolves a platform-specific
+    # prebuilt binary at install time via optionalDependencies; a
+    # missing platform triple results in a hard install failure on
+    # that platform with no universal fallback. Blocking the whole
+    # release until every cell succeeds is the safer failure mode.
+    # Contrast with `vscode-extension.yml build-platform`, which has
+    # a universal VSIX fallback (#1795). See #1806.
     strategy:
       fail-fast: false
       matrix:
