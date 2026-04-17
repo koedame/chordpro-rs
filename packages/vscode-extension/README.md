@@ -90,13 +90,13 @@ cargo install chordsketch-lsp
 Commands are available in the Command Palette when the active editor
 has language `chordpro`.
 
-| Command | Title |
-|---|---|
-| `chordsketch.openPreview` | ChordSketch: Open Preview |
-| `chordsketch.openPreviewToSide` | ChordSketch: Open Preview to the Side |
-| `chordsketch.transposeUp` | ChordSketch: Transpose Up |
-| `chordsketch.transposeDown` | ChordSketch: Transpose Down |
-| `chordsketch.convertTo` | ChordSketch: Export As… (HTML / text / PDF) |
+| Command | Title | Notes |
+|---|---|---|
+| `chordsketch.openPreview` | ChordSketch: Open Preview | |
+| `chordsketch.openPreviewToSide` | ChordSketch: Open Preview to the Side | |
+| `chordsketch.transposeUp` | ChordSketch: Transpose Up | Shifts every chord by +1 semitone |
+| `chordsketch.transposeDown` | ChordSketch: Transpose Down | Shifts every chord by −1 semitone |
+| `chordsketch.convertTo` | ChordSketch: Export As… | Exports the current song to HTML, text, or PDF |
 
 ## Configuration
 
