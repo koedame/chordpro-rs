@@ -102,6 +102,18 @@ jobs:
     # it at server/<platform>-<arch>/chordsketch-lsp[.exe], and packages a
     # platform-specific VSIX. Needed for Tier 3 of the LSP resolver in
     # packages/vscode-extension/src/platform.ts to succeed post-install. See #1786.
+    #
+    # continue-on-error lets the publish jobs run even when a subset of
+    # matrix cells fails (e.g., a transient `gh release download`
+    # failure on one platform). Cell failures are still visible in the
+    # workflow run's Jobs tab. Without this, a single failed cell marks
+    # the whole job failed and GitHub skips both publish jobs entirely,
+    # hiding the partial build behind a silent skip. The `Verify
+    # expected VSIX count` step inside each publish job is the real
+    # guardrail: it fails loudly when fewer than 8 VSIXes are present,
+    # so a partial build still blocks publish — just loudly instead of
+    # silently. See #1795.
+    continue-on-error: true
     if: >-
       github.event_name == 'release' ||
       (github.event_name == 'workflow_dispatch' && inputs.tag != '')
