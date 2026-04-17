@@ -197,20 +197,9 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.tag != '')
     runs-on: ubuntu-latest
     # `continue-on-error: true` keeps the overall workflow green when the
-    # `napi` environment is absent (forks, fresh instances). The authoritative
-    # success/failure signal for this channel is `release-verify.yml`'s
-    # post-release rollup, which queries registry.npmjs.org for each of the
-    # six packages. See #1506.
-    #
-    # One-time human setup: create the "napi" environment at
-    #   https://github.com/koedame/chordsketch/settings/environments
-    # and add NPM_TOKEN as an environment secret. The npm account must own
-    # the `@chordsketch` scope and have published the six @chordsketch/node*
-    # packages at least once (see docs/releasing.md §napi distribution).
+    # See npm-publish.yml comment — environment block removed to avoid
+    # stale deployment entries (#1790). NPM_TOKEN is a repo-level secret.
     continue-on-error: true
-    environment:
-      name: napi
-      url: https://www.npmjs.com/package/@chordsketch/node
     permissions:
       contents: read
     steps:

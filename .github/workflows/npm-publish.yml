@@ -17,21 +17,15 @@ jobs:
   publish:
     name: Publish @chordsketch/wasm
     runs-on: ubuntu-latest
-    # Scopes NPM_TOKEN to this environment, consistent with python.yml (pypi),
-    # ruby.yml (rubygems), kotlin.yml (maven-central), and
-    # vscode-extension.yml (vscode-marketplace).
+    # NPM_TOKEN is a repo-level secret, not an environment secret.
+    # The `environment:` block was removed to avoid creating GitHub
+    # deployment entries that stay in "failure" state when the granular
+    # npm token cannot publish (see #1790).
     #
-    # One-time human setup: create the "npm" environment at
-    #   https://github.com/koedame/chordsketch/settings/environments
-    # and move NPM_TOKEN from repository secrets to environment secrets.
-    #
-    # If the "npm" environment does not exist (fork, fresh instance), GitHub
-    # cannot start this job. continue-on-error keeps the overall workflow green
-    # when CI succeeded but publishing infrastructure is absent. See #1443.
+    # npm publish is done MANUALLY as part of the release checklist.
+    # This workflow is kept as a convenience for cases where the token
+    # does work, but failure is expected and non-blocking.
     continue-on-error: true
-    environment:
-      name: npm
-      url: https://www.npmjs.com/package/@chordsketch/wasm
     permissions:
       contents: read
     steps:
