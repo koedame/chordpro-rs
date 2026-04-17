@@ -94,9 +94,143 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  build-platform:
+    name: Package ${{ matrix.vs_target }} VSIX
+    runs-on: ubuntu-latest
+    # Release-only matrix that downloads the per-platform chordsketch-lsp
+    # binary from the GitHub Release assets (produced by release.yml), places
+    # it at server/<platform>-<arch>/chordsketch-lsp[.exe], and packages a
+    # platform-specific VSIX. Needed for Tier 3 of the LSP resolver in
+    # packages/vscode-extension/src/platform.ts to succeed post-install. See #1786.
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && inputs.tag != '')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - vs_target: linux-x64
+            rust_target: x86_64-unknown-linux-gnu
+            server_dir: linux-x64
+            ext: ""
+          - vs_target: linux-arm64
+            rust_target: aarch64-unknown-linux-gnu
+            server_dir: linux-arm64
+            ext: ""
+          - vs_target: darwin-x64
+            rust_target: x86_64-apple-darwin
+            server_dir: darwin-x64
+            ext: ""
+          - vs_target: darwin-arm64
+            rust_target: aarch64-apple-darwin
+            server_dir: darwin-arm64
+            ext: ""
+          - vs_target: win32-x64
+            rust_target: x86_64-pc-windows-msvc
+            server_dir: win32-x64
+            ext: ".exe"
+          - vs_target: alpine-x64
+            rust_target: x86_64-unknown-linux-musl
+            server_dir: linux-x64
+            ext: ""
+          - vs_target: alpine-arm64
+            rust_target: aarch64-unknown-linux-musl
+            server_dir: linux-arm64
+            ext: ""
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: packages/vscode-extension/package-lock.json
+
+      - name: Install @chordsketch/wasm (web + node builds)
+        run: |
+          mkdir -p packages/npm
+          cd packages/npm
+          npm pack @chordsketch/wasm@latest 2>/dev/null || true
+          if ls chordsketch-wasm-*.tgz 1>/dev/null 2>&1; then
+            tar xzf chordsketch-wasm-*.tgz --strip-components=1
+            echo "Unpacked @chordsketch/wasm"
+          else
+            echo "WARNING: @chordsketch/wasm not available from registry; WASM preview will be absent in this build."
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: packages/vscode-extension
+
+      - name: Build
+        run: npm run build
+        working-directory: packages/vscode-extension
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download chordsketch-lsp from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          RT="${{ matrix.rust_target }}"
+          # release.yml emits .zip for Windows targets, .tar.gz for everything else.
+          # Archive layouts differ (verified against v0.2.1):
+          #   - tar.gz: wraps files in a top-level "chordsketch-<tag>-<target>/" dir
+          #     (Unix `tar czf ARCHIVE STAGING`)
+          #   - zip: files sit at the archive root, no top-level dir
+          #     (PowerShell `Compress-Archive -Path "$Staging/*"`)
+          # Extraction below uses `unzip -j` and `tar --strip-components=1` to
+          # normalise both into SERVER_DIR regardless of internal layout.
+          if [ "${{ matrix.vs_target }}" = "win32-x64" ]; then
+            ARCHIVE="chordsketch-${TAG}-${RT}.zip"
+          else
+            ARCHIVE="chordsketch-${TAG}-${RT}.tar.gz"
+          fi
+          gh release download "$TAG" -R koedame/chordsketch --pattern "$ARCHIVE"
+          SERVER_DIR="packages/vscode-extension/server/${{ matrix.server_dir }}"
+          mkdir -p "$SERVER_DIR"
+          BIN="chordsketch-lsp${{ matrix.ext }}"
+          if [[ "$ARCHIVE" == *.zip ]]; then
+            unzip -j "$ARCHIVE" "$BIN" -d "$SERVER_DIR/"
+          else
+            tar xzf "$ARCHIVE" --strip-components=1 -C "$SERVER_DIR/" \
+              --wildcards "*/${BIN}"
+          fi
+          chmod +x "$SERVER_DIR/${BIN}" || true
+          ls -la "$SERVER_DIR/"
+
+      - name: Package platform-specific VSIX
+        working-directory: packages/vscode-extension
+        run: ./node_modules/.bin/vsce package --no-dependencies --target ${{ matrix.vs_target }}
+
+      - name: Verify binary is inside the VSIX
+        working-directory: packages/vscode-extension
+        run: |
+          set -euo pipefail
+          VSIX=$(ls *.vsix | head -n1)
+          unzip -l "$VSIX" | grep "server/${{ matrix.server_dir }}/chordsketch-lsp${{ matrix.ext }}"
+
+      - name: Upload platform VSIX artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: chordsketch-vsix-${{ matrix.vs_target }}
+          path: packages/vscode-extension/*.vsix
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
     name: Publish to VS Code Marketplace
-    needs: [build]
+    needs: [build, build-platform]
     runs-on: ubuntu-latest
     # Publish only on GitHub Release (published) events or when workflow_dispatch supplies a tag.
     #
@@ -143,22 +277,39 @@ jobs:
         run: npm ci
         working-directory: packages/vscode-extension
 
-      - name: Download VSIX artifact
+      - name: Download universal VSIX artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: chordsketch-vsix
           path: packages/vscode-extension/
 
+      - name: Download platform VSIX artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: chordsketch-vsix-*
+          merge-multiple: true
+          path: packages/vscode-extension/
+
       - name: Publish to Marketplace
         # vsce reads VSCE_PAT from the environment natively (>= 3.x), so no --pat flag needed.
+        # Loop per-VSIX so one platform failing does not block the others; each
+        # platform-specific VSIX carries its own --target metadata from packaging.
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: ./node_modules/.bin/vsce publish --packagePath *.vsix
         working-directory: packages/vscode-extension
+        run: |
+          set -euo pipefail
+          status=0
+          for vsix in *.vsix; do
+            echo "::group::Publishing $vsix"
+            ./node_modules/.bin/vsce publish --packagePath "$vsix" || status=1
+            echo "::endgroup::"
+          done
+          exit "$status"
 
   publish-openvsx:
     name: Publish to Open VSX Registry
-    needs: [build]
+    needs: [build, build-platform]
     runs-on: ubuntu-latest
     # Publish only on GitHub Release (published) events or when workflow_dispatch supplies a tag.
     #
@@ -199,10 +350,17 @@ jobs:
         run: npm ci
         working-directory: packages/vscode-extension
 
-      - name: Download VSIX artifact
+      - name: Download universal VSIX artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: chordsketch-vsix
+          path: packages/vscode-extension/
+
+      - name: Download platform VSIX artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: chordsketch-vsix-*
+          merge-multiple: true
           path: packages/vscode-extension/
 
       - name: Publish to Open VSX
@@ -210,5 +368,13 @@ jobs:
         # needed), matching the pattern used for vsce + VSCE_PAT above.
         env:
           OVSX_PAT: ${{ secrets.OPEN_VSX_TOKEN }}
-        run: ./node_modules/.bin/ovsx publish *.vsix
         working-directory: packages/vscode-extension
+        run: |
+          set -euo pipefail
+          status=0
+          for vsix in *.vsix; do
+            echo "::group::Publishing $vsix"
+            ./node_modules/.bin/ovsx publish "$vsix" || status=1
+            echo "::endgroup::"
+          done
+          exit "$status"
