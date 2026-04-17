@@ -7,9 +7,9 @@ white mark). Use these assets:
 
 | File | Size | Use |
 |------|------|-----|
-| `assets/logo.svg` | 180×180 | All READMEs, web contexts |
-| `assets/logo-128.png` | 128×128 | VS Code Marketplace icon, app icons |
-| `assets/logo-256.png` | 256×256 | High-DPI contexts, social previews |
+| `assets/logo.svg` | 180×180 | Most READMEs and web contexts (see VS Code exception below) |
+| `assets/logo-128.png` | 128×128 | VS Code Marketplace extension icon, app icons |
+| `assets/logo-256.png` | 256×256 | VS Code Marketplace README header, high-DPI contexts, social previews |
 
 **In every published package README**, embed the logo at the very top using the
 absolute raw GitHub URL so it renders on all registries (npm, PyPI, RubyGems, etc.):
@@ -20,9 +20,31 @@ absolute raw GitHub URL so it renders on all registries (npm, PyPI, RubyGems, et
 </p>
 ```
 
-**VS Code extension**: set `"icon": "icon.png"` in `package.json`; the file at
-`packages/vscode-extension/icon.png` is generated from `assets/logo-128.png` and
-checked in. Regenerate it when the logo changes:
+**VS Code extension README exception — MUST use PNG, not SVG.** `vsce
+package` rejects SVG images embedded in `README.md` with:
+
+```
+##[error]SVGs are restricted in README.md; please use other file image formats, such as PNG
+```
+
+The VS Code Marketplace has banned SVG in README content because
+SVG can carry embedded scripts. For `packages/vscode-extension/README.md`,
+use the PNG logo instead:
+
+```markdown
+<p align="center">
+  <img src="https://raw.githubusercontent.com/koedame/chordsketch/main/assets/logo-256.png" alt="ChordSketch" width="80" height="80">
+</p>
+```
+
+The 256-px raster is the canonical high-DPI choice; Marketplace
+reflows it at the width attribute. This exception applies only to
+README content, not to the extension's own icon (see below).
+
+**VS Code extension icon**: set `"icon": "icon.png"` in
+`package.json`; the file at `packages/vscode-extension/icon.png`
+is generated from `assets/logo-128.png` and checked in. Regenerate
+it when the logo changes:
 
 ```bash
 convert -background none assets/logo.svg -resize 128x128 packages/vscode-extension/icon.png
