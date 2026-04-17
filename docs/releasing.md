@@ -398,6 +398,7 @@ After the release workflow completes and the GitHub Release is published:
 | `AUR_SSH_KEY` | ed25519 SSH private key registered with AUR account `koedame` | Authenticate `git push` to `ssh://aur@aur.archlinux.org/chordsketch.git` from `post-release.yml` |
 | `SNAP_STORE_TOKEN` | Snapcraft exported credentials (`snapcraft export-login`) | Authenticate `snapcraft upload` + `snapcraft release` from `post-release.yml` |
 | `COCOAPODS_TRUNK_TOKEN` | CocoaPods trunk session token (from `~/.netrc` after `pod trunk register`) | Authenticate `pod trunk push` from `post-release.yml` |
+| `OPEN_VSX_TOKEN` | Open VSX personal access token (**environment secret** in `open-vsx`, not repo-level) | Authenticate `ovsx publish` from `vscode-extension.yml` |
 | `GITHUB_TOKEN` | provided automatically | Used by `docker.yml` to push to GHCR, by `release.yml` to upload assets, by `npm-publish.yml` checkout |
 
 If any of these secrets are missing or wrong, the corresponding distribution
@@ -420,6 +421,7 @@ following as the rotation policy:
 | `AUR_SSH_KEY` | Only if the key is compromised or the AUR account changes | <https://aur.archlinux.org/account/koedame> (replace SSH public key, then `gh secret set AUR_SSH_KEY < new_key`) |
 | `SNAP_STORE_TOKEN` | Before expiry date (check current expiry with `snapcraft whoami`) | `snapcraft export-login ~/snap-token.txt && gh secret set SNAP_STORE_TOKEN < ~/snap-token.txt && rm -f ~/snap-token.txt` |
 | `COCOAPODS_TRUNK_TOKEN` | Sessions last ~4 months; re-register if expired | `pod trunk register <email> <name>`, confirm email, then pipe token directly: `grep -A2 trunk.cocoapods.org ~/.netrc \| awk '/password/{print $2}' \| gh secret set COCOAPODS_TRUNK_TOKEN` |
+| `OPEN_VSX_TOKEN` | Only if revoked or compromised | <https://open-vsx.org/user-settings/tokens> → generate new token, then `gh secret set OPEN_VSX_TOKEN --env open-vsx` |
 | `DOCKERHUB_USERNAME` | Only if the Docker Hub namespace owner changes | n/a (string, not a credential) |
 | `GITHUB_TOKEN` | Provided automatically per workflow run; no rotation needed | n/a |
 
@@ -972,3 +974,27 @@ The pod ships a prebuilt XCFramework (same artifact as the Swift package).
    grep -A2 trunk.cocoapods.org ~/.netrc | awk '/password/{print $2}' \
      | gh secret set COCOAPODS_TRUNK_TOKEN -R koedame/chordsketch
    ```
+
+### Open VSX Registry
+
+Set up on 2026-04-17. Automated via `vscode-extension.yml` publish job.
+
+The VS Code extension is published to both the VS Code Marketplace and
+the Open VSX Registry. Open VSX requires a separate account and token.
+
+1. Sign in at <https://open-vsx.org> with your GitHub account.
+2. Create a namespace matching the VS Code publisher name:
+   ```bash
+   npx ovsx create-namespace koedame -p <your-token>
+   ```
+3. Generate a personal access token at
+   <https://open-vsx.org/user-settings/tokens>.
+4. Store the token as an **environment secret** (not repo-level):
+   ```bash
+   gh secret set OPEN_VSX_TOKEN --env open-vsx -R koedame/chordsketch
+   # Paste the token when prompted
+   ```
+   The `open-vsx` environment must already exist at
+   <https://github.com/koedame/chordsketch/settings/environments>.
+5. The `vscode-extension.yml` `Publish to Open VSX Registry` job
+   handles publishing on each release. No manual `ovsx publish` needed.
