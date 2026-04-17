@@ -447,6 +447,8 @@ jobs:
   # would require bootstrapping pacman on Ubuntu — fragile and slow.
   # AUR package correctness is verified by the PKGBUILD template in
   # packaging/aur/ and the post-release.yml update-aur job.
+  # Rationale, alternatives considered, and watch signals for revisiting
+  # this decision: docs/adr/0002-aur-smoke-coverage-exemption.md.
 
   library-smoke:
     name: Library Usage
