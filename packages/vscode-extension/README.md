@@ -1,6 +1,13 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/koedame/chordsketch/main/assets/logo.svg" alt="ChordSketch" width="80" height="80">
+  <img src="https://raw.githubusercontent.com/koedame/chordsketch/main/assets/logo-256.png" alt="ChordSketch" width="80" height="80">
 </p>
+
+<!--
+  PNG (not SVG) because the VS Code Marketplace's vsce packaging step
+  rejects SVG images in README.md with "SVGs are restricted in
+  README.md". `assets/logo-256.png` is the canonical high-DPI raster
+  per .claude/rules/package-documentation.md §Logo.
+-->
 
 # ChordSketch for VS Code
 
