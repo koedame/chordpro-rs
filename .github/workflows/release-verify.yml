@@ -78,6 +78,14 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "Verifying tag: $tag"
 
+      - name: Validate release tag
+        # Format-validate the resolved tag (whether it came from
+        # inputs.tag, the release event, or `gh release list`) before
+        # downstream steps interpolate it into `gh` / shell. See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ steps.tag.outputs.tag }}
+
       - name: Extract channel ids from manifest
         id: read
         run: |

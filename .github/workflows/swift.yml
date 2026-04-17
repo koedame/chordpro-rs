@@ -278,16 +278,30 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        # Needed so the composite action at
+        # `.github/actions/validate-release-tag` is present on disk.
+        # actions/download-artifact below places the xcframework zip
+        # at the workspace root next to the checked-out tree.
+
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: xcframework
+
+      - name: Validate release tag
+        # Format-validate the tag before `gh release upload` sees it. See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ inputs.tag || github.ref_name }}
 
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_TAG: ${{ inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             TAG="$INPUT_TAG"
           else
             TAG="${GITHUB_REF#refs/tags/}"

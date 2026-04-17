@@ -40,6 +40,13 @@ jobs:
             echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Validate release tag
+        # Format-validate the resolved tag before downstream `gh release
+        # download` and `docker buildx` invocations use it. See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ steps.version.outputs.tag }}
+
       - name: Download and extract release binaries
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -142,6 +149,13 @@ jobs:
           else
             echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Validate release tag
+        # Format-validate the resolved tag before downstream `gh release
+        # download` and `docker buildx` invocations use it. See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ steps.version.outputs.tag }}
 
       - name: Detect Docker Hub credentials
         # Decouple Docker Hub from GHCR: if DOCKERHUB_TOKEN or DOCKERHUB_USERNAME

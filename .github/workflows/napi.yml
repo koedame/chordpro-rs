@@ -223,6 +223,14 @@ jobs:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
 
+      - name: Validate release tag
+        # Format-validate the user-supplied tag before downstream steps
+        # derive a `version` from it and use the value in npm publish.
+        # See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
+
       - name: Determine version
         id: version
         env:

@@ -1,0 +1,34 @@
+name: "Validate release tag format"
+description: >
+  Validate that a string matches the project's release tag format
+  `v<major>.<minor>.<patch>[-prerelease]`. Rejects tags whose format
+  is malformed before they are interpolated into downstream shell or
+  `gh` CLI invocations. Paired with routing `inputs.tag` and
+  `github.event.release.tag_name` through `env:` so user-controlled
+  values never reach YAML expression interpolation in a `run:` body
+  without first being format-validated. See #1797.
+inputs:
+  tag:
+    description: >
+      The tag string to validate. Caller should usually pass
+      `${{ inputs.tag || github.event.release.tag_name || github.ref_name }}`
+      so all three entry points are covered.
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Validate tag format
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+      run: |
+        set -euo pipefail
+        if [ -z "$TAG" ]; then
+          echo "Rejecting empty release tag (workflow must supply inputs.tag, github.event.release.tag_name, or run on a tag push)." >&2
+          exit 1
+        fi
+        if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
+          echo "Rejecting malformed release tag: $TAG" >&2
+          echo "Expected format: v<major>.<minor>.<patch>[-<prerelease>]" >&2
+          exit 1
+        fi

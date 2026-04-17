@@ -205,6 +205,13 @@ jobs:
         # enforced by the "Assert committed version matches the release tag"
         # step below.
 
+      - name: Validate release tag
+        # Format-validate any user-supplied tag before downstream steps
+        # interpolate it into `gh` / shell invocations. See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ inputs.tag || github.ref_name }}
+
       - name: Assert committed version matches the release tag
         # crates/ffi/Cargo.toml has a committed `version` field that must
         # match the release tag exactly. The version-consistency check

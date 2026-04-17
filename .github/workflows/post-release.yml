@@ -35,6 +35,13 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Validate release tag
+        # Format-validate the resolved tag before downstream `gh` /
+        # shell / checksum-download steps interpolate it. See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ steps.version.outputs.tag }}
+
       - name: Download checksums
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -119,6 +126,13 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Validate release tag
+        # Format-validate the resolved tag before downstream `gh` /
+        # shell / checksum-download steps interpolate it. See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ steps.version.outputs.tag }}
+
       - name: Download checksums
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -182,6 +196,13 @@ jobs:
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release tag
+        # Format-validate the resolved tag before downstream `gh` /
+        # shell / checksum-download steps interpolate it. See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ steps.version.outputs.tag }}
 
       - name: Download checksums
         shell: bash
@@ -256,6 +277,13 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Validate release tag
+        # Format-validate the resolved tag before downstream `gh` /
+        # shell / checksum-download steps interpolate it. See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ steps.version.outputs.tag }}
+
       - name: Download binary
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -320,6 +348,13 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Validate release tag
+        # Format-validate the resolved tag before downstream `gh` /
+        # shell / checksum-download steps interpolate it. See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ steps.version.outputs.tag }}
+
       - name: Generate podspec
         run: |
           VERSION="${{ steps.version.outputs.version }}"
@@ -360,6 +395,13 @@ jobs:
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release tag
+        # Format-validate the resolved tag before downstream `gh` /
+        # shell / checksum-download steps interpolate it. See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ steps.version.outputs.tag }}
 
       - name: Download checksums
         env:
@@ -477,6 +519,13 @@ jobs:
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release tag
+        # Format-validate the resolved tag before downstream `gh` /
+        # shell / checksum-download steps interpolate it. See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ steps.version.outputs.tag }}
 
       - name: Wait for xcframework asset
         id: wait
@@ -676,6 +725,13 @@ jobs:
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release tag
+        # Format-validate the resolved tag before downstream `gh` /
+        # shell / checksum-download steps interpolate it. See #1797.
+        uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ steps.version.outputs.tag }}
 
       - name: Download checksums
         env:
