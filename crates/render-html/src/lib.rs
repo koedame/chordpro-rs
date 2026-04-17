@@ -1429,49 +1429,47 @@ fn render_directive_inner(
             render_image(attrs, html);
         }
         DirectiveKind::Define if show_diagrams => {
-            {
-                if let Some(ref value) = directive.value {
-                    let def = chordsketch_core::ast::ChordDefinition::parse_value(value);
-                    // Keyboard defines: render a piano keyboard SVG.
-                    if let Some(ref keys_raw) = def.keys {
-                        let keys_u8: Vec<u8> = keys_raw
-                            .iter()
-                            .filter_map(|&k| {
-                                if (0i32..=127).contains(&k) {
-                                    Some(k as u8)
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-                        if !keys_u8.is_empty() {
-                            let root = keys_u8[0];
-                            let voicing = chordsketch_core::chord_diagram::KeyboardVoicing {
-                                name: def.name.clone(),
-                                display_name: def.display.clone(),
-                                keys: keys_u8,
-                                root_key: root,
-                            };
-                            html.push_str("<div class=\"chord-diagram-container\">");
-                            html.push_str(&chordsketch_core::chord_diagram::render_keyboard_svg(
-                                &voicing,
-                            ));
-                            html.push_str("</div>\n");
-                        }
-                    } else if let Some(ref raw) = def.raw {
-                        // Fretted defines: render the standard fret-grid SVG.
-                        if let Some(mut diagram) =
-                            chordsketch_core::chord_diagram::DiagramData::from_raw_infer_frets(
-                                &def.name,
-                                raw,
-                                diagram_frets,
-                            )
-                        {
-                            diagram.display_name = def.display.clone();
-                            html.push_str("<div class=\"chord-diagram-container\">");
-                            html.push_str(&chordsketch_core::chord_diagram::render_svg(&diagram));
-                            html.push_str("</div>\n");
-                        }
+            if let Some(ref value) = directive.value {
+                let def = chordsketch_core::ast::ChordDefinition::parse_value(value);
+                // Keyboard defines: render a piano keyboard SVG.
+                if let Some(ref keys_raw) = def.keys {
+                    let keys_u8: Vec<u8> = keys_raw
+                        .iter()
+                        .filter_map(|&k| {
+                            if (0i32..=127).contains(&k) {
+                                Some(k as u8)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !keys_u8.is_empty() {
+                        let root = keys_u8[0];
+                        let voicing = chordsketch_core::chord_diagram::KeyboardVoicing {
+                            name: def.name.clone(),
+                            display_name: def.display.clone(),
+                            keys: keys_u8,
+                            root_key: root,
+                        };
+                        html.push_str("<div class=\"chord-diagram-container\">");
+                        html.push_str(&chordsketch_core::chord_diagram::render_keyboard_svg(
+                            &voicing,
+                        ));
+                        html.push_str("</div>\n");
+                    }
+                } else if let Some(ref raw) = def.raw {
+                    // Fretted defines: render the standard fret-grid SVG.
+                    if let Some(mut diagram) =
+                        chordsketch_core::chord_diagram::DiagramData::from_raw_infer_frets(
+                            &def.name,
+                            raw,
+                            diagram_frets,
+                        )
+                    {
+                        diagram.display_name = def.display.clone();
+                        html.push_str("<div class=\"chord-diagram-container\">");
+                        html.push_str(&chordsketch_core::chord_diagram::render_svg(&diagram));
+                        html.push_str("</div>\n");
                     }
                 }
             }
