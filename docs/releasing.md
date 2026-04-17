@@ -169,8 +169,14 @@ at post-release verification rather than before the tag is cut.
    ```
    Check that post-release.yml updates Homebrew, Scoop, AUR, Snap,
    Chocolatey, CocoaPods, Swift, and Flathub. Docker pushes to both
-   GHCR and Docker Hub. VS Code publishes to Marketplace (and Open VSX
-   if `OPEN_VSX_TOKEN` is configured).
+   GHCR and Docker Hub. VS Code publishes **8 VSIXes per release**
+   (1 universal + 7 platform-specific: `linux-x64`, `linux-arm64`,
+   `darwin-x64`, `darwin-arm64`, `win32-x64`, `alpine-x64`,
+   `alpine-arm64`, see #1789) to both the Marketplace and Open VSX
+   (if `OPEN_VSX_TOKEN` is configured). The Marketplace "Version
+   History" page and a listing of release artifacts matching
+   `chordsketch-*.vsix` should both show 8 entries for the new
+   version.
 
 10. **Submit winget-pkgs PR**: see "Post-Release > winget" below. This is the
    only post-release step that involves an external repo (`microsoft/winget-pkgs`).
@@ -223,7 +229,7 @@ When adding a new channel, update both.
 | Snap Store | `chordsketch` | `post-release.yml` on `release: published` | `SNAP_STORE_TOKEN` | `snap` rollup entry |
 | nixpkgs | `pkgs.chordsketch` | manual PR to `NixOS/nixpkgs` | none | `nixpkgs` rollup entry |
 | winget | `koedame.chordsketch` | manual PR to `microsoft/winget-pkgs` (Step 8) | none (uses your `gh` token to fork+push) | `winget` job |
-| VS Code Marketplace | `koedame.chordsketch` | `vscode-extension.yml` on `release: published` | `VSCE_PAT` (PAT, Marketplace Publish scope) | `vscode-marketplace` rollup entry |
+| VS Code Marketplace | `koedame.chordsketch` (1 universal + 7 platform-specific VSIXes, #1789) | `vscode-extension.yml` on `release: published` | `VSCE_PAT` (PAT, Marketplace Publish scope) | `vscode-marketplace` rollup entry |
 | PyPI | `chordsketch` | `python.yml` on tag push | none (OIDC trusted publisher) | `pypi` rollup entry |
 | RubyGems | `chordsketch` | `ruby.yml` on tag push | none (OIDC trusted publisher) | `rubygems` rollup entry |
 | Maven Central | `io.github.koedame:chordsketch` | `kotlin.yml` on tag push | `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `SIGNING_KEY`, `SIGNING_PASSWORD` | `maven-central` rollup entry |
