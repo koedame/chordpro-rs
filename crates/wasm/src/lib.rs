@@ -315,17 +315,25 @@ struct StringWithWarnings {
 
 /// String-returning render that captures warnings instead of
 /// forwarding them to `console.warn`.
+///
+/// Accepts `RenderOptions` so the same inner routine serves both the
+/// no-options `render_*_with_warnings` family (which passes
+/// `RenderOptions::default()`) and the `render_*_with_warnings_and_options`
+/// family introduced in #1895. Config resolution is shared with
+/// `render_string_inner` via [`resolve_config`].
 fn render_string_with_warnings_inner(
     input: &str,
+    opts: RenderOptions,
     render_fn: fn(
         &[chordsketch_core::ast::Song],
         i8,
         &chordsketch_core::config::Config,
     ) -> RenderResult<String>,
 ) -> Result<JsValue, JsValue> {
+    let config = resolve_config(&opts)?;
     let parse_result = chordsketch_core::parse_multi_lenient(input);
     let songs: Vec<_> = parse_result.results.into_iter().map(|r| r.song).collect();
-    let result = render_fn(&songs, 0, &chordsketch_core::config::Config::defaults());
+    let result = render_fn(&songs, opts.transpose, &config);
     let payload = StringWithWarnings {
         output: result.output,
         warnings: result.warnings,
@@ -339,18 +347,22 @@ fn render_string_with_warnings_inner(
 /// Built manually via `js_sys::Object` so the PDF bytes reach JS as a
 /// proper `Uint8Array` rather than the plain array `serde_wasm_bindgen`
 /// would produce from a `Vec<u8>` field.
+///
+/// Accepts `RenderOptions` to match [`render_string_with_warnings_inner`].
 #[cfg(target_arch = "wasm32")]
 fn render_bytes_with_warnings_inner(
     input: &str,
+    opts: RenderOptions,
     render_fn: fn(
         &[chordsketch_core::ast::Song],
         i8,
         &chordsketch_core::config::Config,
     ) -> RenderResult<Vec<u8>>,
 ) -> Result<JsValue, JsValue> {
+    let config = resolve_config(&opts)?;
     let parse_result = chordsketch_core::parse_multi_lenient(input);
     let songs: Vec<_> = parse_result.results.into_iter().map(|r| r.song).collect();
-    let result = render_fn(&songs, 0, &chordsketch_core::config::Config::defaults());
+    let result = render_fn(&songs, opts.transpose, &config);
     let obj = js_sys::Object::new();
     let bytes = js_sys::Uint8Array::from(result.output.as_slice());
     js_sys::Reflect::set(&obj, &JsValue::from_str("output"), &bytes.into())?;
@@ -363,6 +375,7 @@ fn render_bytes_with_warnings_inner(
 #[cfg(not(target_arch = "wasm32"))]
 fn render_bytes_with_warnings_inner(
     input: &str,
+    opts: RenderOptions,
     render_fn: fn(
         &[chordsketch_core::ast::Song],
         i8,
@@ -373,9 +386,10 @@ fn render_bytes_with_warnings_inner(
     // a serde serialization so the unit tests can at least round-trip
     // the *structure* of the return value (the byte payload lands as a
     // plain array, which is fine for shape-only tests).
+    let config = resolve_config(&opts)?;
     let parse_result = chordsketch_core::parse_multi_lenient(input);
     let songs: Vec<_> = parse_result.results.into_iter().map(|r| r.song).collect();
-    let result = render_fn(&songs, 0, &chordsketch_core::config::Config::defaults());
+    let result = render_fn(&songs, opts.transpose, &config);
     #[derive(Serialize)]
     struct BytesWithWarnings {
         output: Vec<u8>,
@@ -401,7 +415,11 @@ fn render_bytes_with_warnings_inner(
 #[must_use = "callers must handle render errors"]
 #[wasm_bindgen(js_name = renderHtmlWithWarnings)]
 pub fn render_html_with_warnings(input: &str) -> Result<JsValue, JsValue> {
-    render_string_with_warnings_inner(input, chordsketch_render_html::render_songs_with_warnings)
+    render_string_with_warnings_inner(
+        input,
+        RenderOptions::default(),
+        chordsketch_render_html::render_songs_with_warnings,
+    )
 }
 
 /// Render ChordPro input as plain text and return `{ output, warnings }`.
@@ -414,7 +432,11 @@ pub fn render_html_with_warnings(input: &str) -> Result<JsValue, JsValue> {
 #[must_use = "callers must handle render errors"]
 #[wasm_bindgen(js_name = renderTextWithWarnings)]
 pub fn render_text_with_warnings(input: &str) -> Result<JsValue, JsValue> {
-    render_string_with_warnings_inner(input, chordsketch_render_text::render_songs_with_warnings)
+    render_string_with_warnings_inner(
+        input,
+        RenderOptions::default(),
+        chordsketch_render_text::render_songs_with_warnings,
+    )
 }
 
 /// Render ChordPro input as a PDF byte stream and return
@@ -428,7 +450,75 @@ pub fn render_text_with_warnings(input: &str) -> Result<JsValue, JsValue> {
 #[must_use = "callers must handle render errors"]
 #[wasm_bindgen(js_name = renderPdfWithWarnings)]
 pub fn render_pdf_with_warnings(input: &str) -> Result<JsValue, JsValue> {
-    render_bytes_with_warnings_inner(input, chordsketch_render_pdf::render_songs_with_warnings)
+    render_bytes_with_warnings_inner(
+        input,
+        RenderOptions::default(),
+        chordsketch_render_pdf::render_songs_with_warnings,
+    )
+}
+
+/// Render ChordPro input as HTML with options and return
+/// `{ output, warnings }`.
+///
+/// Combines the `options` payload of [`render_html_with_options`] with
+/// the structured-warning capture of [`render_html_with_warnings`].
+///
+/// # Errors
+///
+/// Returns a `JsValue` error string on parse failure or invalid options.
+#[must_use = "callers must handle render errors"]
+#[wasm_bindgen(js_name = renderHtmlWithWarningsAndOptions)]
+pub fn render_html_with_warnings_and_options(
+    input: &str,
+    options: JsValue,
+) -> Result<JsValue, JsValue> {
+    render_string_with_warnings_inner(
+        input,
+        deserialize_options(options)?,
+        chordsketch_render_html::render_songs_with_warnings,
+    )
+}
+
+/// Render ChordPro input as plain text with options and return
+/// `{ output, warnings }`.
+///
+/// See [`render_html_with_warnings_and_options`] for the contract.
+///
+/// # Errors
+///
+/// Returns a `JsValue` error string on parse failure or invalid options.
+#[must_use = "callers must handle render errors"]
+#[wasm_bindgen(js_name = renderTextWithWarningsAndOptions)]
+pub fn render_text_with_warnings_and_options(
+    input: &str,
+    options: JsValue,
+) -> Result<JsValue, JsValue> {
+    render_string_with_warnings_inner(
+        input,
+        deserialize_options(options)?,
+        chordsketch_render_text::render_songs_with_warnings,
+    )
+}
+
+/// Render ChordPro input as a PDF byte stream with options and return
+/// `{ output: Uint8Array, warnings: string[] }`.
+///
+/// See [`render_html_with_warnings_and_options`] for the contract.
+///
+/// # Errors
+///
+/// Returns a `JsValue` error string on parse failure or invalid options.
+#[must_use = "callers must handle render errors"]
+#[wasm_bindgen(js_name = renderPdfWithWarningsAndOptions)]
+pub fn render_pdf_with_warnings_and_options(
+    input: &str,
+    options: JsValue,
+) -> Result<JsValue, JsValue> {
+    render_bytes_with_warnings_inner(
+        input,
+        deserialize_options(options)?,
+        chordsketch_render_pdf::render_songs_with_warnings,
+    )
 }
 
 /// Returns the ChordSketch library version.
@@ -688,6 +778,102 @@ mod wasm_tests {
         let result = render_pdf_with_options(MINIMAL_INPUT, JsValue::UNDEFINED).unwrap();
         assert!(result.len() > 4);
         assert_eq!(&result[0..4], b"%PDF");
+    }
+
+    // -- *_with_warnings_and_options (#1895) ------------------------------
+
+    /// `render_html_with_warnings_and_options(undefined)` degrades to the
+    /// defaults path and returns `{ output, warnings }`.
+    #[wasm_bindgen_test]
+    fn render_html_with_warnings_and_options_undefined() {
+        let v = render_html_with_warnings_and_options(MINIMAL_INPUT, JsValue::UNDEFINED).unwrap();
+        let output = js_sys::Reflect::get(&v, &"output".into()).unwrap();
+        assert!(output.as_string().unwrap_or_default().contains("Test"));
+        let warnings = js_sys::Reflect::get(&v, &"warnings".into()).unwrap();
+        // Array::is_array is the strict check; plain objects would also pass
+        // is_object() so we need the stronger predicate to catch a future
+        // refactor that accidentally returns a record instead of an array.
+        assert!(
+            Array::is_array(&warnings),
+            "warnings must be a JS array (got {warnings:?})"
+        );
+    }
+
+    /// A `transpose` option changes the rendered output, proving the
+    /// option is actually wired through to the renderer rather than
+    /// silently ignored.
+    #[wasm_bindgen_test]
+    fn render_html_with_warnings_and_options_transpose_differs() {
+        let no_opts =
+            render_html_with_warnings_and_options(MINIMAL_INPUT, JsValue::UNDEFINED).unwrap();
+        let base = js_sys::Reflect::get(&no_opts, &"output".into())
+            .unwrap()
+            .as_string()
+            .unwrap();
+
+        let opts = js_sys::Object::new();
+        Reflect::set(&opts, &"transpose".into(), &JsValue::from(2)).unwrap();
+        let transposed = render_html_with_warnings_and_options(MINIMAL_INPUT, opts.into()).unwrap();
+        let shifted = js_sys::Reflect::get(&transposed, &"output".into())
+            .unwrap()
+            .as_string()
+            .unwrap();
+
+        assert_ne!(
+            base, shifted,
+            "transpose=2 must produce different output from transpose=0"
+        );
+    }
+
+    /// Invalid `config` strings surface through the same `JsValue` error
+    /// channel as `render_*_with_options`.
+    #[wasm_bindgen_test]
+    fn render_html_with_warnings_and_options_invalid_config() {
+        let opts = js_sys::Object::new();
+        Reflect::set(
+            &opts,
+            &"config".into(),
+            &JsValue::from_str("{ not valid rrjson"),
+        )
+        .unwrap();
+        let result = render_html_with_warnings_and_options(MINIMAL_INPUT, opts.into());
+        assert!(result.is_err(), "invalid config should fail to resolve");
+    }
+
+    /// Ensure the text variant is wired up through the same inner path —
+    /// a quick smoke test so a future refactor that forgets to plumb
+    /// `opts.transpose` in one variant fails loudly.
+    #[wasm_bindgen_test]
+    fn render_text_with_warnings_and_options_smoke() {
+        let v = render_text_with_warnings_and_options(MINIMAL_INPUT, JsValue::UNDEFINED).unwrap();
+        let output = js_sys::Reflect::get(&v, &"output".into()).unwrap();
+        assert!(output.as_string().unwrap_or_default().contains("Test"));
+        let warnings = js_sys::Reflect::get(&v, &"warnings".into()).unwrap();
+        assert!(
+            Array::is_array(&warnings),
+            "warnings must be a JS array (got {warnings:?})"
+        );
+    }
+
+    /// PDF variant: confirm the magic header is preserved when routed
+    /// through the options-aware `*_with_warnings` path.
+    #[wasm_bindgen_test]
+    fn render_pdf_with_warnings_and_options_returns_pdf_bytes() {
+        let v = render_pdf_with_warnings_and_options(MINIMAL_INPUT, JsValue::UNDEFINED).unwrap();
+        let output = js_sys::Reflect::get(&v, &"output".into()).unwrap();
+        let bytes = js_sys::Uint8Array::from(output);
+        assert!(bytes.length() > 4);
+        let header = {
+            let mut buf = [0u8; 4];
+            bytes.slice(0, 4).copy_to(&mut buf);
+            buf
+        };
+        assert_eq!(&header, b"%PDF");
+        let warnings = js_sys::Reflect::get(&v, &"warnings".into()).unwrap();
+        assert!(
+            Array::is_array(&warnings),
+            "warnings must be a JS array (got {warnings:?})"
+        );
     }
 
     /// `version()` returns a non-empty string through the `JsValue`

@@ -59,9 +59,22 @@ console.log(`ChordSketch ${version()}`);
 | `renderTextWithOptions(source, options)` | `string` | Text with transposition / config |
 | `renderHtmlWithOptions(source, options)` | `string` | HTML with transposition / config |
 | `renderPdfWithOptions(source, options)` | `Buffer` | PDF with transposition / config |
+| `renderTextWithWarnings(source)` | `{ output: string, warnings: string[] }` | Text render that captures warnings as structured data |
+| `renderHtmlWithWarnings(source)` | `{ output: string, warnings: string[] }` | HTML render with captured warnings |
+| `renderPdfWithWarnings(source)` | `{ output: Buffer, warnings: string[] }` | PDF render with captured warnings |
+| `renderTextWithWarningsAndOptions(source, options)` | `{ output: string, warnings: string[] }` | `renderTextWithWarnings` + transposition / config |
+| `renderHtmlWithWarningsAndOptions(source, options)` | `{ output: string, warnings: string[] }` | `renderHtmlWithWarnings` + transposition / config |
+| `renderPdfWithWarningsAndOptions(source, options)` | `{ output: Buffer, warnings: string[] }` | `renderPdfWithWarnings` + transposition / config |
 
-> **Note:** `renderPdf` returns a Node.js `Buffer` (not `Uint8Array`). This
-> differs from `@chordsketch/wasm` where PDF output is `Uint8Array`.
+> **Note:** `renderPdf` and `renderPdfWithWarnings` return a Node.js `Buffer`
+> (not `Uint8Array`). This differs from `@chordsketch/wasm` where PDF output
+> is `Uint8Array`.
+
+> **When to use `*WithWarnings`:** the plain `render*` functions forward
+> warnings to process stderr via `eprintln!`, which is invisible to most
+> UI callers. The `*WithWarnings` variants return the warnings as an
+> array of strings so they can be shown inline, aggregated, or
+> suppressed. See #1827.
 
 ### Validation
 

@@ -69,6 +69,9 @@ The exported wasm-bindgen functions are:
 | `renderTextWithWarnings(input)` | Plain-text render that captures warnings instead of forwarding to `console.warn` | `{ output: string, warnings: string[] }` |
 | `renderHtmlWithWarnings(input)` | HTML render with captured warnings | `{ output: string, warnings: string[] }` |
 | `renderPdfWithWarnings(input)` | PDF render with captured warnings | `{ output: Uint8Array, warnings: string[] }` |
+| `renderTextWithWarningsAndOptions(input, opts)` | `renderTextWithWarnings` + `{ transpose?, config? }` options | `{ output: string, warnings: string[] }` |
+| `renderHtmlWithWarningsAndOptions(input, opts)` | `renderHtmlWithWarnings` + `{ transpose?, config? }` options | `{ output: string, warnings: string[] }` |
+| `renderPdfWithWarningsAndOptions(input, opts)` | `renderPdfWithWarnings` + `{ transpose?, config? }` options | `{ output: Uint8Array, warnings: string[] }` |
 | `version()` | Library version string | `string` |
 
 Each element of `warnings` is a plain UTF-8 string containing a
