@@ -127,13 +127,20 @@ jobs:
         env:
           TAG: ${{ needs.collect-channels.outputs.tag }}
           FORCE_STALE: ${{ inputs.force_stale_channel }}
+          # Route matrix.channel through env: for script-injection
+          # defense-in-depth, matching the convention established in
+          # PR #1820. matrix.channel is sourced from the build-time
+          # scripts/_release_channels.py output (not user input), so
+          # no active vulnerability today; the env: indirection prevents
+          # a future data-source change from silently introducing one.
+          CHANNEL: ${{ matrix.channel }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/verify-results
-          out=/tmp/verify-results/${{ matrix.channel }}.txt
+          out="/tmp/verify-results/${CHANNEL}.txt"
           if python3 scripts/check-release-channels.py \
               --tag "$TAG" \
-              --channel "${{ matrix.channel }}" \
+              --channel "$CHANNEL" \
               --force-stale "${FORCE_STALE:-}" > "$out" 2>&1; then
             echo "status=ok" >> "$GITHUB_ENV"
           else
