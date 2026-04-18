@@ -2,8 +2,12 @@
 src/**
 webview/**
 
-# Test files
+# Test files and compiled test output
 test/**
+out-test/**
+tsconfig.integration.json
+.vscode-test.mjs
+.vscode-test/**
 
 # Build and config files
 esbuild.mjs
