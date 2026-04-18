@@ -3,6 +3,11 @@ name: Extended Tests
 on:
   workflow_dispatch:
 
+# Fail-closed default: jobs that need write scopes must opt in via
+# job-level `permissions:`. See issue #1839.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -53,4 +58,4 @@ jobs:
         run: ./scripts/compare-with-perl.sh text
 
       - name: Run Perl comparison (html)
-        run: ./scripts/compare-with-perl.sh html || true
+        run: ./scripts/compare-with-perl.sh html

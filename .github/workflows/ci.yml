@@ -10,6 +10,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Fail-closed default: jobs that need write scopes must opt in via
+# job-level `permissions:`. See issue #1839.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 

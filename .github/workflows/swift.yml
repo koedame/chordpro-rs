@@ -31,6 +31,13 @@ on:
 permissions:
   contents: read
 
+# Ensure `run:` blocks use `bash -eo pipefail`, not the silent default that
+# swallows mid-pipe failures. swift.yml has no Windows matrix, so a
+# workflow-level default is safe (fix-propagation from PR #1821, issue #1845).
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # Build each Apple target on its own runner in parallel.
   # The aarch64-apple-darwin cell also produces the dylib that uniffi-bindgen

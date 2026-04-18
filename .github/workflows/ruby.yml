@@ -259,6 +259,13 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    # Enforce `bash -eo pipefail` in `run:` blocks. Scoped to this job
+    # rather than workflow-level because ruby.yml has a Windows matrix
+    # cell (build-native-others) whose `run:` blocks must keep pwsh
+    # defaults. See issue #1845 (fix-propagation from PR #1821).
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:

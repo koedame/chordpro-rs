@@ -14,6 +14,11 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+# Fail-closed default: jobs that need write scopes must opt in via
+# job-level `permissions:`. See issue #1839.
+permissions:
+  contents: read
+
 env:
   WASM_PACK_VERSION: "0.14.0"
 
