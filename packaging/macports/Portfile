@@ -10,7 +10,7 @@ PortSystem          1.0
 PortGroup           github 1.0
 PortGroup           cargo 1.0
 
-github.setup        koedame chordsketch 0.2.0 v
+github.setup        koedame chordsketch 0.2.2 v
 revision            0
 categories          textproc music
 license             MIT
@@ -21,15 +21,14 @@ long_description    ChordSketch is a Rust implementation of the ChordPro file \
                     HTML, or PDF output. Full compatibility with the ChordPro \
                     specification.
 
-# TODO: Replace with actual checksums before submission.
-# Compute via:
-#   curl -L -o src.tar.gz https://github.com/koedame/chordsketch/archive/refs/tags/v0.2.0.tar.gz
+# Checksums for the v0.2.2 source tarball. Regenerate on each release:
+#   curl -L -o src.tar.gz https://github.com/koedame/chordsketch/archive/refs/tags/v0.2.2.tar.gz
 #   openssl dgst -rmd160 src.tar.gz
 #   openssl dgst -sha256 src.tar.gz
 #   wc -c src.tar.gz
-checksums           rmd160  0 \
-                    sha256  0 \
-                    size    0
+checksums           rmd160  04749cb1fcaeee776535df02a1107175c79acb23 \
+                    sha256  5fa93b60929484998f95497e213b066b8363ef25685333921ed95e65015df961 \
+                    size    6276354
 
 # TODO: Populate cargo.crates before submission.
 # The cargo portgroup requires all crate dependencies to be listed here.

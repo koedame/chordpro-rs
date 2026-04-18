@@ -18,16 +18,20 @@
 
 rustPlatform.buildRustPackage rec {
   pname = "chordsketch";
-  version = "0.2.0";
+  version = "0.2.2";
 
   src = fetchFromGitHub {
     owner = "koedame";
     repo = "chordsketch";
     tag = "v${version}";
-    hash = "sha256-8i5rDUVmE5MKqXtXY8bgumEHr8jVS6bk9XClZATwC6E=";
+    # Hashes must be recomputed for every release (both `hash` and
+    # `cargoHash` below). Set to "" and run `nix build` once — nix
+    # will report the correct SRI values in the build error message,
+    # then paste them back here. See the leading comment for details.
+    hash = "";
   };
 
-  cargoHash = "sha256-52vnW3E7Fdl2aLOKh+w13Tmf0PaD6FdXqf+YyCV6Yec=";
+  cargoHash = "";
 
   cargoBuildFlags = [ "--package" "chordsketch" ];
   cargoTestFlags = [ "--package" "chordsketch" ];
