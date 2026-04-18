@@ -953,9 +953,9 @@ fn sanitize_svg_content(input: &str) -> String {
     // elements that can load external resources: script, feImage, image, iframe,
     // embed, object, and foreign-content containers.
     // Note: <use> elements are NOT stripped here; their href/xlink:href attributes are
-    // sanitized at the attribute level by sanitize_tag_attrs / is_uri_attr, which now
-    // blocks file: and blob: schemes. This preserves legitimate <use href="#symbol"/>
-    // patterns while preventing local-file exfiltration.
+    // restricted by sanitize_tag_attrs to fragment-only references (^#...). External
+    // URIs — including https — are stripped entirely to prevent tracking-pixel,
+    // cross-origin-referer, and timing-based exfiltration attacks (see #1828).
     const DANGEROUS_TAGS: &[&str] = &[
         "script",
         "foreignobject",
@@ -1271,6 +1271,12 @@ fn sanitize_tag_attrs(tag: &str) -> String {
         i += 1;
     }
 
+    // Remember the tag name (without the leading '<') for tag-specific
+    // attribute rules such as the `<use>` fragment-only policy below.
+    let tag_name = &result[1..];
+    let is_use_tag =
+        tag_name.eq_ignore_ascii_case("use") || tag_name.eq_ignore_ascii_case("svg:use");
+
     while i < bytes.len() {
         // Skip whitespace.
         while i < bytes.len() && bytes[i].is_ascii_whitespace() {
@@ -1334,6 +1340,19 @@ fn sanitize_tag_attrs(tag: &str) -> String {
             if let Some(ref val) = attr_value {
                 if has_dangerous_uri_scheme(val) {
                     // Strip the attribute if it uses a dangerous URI scheme.
+                    continue;
+                }
+                // <use href="..."> / <use xlink:href="..."> must be
+                // fragment-only (^#...). External URIs (even over https)
+                // allow cross-origin tracking, referer leakage, and
+                // timing-based exfiltration from rendered ChordPro
+                // content. See issue #1828 and sanitizer-security.md
+                // §SVG tag blocklists.
+                if is_use_tag
+                    && (attr_name.eq_ignore_ascii_case("href")
+                        || attr_name.eq_ignore_ascii_case("xlink:href"))
+                    && !val.trim_start().starts_with('#')
+                {
                     continue;
                 }
             }
@@ -3561,6 +3580,40 @@ mod delegate_tests {
         assert!(
             html.contains("href=\"#myShape\""),
             "fragment-only href must be preserved"
+        );
+    }
+
+    #[test]
+    fn test_svg_section_strips_use_external_https() {
+        // Per #1828, <use href="https://..."> is a tracker/exfiltration
+        // vector even over safe schemes (referer leakage, cross-origin
+        // tracking pixel). Only fragment-only references ^# are allowed.
+        let input = "{start_of_svg}\n<svg><use href=\"https://attacker.example.com/x.svg#sym\"/></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(
+            !html.contains("attacker.example.com"),
+            "external https: URI in <use href> must be stripped; got: {html}"
+        );
+    }
+
+    #[test]
+    fn test_svg_section_strips_use_external_xlink_href() {
+        // Same policy for the legacy xlink:href attribute.
+        let input = "{start_of_svg}\n<svg><use xlink:href=\"https://tracker.example/pixel.svg\"/></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(
+            !html.contains("tracker.example"),
+            "external https: URI in <use xlink:href> must be stripped; got: {html}"
+        );
+    }
+
+    #[test]
+    fn test_svg_section_preserves_fragment_xlink_href() {
+        let input = "{start_of_svg}\n<svg><use xlink:href=\"#mySymbol\"/></svg>\n{end_of_svg}";
+        let html = render(input);
+        assert!(
+            html.contains("xlink:href=\"#mySymbol\""),
+            "fragment-only xlink:href must be preserved"
         );
     }
 
