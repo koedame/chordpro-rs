@@ -29,10 +29,6 @@ println!("{text}");
 - Multi-column layout
 - Section labels (verse, chorus, etc.)
 
-## Documentation
-
-[API documentation on docs.rs](https://docs.rs/chordsketch-render-text)
-
 ## Links
 
 - Project repository: <https://github.com/koedame/chordsketch>

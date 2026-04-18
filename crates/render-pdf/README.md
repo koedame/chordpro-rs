@@ -32,10 +32,6 @@ std::fs::write("output.pdf", &pdf_bytes).unwrap();
 - Image embedding
 - Font size and color configuration
 
-## Documentation
-
-[API documentation on docs.rs](https://docs.rs/chordsketch-render-pdf)
-
 ## Links
 
 - Project repository: <https://github.com/koedame/chordsketch>

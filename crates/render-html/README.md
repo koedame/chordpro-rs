@@ -31,10 +31,6 @@ let html = render_song(&song);
   environments such as `{start_of_svg}` emit raw HTML by design;
   use a Content Security Policy when rendering untrusted input)
 
-## Documentation
-
-[API documentation on docs.rs](https://docs.rs/chordsketch-render-html)
-
 ## Links
 
 - Project repository: <https://github.com/koedame/chordsketch>

@@ -29,10 +29,6 @@ assert_eq!(song.metadata.title.as_deref(), Some("Amazing Grace"));
 - Multi-song file parsing (`{new_song}`)
 - Inline markup, delegate environments, conditional selectors
 
-## Documentation
-
-[API documentation on docs.rs](https://docs.rs/chordsketch-core)
-
 ## Links
 
 - Project repository: <https://github.com/koedame/chordsketch>
