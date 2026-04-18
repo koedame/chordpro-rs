@@ -4,7 +4,7 @@
 //! JavaScript/TypeScript via `wasm-bindgen`.
 
 use chordsketch_core::render_result::RenderResult;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 /// Set up the panic hook on module instantiation so any unexpected panic
@@ -299,6 +299,138 @@ pub fn render_pdf_with_options(input: &str, options: JsValue) -> Result<Vec<u8>,
     )
 }
 
+/// Structured render result returned by the `*_with_warnings` family.
+///
+/// Serialized to a plain JS object `{ output, warnings }` where
+/// `warnings` is an array of strings captured from the renderer's
+/// internal `RenderResult::warnings` instead of being forwarded to
+/// `console.warn`. See issue #1827 — callers embedding the WASM
+/// package in a UI need structured access to show warnings inline
+/// or suppress them programmatically.
+#[derive(Serialize)]
+struct StringWithWarnings {
+    output: String,
+    warnings: Vec<String>,
+}
+
+/// String-returning render that captures warnings instead of
+/// forwarding them to `console.warn`.
+fn render_string_with_warnings_inner(
+    input: &str,
+    render_fn: fn(
+        &[chordsketch_core::ast::Song],
+        i8,
+        &chordsketch_core::config::Config,
+    ) -> RenderResult<String>,
+) -> Result<JsValue, JsValue> {
+    let parse_result = chordsketch_core::parse_multi_lenient(input);
+    let songs: Vec<_> = parse_result.results.into_iter().map(|r| r.song).collect();
+    let result = render_fn(&songs, 0, &chordsketch_core::config::Config::defaults());
+    let payload = StringWithWarnings {
+        output: result.output,
+        warnings: result.warnings,
+    };
+    serde_wasm_bindgen::to_value(&payload).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// Bytes-returning render that captures warnings and returns a JS
+/// object `{ output: Uint8Array, warnings: string[] }`.
+///
+/// Built manually via `js_sys::Object` so the PDF bytes reach JS as a
+/// proper `Uint8Array` rather than the plain array `serde_wasm_bindgen`
+/// would produce from a `Vec<u8>` field.
+#[cfg(target_arch = "wasm32")]
+fn render_bytes_with_warnings_inner(
+    input: &str,
+    render_fn: fn(
+        &[chordsketch_core::ast::Song],
+        i8,
+        &chordsketch_core::config::Config,
+    ) -> RenderResult<Vec<u8>>,
+) -> Result<JsValue, JsValue> {
+    let parse_result = chordsketch_core::parse_multi_lenient(input);
+    let songs: Vec<_> = parse_result.results.into_iter().map(|r| r.song).collect();
+    let result = render_fn(&songs, 0, &chordsketch_core::config::Config::defaults());
+    let obj = js_sys::Object::new();
+    let bytes = js_sys::Uint8Array::from(result.output.as_slice());
+    js_sys::Reflect::set(&obj, &JsValue::from_str("output"), &bytes.into())?;
+    let warnings = serde_wasm_bindgen::to_value(&result.warnings)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    js_sys::Reflect::set(&obj, &JsValue::from_str("warnings"), &warnings)?;
+    Ok(obj.into())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn render_bytes_with_warnings_inner(
+    input: &str,
+    render_fn: fn(
+        &[chordsketch_core::ast::Song],
+        i8,
+        &chordsketch_core::config::Config,
+    ) -> RenderResult<Vec<u8>>,
+) -> Result<JsValue, JsValue> {
+    // On native test targets, js_sys types are unavailable. Fall back to
+    // a serde serialization so the unit tests can at least round-trip
+    // the *structure* of the return value (the byte payload lands as a
+    // plain array, which is fine for shape-only tests).
+    let parse_result = chordsketch_core::parse_multi_lenient(input);
+    let songs: Vec<_> = parse_result.results.into_iter().map(|r| r.song).collect();
+    let result = render_fn(&songs, 0, &chordsketch_core::config::Config::defaults());
+    #[derive(Serialize)]
+    struct BytesWithWarnings {
+        output: Vec<u8>,
+        warnings: Vec<String>,
+    }
+    serde_wasm_bindgen::to_value(&BytesWithWarnings {
+        output: result.output,
+        warnings: result.warnings,
+    })
+    .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// Render ChordPro input as HTML and return `{ output, warnings }`.
+///
+/// Unlike [`render_html`], this variant captures renderer warnings as
+/// structured data instead of forwarding them to `console.warn`.
+/// Callers that need warning-driven UI (inline dev banners, telemetry
+/// aggregation, selective suppression) should use this entry point.
+///
+/// # Errors
+///
+/// Returns a `JsValue` error string on parse failure.
+#[must_use = "callers must handle render errors"]
+#[wasm_bindgen(js_name = renderHtmlWithWarnings)]
+pub fn render_html_with_warnings(input: &str) -> Result<JsValue, JsValue> {
+    render_string_with_warnings_inner(input, chordsketch_render_html::render_songs_with_warnings)
+}
+
+/// Render ChordPro input as plain text and return `{ output, warnings }`.
+///
+/// See [`render_html_with_warnings`] for the warnings contract.
+///
+/// # Errors
+///
+/// Returns a `JsValue` error string on parse failure.
+#[must_use = "callers must handle render errors"]
+#[wasm_bindgen(js_name = renderTextWithWarnings)]
+pub fn render_text_with_warnings(input: &str) -> Result<JsValue, JsValue> {
+    render_string_with_warnings_inner(input, chordsketch_render_text::render_songs_with_warnings)
+}
+
+/// Render ChordPro input as a PDF byte stream and return
+/// `{ output: Uint8Array, warnings: string[] }`.
+///
+/// See [`render_html_with_warnings`] for the warnings contract.
+///
+/// # Errors
+///
+/// Returns a `JsValue` error string on parse failure.
+#[must_use = "callers must handle render errors"]
+#[wasm_bindgen(js_name = renderPdfWithWarnings)]
+pub fn render_pdf_with_warnings(input: &str) -> Result<JsValue, JsValue> {
+    render_bytes_with_warnings_inner(input, chordsketch_render_pdf::render_songs_with_warnings)
+}
+
 /// Returns the ChordSketch library version.
 #[must_use]
 #[wasm_bindgen]
@@ -421,6 +553,45 @@ mod tests {
     fn test_validate_returns_empty_for_empty_input() {
         let errors = validate("");
         assert!(errors.is_empty(), "empty input should produce no errors");
+    }
+
+    // -- *_with_warnings captures structured output (#1827) ----------------
+    //
+    // The `#[wasm_bindgen]` wrappers `render_*_with_warnings` call
+    // `serde_wasm_bindgen::to_value`, which is a wasm-bindgen-imported
+    // function and panics on native test targets. Tests therefore
+    // exercise the underlying core renderer directly — the same code
+    // path that the wrapper wraps — which is sufficient to guard the
+    // structural contract (output + warnings are captured, not
+    // discarded). Integration of the serde boundary is covered by the
+    // wasm-bindgen-test module below and by the npm package's Jest
+    // suite.
+
+    #[test]
+    fn test_with_warnings_core_renderers_return_output_and_empty_warnings_on_clean_input() {
+        let parse = chordsketch_core::parse_multi_lenient(MINIMAL_INPUT);
+        let songs: Vec<_> = parse.results.into_iter().map(|r| r.song).collect();
+        let text = chordsketch_render_text::render_songs_with_warnings(
+            &songs,
+            0,
+            &chordsketch_core::config::Config::defaults(),
+        );
+        assert!(!text.output.is_empty());
+        assert!(text.warnings.is_empty());
+        let html = chordsketch_render_html::render_songs_with_warnings(
+            &songs,
+            0,
+            &chordsketch_core::config::Config::defaults(),
+        );
+        assert!(html.output.contains("<html"));
+        assert!(html.warnings.is_empty());
+        let pdf = chordsketch_render_pdf::render_songs_with_warnings(
+            &songs,
+            0,
+            &chordsketch_core::config::Config::defaults(),
+        );
+        assert!(pdf.output.starts_with(b"%PDF"));
+        assert!(pdf.warnings.is_empty());
     }
 }
 

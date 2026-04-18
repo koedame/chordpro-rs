@@ -154,6 +154,108 @@ pub fn render_pdf(input: String) -> Result<Buffer> {
     Ok(bytes.into())
 }
 
+/// Structured render result returned by the `*_with_warnings` family
+/// (string outputs).
+///
+/// Callers that need warning-driven UI (inline banners, telemetry
+/// aggregation, selective suppression) should use the `*_with_warnings`
+/// entry points. The plain variants (`renderText`, `renderHtml`,
+/// `renderPdf`) forward warnings to `eprintln!`, which lands on process
+/// stderr — fine for CLI scripts but invisible to a React component
+/// embedding the addon. See issue #1827.
+#[napi(object)]
+pub struct TextRenderWithWarnings {
+    /// Rendered text or HTML output.
+    pub output: String,
+    /// Renderer warnings captured during the render pass.
+    pub warnings: Vec<String>,
+}
+
+/// Structured render result for PDF output. See
+/// [`TextRenderWithWarnings`] for the warnings contract.
+#[napi(object)]
+pub struct PdfRenderWithWarnings {
+    /// PDF byte stream.
+    pub output: Buffer,
+    /// Renderer warnings captured during the render pass.
+    pub warnings: Vec<String>,
+}
+
+/// String-returning render that captures warnings as structured data.
+///
+/// Shared by `render_text_with_warnings` and `render_html_with_warnings`
+/// so both variants route through the same parse + render + capture
+/// pipeline without the `flush_warnings` stderr side effect.
+fn do_render_string_with_warnings(
+    input: &str,
+    config: &chordsketch_core::config::Config,
+    transpose: i8,
+    render_fn: fn(
+        &[chordsketch_core::ast::Song],
+        i8,
+        &chordsketch_core::config::Config,
+    ) -> RenderResult<String>,
+) -> Result<TextRenderWithWarnings> {
+    let songs = parse_songs(input)?;
+    let result = render_fn(&songs, transpose, config);
+    Ok(TextRenderWithWarnings {
+        output: result.output,
+        warnings: result.warnings,
+    })
+}
+
+/// Render ChordPro input as plain text, returning both output and
+/// captured warnings.
+///
+/// This is the structured variant of [`render_text`]. Warnings are
+/// returned as an array of strings instead of being forwarded to
+/// process stderr via `eprintln!`. Callers that do not need warnings
+/// should keep using the plain `render_text`.
+#[must_use = "callers must handle render errors"]
+#[napi]
+pub fn render_text_with_warnings(input: String) -> Result<TextRenderWithWarnings> {
+    do_render_string_with_warnings(
+        &input,
+        &chordsketch_core::config::Config::defaults(),
+        0,
+        chordsketch_render_text::render_songs_with_warnings,
+    )
+}
+
+/// Render ChordPro input as HTML, returning both output and captured
+/// warnings.
+///
+/// See [`render_text_with_warnings`] for the warnings contract.
+#[must_use = "callers must handle render errors"]
+#[napi]
+pub fn render_html_with_warnings(input: String) -> Result<TextRenderWithWarnings> {
+    do_render_string_with_warnings(
+        &input,
+        &chordsketch_core::config::Config::defaults(),
+        0,
+        chordsketch_render_html::render_songs_with_warnings,
+    )
+}
+
+/// Render ChordPro input as a PDF document, returning the byte stream
+/// alongside captured warnings.
+///
+/// See [`render_text_with_warnings`] for the warnings contract.
+#[must_use = "callers must handle render errors"]
+#[napi]
+pub fn render_pdf_with_warnings(input: String) -> Result<PdfRenderWithWarnings> {
+    let songs = parse_songs(&input)?;
+    let result = chordsketch_render_pdf::render_songs_with_warnings(
+        &songs,
+        0,
+        &chordsketch_core::config::Config::defaults(),
+    );
+    Ok(PdfRenderWithWarnings {
+        output: result.output.into(),
+        warnings: result.warnings,
+    })
+}
+
 /// Coerce a JS-supplied transposition value to `i8`, rejecting
 /// out-of-range integers.
 ///
@@ -412,5 +514,59 @@ mod tests {
             !render_result.output.is_empty(),
             "render output must not be empty"
         );
+    }
+
+    // -- *_with_warnings exposes structured warnings (#1827) ---------------
+    //
+    // The `#[napi]` wrappers `render_*_with_warnings` return
+    // `napi::Result<TextRenderWithWarnings>` / `napi::Result<PdfRenderWithWarnings>`,
+    // whose error path references Node-API symbols via `Drop`. Tests
+    // therefore bypass the wrapper and exercise the underlying
+    // chordsketch-core renderer directly, mirroring the pattern used by
+    // `test_try_parse_transpose_*` for issue #1826.
+
+    #[test]
+    fn test_with_warnings_captures_core_output() {
+        let result = chordsketch_core::parse_multi_lenient(MINIMAL_INPUT);
+        let songs: Vec<_> = result.results.into_iter().map(|r| r.song).collect();
+        let text = chordsketch_render_text::render_songs_with_warnings(
+            &songs,
+            0,
+            &chordsketch_core::config::Config::defaults(),
+        );
+        assert!(!text.output.is_empty());
+        assert!(
+            text.warnings.is_empty(),
+            "minimal input should produce no warnings; got {:?}",
+            text.warnings
+        );
+        let html = chordsketch_render_html::render_songs_with_warnings(
+            &songs,
+            0,
+            &chordsketch_core::config::Config::defaults(),
+        );
+        assert!(html.output.contains("<html"));
+        assert!(html.warnings.is_empty());
+        let pdf = chordsketch_render_pdf::render_songs_with_warnings(
+            &songs,
+            0,
+            &chordsketch_core::config::Config::defaults(),
+        );
+        assert!(pdf.output.starts_with(b"%PDF"));
+        assert!(pdf.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_text_render_with_warnings_struct_fields_exist() {
+        // Compile-time check that `TextRenderWithWarnings::output` is
+        // a String and `.warnings` is a Vec<String> — these field names
+        // and types are part of the public #[napi(object)] API, so a
+        // rename is a breaking change that should be deliberate.
+        let v = super::TextRenderWithWarnings {
+            output: String::from("ok"),
+            warnings: vec!["w".to_string()],
+        };
+        assert_eq!(v.output, "ok");
+        assert_eq!(v.warnings, vec!["w".to_string()]);
     }
 }
