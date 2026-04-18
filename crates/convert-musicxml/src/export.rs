@@ -489,8 +489,9 @@ fn is_xml_forbidden_control(c: char) -> bool {
 
 /// Escape a string for use as XML text content, appending to `out`.
 ///
-/// Strips XML 1.0 forbidden C0 control characters per
-/// [`is_xml_forbidden_control`]. Tab / LF / CR are preserved.
+/// Strips characters forbidden by the XML 1.0 Char production (C0 controls
+/// and BMP noncharacters U+FFFE/U+FFFF) per [`is_xml_forbidden_control`].
+/// Tab / LF / CR are preserved.
 fn xml_text(s: &str, out: &mut String) {
     for c in s.chars() {
         if is_xml_forbidden_control(c) {
@@ -509,8 +510,9 @@ fn xml_text(s: &str, out: &mut String) {
 
 /// Escape a string for use in an XML attribute value (double-quoted).
 ///
-/// Strips XML 1.0 forbidden C0 control characters per
-/// [`is_xml_forbidden_control`]. Tab / LF / CR are preserved.
+/// Strips characters forbidden by the XML 1.0 Char production (C0 controls
+/// and BMP noncharacters U+FFFE/U+FFFF) per [`is_xml_forbidden_control`].
+/// Tab / LF / CR are preserved.
 fn xml_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
