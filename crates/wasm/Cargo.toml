@@ -21,6 +21,13 @@ chordsketch-render-text = { version = "0.2.2", path = "../render-text" }
 chordsketch-render-html = { version = "0.2.2", path = "../render-html" }
 chordsketch-render-pdf = { version = "0.2.2", path = "../render-pdf" }
 wasm-bindgen = "0.2"
+# `render_pdf_with_warnings` (#1893) builds its JS return value via
+# `js_sys::Object` + `js_sys::Reflect` and converts the byte payload
+# through `js_sys::Uint8Array`, so `js-sys` is a runtime dependency for
+# the wasm32 target — not just a test-time one. The production use is
+# gated `#[cfg(target_arch = "wasm32")]`, and native test builds fall
+# through to a serde fallback that does not touch `js_sys`.
+js-sys = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
 console_error_panic_hook = "0.1"
@@ -30,4 +37,3 @@ console_error_panic_hook = "0.1"
 # actual `#[wasm_bindgen]` -> `JsValue` boundary that native `cargo test`
 # cannot reach. Run via `wasm-pack test --node` (see `.github/workflows/wasm.yml`).
 wasm-bindgen-test = "0.3"
-js-sys = "0.3"
