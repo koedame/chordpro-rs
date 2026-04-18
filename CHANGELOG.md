@@ -16,10 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Refactor render-html `{define}` arm to remove redundant block wrapper (#1804)
-- VS Code extension: L2-compliant README with package.json keyword follow-ups (#1808, #1812)
+- VS Code extension: add L2-compliant README (#1808)
+- VS Code extension: package.json keyword + README command table follow-ups (#1812)
 - Document VS Code README PNG requirement (SVG rejected by `vsce package`) (#1813)
-- Releasing docs: Open VSX first-time setup, 8-VSIX procedure, release-verify, manual dispatch (#1785, #1801, #1803)
+- Document Open VSX first-time setup procedure in releasing.md (#1801)
+- Document 8-VSIX procedure and release-verify workflow in releasing.md (#1803)
+- Document manual workflow dispatch in release checklist (#1785)
 - Swift `Package.swift` bumped to v0.2.1 (#1783)
+- CI: document fail-closed intent in matrix-publish workflows (#1818)
 
 ### Fixed
 
@@ -29,10 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- CI: audit release workflows for `inputs.tag` / `inputs.version` script-injection vectors (#1814, #1819)
+- CI: audit release workflows for `inputs.tag` script-injection vectors (#1814)
+- CI(npm-publish): validate `inputs.version` format before `npm version` (#1819)
 - CI: route release workflow step outputs via env to prevent injection (#1820)
 - CI(readme-smoke): adopt `set -euo pipefail` for fail-closed script behavior (#1807)
-- CI: document fail-closed intent in matrix-publish workflows (#1818)
 
 ## [0.2.1] - 2026-04-16
 
