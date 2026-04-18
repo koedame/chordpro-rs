@@ -4,8 +4,6 @@
 
 # chordsketch
 
-[![crates.io](https://img.shields.io/crates/v/chordsketch)](https://crates.io/crates/chordsketch)
-
 Command-line tool for rendering [ChordPro](https://www.chordpro.org/)
 files to plain text, HTML, and PDF, plus importers and exporters for
 plain chord+lyrics sheets, ABC notation, and MusicXML.
@@ -13,6 +11,8 @@ plain chord+lyrics sheets, ABC notation, and MusicXML.
 Part of the [ChordSketch](https://github.com/koedame/chordsketch) project.
 
 ## Installation
+
+[![crates.io](https://img.shields.io/crates/v/chordsketch)](https://crates.io/crates/chordsketch)
 
 ```bash
 cargo install chordsketch
