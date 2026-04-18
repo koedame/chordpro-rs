@@ -12,12 +12,11 @@ use napi_derive::napi;
 pub struct RenderOptions {
     /// Semitone transposition offset. Defaults to 0.
     ///
-    /// Any integer is accepted, but values outside `i8` range
-    /// (`-128..=127`) are clamped to that range *before* the renderer
-    /// reduces modulo 12. So `transpose: 200` becomes
-    /// `clamp(200, -128, 127) = 127`, and the effective offset is
-    /// `127 % 12 = 7` — not `200 % 12 = 8`. This only matters for
-    /// transpositions greater than ~10 octaves (see #1080).
+    /// Must fit in `i8` (`-128..=127`). Values outside that range cause
+    /// the call to reject with `Status::InvalidArg`, matching the CLI,
+    /// UniFFI, and WASM bindings (issue #1826 — previously this binding
+    /// silently clamped, which produced different output for the same
+    /// input depending on which binding was used).
     pub transpose: Option<i32>,
     /// Configuration preset name (e.g., "guitar", "ukulele") or inline
     /// RRJSON configuration string.
@@ -155,17 +154,39 @@ pub fn render_pdf(input: String) -> Result<Buffer> {
     Ok(bytes.into())
 }
 
-/// Coerce a JS-supplied transposition value to `i8`.
+/// Coerce a JS-supplied transposition value to `i8`, rejecting
+/// out-of-range integers.
 ///
-/// Matches the CLI / UniFFI / WASM behavior: any integer is accepted, and the
-/// underlying renderer reduces modulo 12 internally (`shift_semitone` uses
-/// `i16 + rem_euclid(12)` so the arithmetic is overflow-safe). Out-of-range
-/// `i32` values are clamped to `i8::MIN..=i8::MAX` rather than rejected,
-/// because rejecting them would make this binding behave differently from
-/// every other binding for the same input. See #1065 for the cross-binding
-/// inconsistency that motivated this change.
-fn parse_transpose(raw: i32) -> i8 {
-    raw.clamp(i8::MIN as i32, i8::MAX as i32) as i8
+/// Every other binding (CLI via clap, UniFFI at the boundary, WASM via
+/// `serde_wasm_bindgen`) rejects integers that do not fit in `i8`.
+/// napi-rs has no built-in `i8` unmarshaling — the wire type is `i32` —
+/// so the check has to run here at the first opportunity. Returning an
+/// `InvalidArg` error gives the same failure shape across all four
+/// bindings for the same input (issue #1826).
+///
+/// The previous implementation clamped instead of rejecting, which
+/// silently produced a different musical result for inputs outside
+/// `-128..=127` compared with the other three bindings. See #1065 for
+/// the earlier iteration of this divergence.
+fn parse_transpose(raw: i32) -> Result<i8> {
+    try_parse_transpose(raw).map_err(|msg| Error::new(Status::InvalidArg, msg))
+}
+
+/// Pure-Rust cousin of [`parse_transpose`] that returns an owned error
+/// message instead of a `napi::Error`.
+///
+/// This separation keeps the validation logic unit-testable: `napi::Error`
+/// has a `Drop` impl that references Node-API symbols, so constructing
+/// one inside a plain `cargo test` binary would fail to link. Tests call
+/// this helper directly; production callers go through `parse_transpose`
+/// and get a proper `napi::Error`.
+fn try_parse_transpose(raw: i32) -> std::result::Result<i8, String> {
+    i8::try_from(raw).map_err(|_| {
+        format!(
+            "transpose value {raw} is out of range; expected an integer \
+             in -128..=127 (matches CLI / UniFFI / WASM binding semantics)"
+        )
+    })
 }
 
 /// Render ChordPro input as plain text with options.
@@ -173,7 +194,7 @@ fn parse_transpose(raw: i32) -> i8 {
 #[napi]
 pub fn render_text_with_options(input: String, options: RenderOptions) -> Result<String> {
     let config = resolve_config(options.config)?;
-    let transpose = parse_transpose(options.transpose.unwrap_or(0));
+    let transpose = parse_transpose(options.transpose.unwrap_or(0))?;
     do_render_string(
         &input,
         &config,
@@ -187,7 +208,7 @@ pub fn render_text_with_options(input: String, options: RenderOptions) -> Result
 #[napi]
 pub fn render_html_with_options(input: String, options: RenderOptions) -> Result<String> {
     let config = resolve_config(options.config)?;
-    let transpose = parse_transpose(options.transpose.unwrap_or(0));
+    let transpose = parse_transpose(options.transpose.unwrap_or(0))?;
     do_render_string(
         &input,
         &config,
@@ -201,7 +222,7 @@ pub fn render_html_with_options(input: String, options: RenderOptions) -> Result
 #[napi]
 pub fn render_pdf_with_options(input: String, options: RenderOptions) -> Result<Buffer> {
     let config = resolve_config(options.config)?;
-    let transpose = parse_transpose(options.transpose.unwrap_or(0));
+    let transpose = parse_transpose(options.transpose.unwrap_or(0))?;
     let bytes = do_render_bytes(
         &input,
         &config,
@@ -295,24 +316,42 @@ mod tests {
     }
 
     #[test]
-    fn test_transpose_clamps_to_i8_range() {
-        // After #1065, parse_transpose clamps any i32 to i8 range and never
-        // returns an error, matching the CLI / UniFFI / WASM behavior. The
-        // renderer then reduces modulo 12 internally.
-        use super::parse_transpose;
-        // In-range values pass through unchanged.
-        assert_eq!(parse_transpose(0), 0);
-        assert_eq!(parse_transpose(7), 7);
-        assert_eq!(parse_transpose(-7), -7);
-        assert_eq!(parse_transpose(12), 12);
-        assert_eq!(parse_transpose(-12), -12);
-        // Beyond i8 are clamped, not rejected.
-        assert_eq!(parse_transpose(127), 127);
-        assert_eq!(parse_transpose(128), 127);
-        assert_eq!(parse_transpose(1_000_000), 127);
-        assert_eq!(parse_transpose(-128), -128);
-        assert_eq!(parse_transpose(-129), -128);
-        assert_eq!(parse_transpose(-1_000_000), -128);
+    fn test_try_parse_transpose_in_range_passes_through() {
+        // After #1826, parse_transpose rejects out-of-range i32 values
+        // so the NAPI binding matches the CLI / UniFFI / WASM "reject"
+        // contract rather than silently clamping. Tests use the pure-
+        // Rust helper `try_parse_transpose` (see its doc comment) so
+        // that `cargo test --lib` does not have to link Node-API.
+        use super::try_parse_transpose;
+        assert_eq!(try_parse_transpose(0).unwrap(), 0);
+        assert_eq!(try_parse_transpose(7).unwrap(), 7);
+        assert_eq!(try_parse_transpose(-7).unwrap(), -7);
+        assert_eq!(try_parse_transpose(12).unwrap(), 12);
+        assert_eq!(try_parse_transpose(-12).unwrap(), -12);
+        // Boundary values pass through.
+        assert_eq!(try_parse_transpose(127).unwrap(), 127);
+        assert_eq!(try_parse_transpose(-128).unwrap(), -128);
+    }
+
+    #[test]
+    fn test_try_parse_transpose_out_of_range_rejected() {
+        // Every value one step past the i8 boundary must error with a
+        // message that carries the offending value.
+        use super::try_parse_transpose;
+        for bad in [128_i32, 129, 200, 1_000_000, i32::MAX] {
+            let msg = try_parse_transpose(bad).unwrap_err();
+            assert!(
+                msg.contains("out of range") && msg.contains(&bad.to_string()),
+                "positive out-of-range {bad} must report its value; got {msg:?}"
+            );
+        }
+        for bad in [-129_i32, -200, -1_000_000, i32::MIN] {
+            let msg = try_parse_transpose(bad).unwrap_err();
+            assert!(
+                msg.contains("out of range") && msg.contains(&bad.to_string()),
+                "negative out-of-range {bad} must report its value; got {msg:?}"
+            );
+        }
     }
 
     #[test]
