@@ -16,11 +16,18 @@ Sources checked:
   2. `packages/npm/package.json` `version`
   3. `packages/vscode-extension/package.json` `version`
   4. `crates/napi/package.json` `version`
-  5. `packages/tree-sitter-chordpro/package.json` `version`
-  6. `.github/workflows/readme-smoke.yml` — the two hardcoded pins:
+  5. Every `crates/napi/npm/<target-triple>/package.json` `version`
+     (the per-platform prebuilt-binary packages published alongside
+     `@chordsketch/node` — must all share the main package's version or
+     `optionalDependencies` resolution breaks)
+  6. `packages/tree-sitter-chordpro/package.json` `version`
+  7. `.github/workflows/readme-smoke.yml` — the two hardcoded pins:
        a. L~204: `npm install '@chordsketch/wasm@<version>'`
        b. L~450–451: `chordsketch-core = "<caret>"` and
           `chordsketch-render-text = "<caret>"` (matched by both)
+  8. `packaging/macports/Portfile` — `github.setup … <version> v`
+  9. `packaging/nix/package.nix` — `version = "X.Y.Z";`
+ 10. `packaging/winget/*.yaml` — `PackageVersion: X.Y.Z`
 
 Each source is a (file, field, current_value) triple. The allowlist file has
 the same (file, field, current_value) shape plus a mandatory `tracking_issue`
@@ -237,9 +244,13 @@ def load_nix_version(repo_root: Path) -> list[Source]:
 def load_winget_versions(repo_root: Path) -> list[Source]:
     """Collect `PackageVersion:` from every `packaging/winget/*.yaml`.
 
-    Globbed so adding a new winget manifest file doesn't require editing
-    the checker — any file that exposes a `PackageVersion:` line is
-    picked up automatically.
+    Every winget manifest type that we ship (top-level,
+    `.installer.yaml`, `.locale.*.yaml`) is required by the winget
+    schema to carry `PackageVersion:`. A file in this directory that
+    lacks the line is a structural defect — raise so the author is
+    forced to either register the file's version or remove it, rather
+    than having the check silently pass on a mis-cased key or a
+    missing field.
     """
     sources: list[Source] = []
     base = repo_root / "packaging" / "winget"
@@ -248,17 +259,15 @@ def load_winget_versions(repo_root: Path) -> list[Source]:
     for yaml_path in sorted(base.glob("*.yaml")):
         text = yaml_path.read_text(encoding="utf-8")
         match = _WINGET_VERSION_RE.search(text)
-        if match is None:
-            # Some manifests (locale files, installer files) should all
-            # carry PackageVersion. If one doesn't, that's a structural
-            # issue worth surfacing — but there's no reason to fail the
-            # overall check if a helper file lands in this directory
-            # without a PackageVersion, so skip quietly instead.
-            continue
         rel = yaml_path.relative_to(repo_root).as_posix()
-        sources.append(
-            Source(file=rel, field="PackageVersion", value=match.group(1))
-        )
+        if match is None:
+            raise SystemExit(
+                f"{rel}: no `PackageVersion:` line found. Every winget "
+                f"manifest must declare PackageVersion per the schema. "
+                f"If this file is not a manifest, move it outside "
+                f"`packaging/winget/`; otherwise add the field."
+            )
+        sources.append(Source(file=rel, field="PackageVersion", value=match.group(1)))
     return sources
 
 

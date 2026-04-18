@@ -433,16 +433,22 @@ class CheckRunTests(unittest.TestCase):
             rc = check_version_consistency.run(root, root / "nonexistent.toml")
             self.assertEqual(rc, 1)
 
-    def test_packaging_channels_consistent_passes(self) -> None:
-        # Positive check: when every packaging channel matches the canonical
-        # crate version, the check must pass. This guards against a
-        # regression that would make the new loaders always report drift
-        # regardless of actual state.
+    def test_winget_manifest_without_package_version_fails_hard(self) -> None:
+        # A winget yaml that omits `PackageVersion:` is a structural
+        # defect (every manifest type requires it per the schema). The
+        # check must fail hard so the author registers it, rather than
+        # silently skipping the file and letting CI pass.
         with TemporaryDirectory() as td:
             root = Path(td)
             _build_repo(root)
-            rc = check_version_consistency.run(root, root / "nonexistent.toml")
-            self.assertEqual(rc, 0)
+            # Replace one manifest with one that lacks PackageVersion.
+            (root / "packaging" / "winget" / "koedame.chordsketch.yaml").write_text(
+                "PackageIdentifier: koedame.chordsketch\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit) as ctx:
+                check_version_consistency.run(root, root / "nonexistent.toml")
+            self.assertIn("PackageVersion", str(ctx.exception))
 
 
 if __name__ == "__main__":
