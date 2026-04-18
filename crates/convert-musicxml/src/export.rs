@@ -453,9 +453,30 @@ fn key_to_fifths(key: &str) -> (i32, &'static str) {
 // XML escaping
 // ---------------------------------------------------------------------------
 
+/// Return `true` if `c` is a C0 control character that XML 1.0 does not
+/// allow in document content.
+///
+/// The XML 1.0 Char production (https://www.w3.org/TR/xml/#charsets) permits
+/// `U+0009` (tab), `U+000A` (LF), and `U+000D` (CR), plus every character
+/// `U+0020` and above (up to `U+D7FF` and the higher ranges). Every other
+/// C0 character must be stripped before emission, otherwise a conformant
+/// parser — including this crate's own importer — will reject the document
+/// and the ChordPro → MusicXML → ChordPro round-trip breaks on input that
+/// `chordsketch-core` accepted (issue #1830).
+#[inline]
+fn is_xml_forbidden_control(c: char) -> bool {
+    matches!(c, '\u{0000}'..='\u{0008}' | '\u{000B}' | '\u{000C}' | '\u{000E}'..='\u{001F}')
+}
+
 /// Escape a string for use as XML text content, appending to `out`.
+///
+/// Strips XML 1.0 forbidden C0 control characters per
+/// [`is_xml_forbidden_control`]. Tab / LF / CR are preserved.
 fn xml_text(s: &str, out: &mut String) {
     for c in s.chars() {
+        if is_xml_forbidden_control(c) {
+            continue;
+        }
         match c {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
@@ -468,9 +489,15 @@ fn xml_text(s: &str, out: &mut String) {
 }
 
 /// Escape a string for use in an XML attribute value (double-quoted).
+///
+/// Strips XML 1.0 forbidden C0 control characters per
+/// [`is_xml_forbidden_control`]. Tab / LF / CR are preserved.
 fn xml_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
+        if is_xml_forbidden_control(c) {
+            continue;
+        }
         match c {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
@@ -548,6 +575,48 @@ mod tests {
         song.metadata.title = Some("Song & <Things>".to_string());
         let xml = to_musicxml(&song);
         assert!(xml.contains("Song &amp; &lt;Things&gt;"));
+    }
+
+    #[test]
+    fn xml_text_strips_xml_forbidden_controls() {
+        // #1830: XML 1.0 forbids C0 controls except tab/LF/CR.
+        let mut out = String::new();
+        xml_text("a\u{0000}b\u{0007}c\u{000B}d\u{001F}e", &mut out);
+        assert_eq!(out, "abcde");
+    }
+
+    #[test]
+    fn xml_text_preserves_tab_lf_cr() {
+        let mut out = String::new();
+        xml_text("a\tb\nc\rd", &mut out);
+        assert_eq!(out, "a\tb\nc\rd");
+    }
+
+    #[test]
+    fn xml_escape_strips_xml_forbidden_controls() {
+        let escaped = xml_escape("A\u{0001}B\u{001F}C");
+        assert_eq!(escaped, "ABC");
+    }
+
+    #[test]
+    fn export_survives_control_char_in_title() {
+        // Round-trip guard: a title containing U+0007 must produce XML
+        // that does not carry the forbidden byte through. Any conformant
+        // XML parser (including our importer) would otherwise reject the
+        // document on reimport. We only assert the *export* here; the
+        // round-trip through `xml::parse` is exercised indirectly by the
+        // fact that such parsers require the XML 1.0 Char production.
+        let mut song = Song::new();
+        song.metadata.title = Some("Hello\u{0007}World".to_string());
+        let xml = to_musicxml(&song);
+        assert!(
+            !xml.contains('\u{0007}'),
+            "U+0007 must be stripped from XML output"
+        );
+        assert!(
+            xml.contains("HelloWorld"),
+            "surrounding title text must be preserved"
+        );
     }
 
     #[test]
