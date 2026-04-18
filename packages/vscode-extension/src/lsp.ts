@@ -15,6 +15,7 @@ import {
   TransportKind,
 } from 'vscode-languageclient/node';
 import { resolveLspBinary } from './platform.js';
+import { tryStartLanguageClient } from './lsp-activation.js';
 
 let client: LanguageClient | undefined;
 
@@ -90,9 +91,24 @@ export async function startLspClient(context: vscode.ExtensionContext): Promise<
     outputChannelName: 'ChordSketch LSP',
   };
 
-  client = new LanguageClient('chordsketch', 'ChordSketch', serverOptions, clientOptions);
-  context.subscriptions.push(client);
-  await client.start();
+  // Create the client locally. The module-level `client` reference is only
+  // assigned when `start()` resolves — otherwise a `stopLspClient` call from
+  // the configuration-change listener would run `stop()` on a half-initialized
+  // client, whose state is undefined in `vscode-languageclient` v9.
+  // `context.subscriptions.push` is safe either way: VS Code owns the
+  // disposable and will clean it up on deactivate even if start fails, and
+  // `tryStartLanguageClient` additionally calls `dispose()` immediately so the
+  // stdio child process is freed without waiting for extension-host shutdown.
+  const newClient = new LanguageClient(
+    'chordsketch',
+    'ChordSketch',
+    serverOptions,
+    clientOptions,
+  );
+  context.subscriptions.push(newClient);
+  await tryStartLanguageClient(newClient, (c) => {
+    client = c;
+  });
 }
 
 /** Stops the LSP client gracefully and resets the not-found channel reference. */
