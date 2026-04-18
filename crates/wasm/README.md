@@ -66,8 +66,17 @@ The exported wasm-bindgen functions are:
 | `render_text_with_options(input, opts)` | Same, with `{ transpose?, config? }` | `string` |
 | `render_html_with_options(input, opts)` | Same, with `{ transpose?, config? }` | `string` |
 | `render_pdf_with_options(input, opts)` | Same, with `{ transpose?, config? }` | `Uint8Array` |
-| `render_songs_with_warnings(input, opts?)` | Multi-song variant that returns warnings | `{ songs: string[], warnings: Warning[] }` |
+| `renderTextWithWarnings(input)` | Plain-text render that captures warnings instead of forwarding to `console.warn` | `{ output: string, warnings: string[] }` |
+| `renderHtmlWithWarnings(input)` | HTML render with captured warnings | `{ output: string, warnings: string[] }` |
+| `renderPdfWithWarnings(input)` | PDF render with captured warnings | `{ output: Uint8Array, warnings: string[] }` |
 | `version()` | Library version string | `string` |
+
+Each element of `warnings` is a plain UTF-8 string containing a
+human-readable diagnostic (e.g., `"{capo: 999} out of range 0..=11 — ignored"`).
+Use the `*WithWarnings` variants when embedding the WASM package in a
+UI that needs to show warnings inline or aggregate them across renders;
+the plain `render_*` functions forward warnings to `console.warn`
+instead.
 
 ## Links
 

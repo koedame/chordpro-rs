@@ -23,6 +23,24 @@ Snap, Chocolatey, the GitHub Container Registry, and Docker Hub — see
 the [top-level README](https://github.com/koedame/chordsketch#installation)
 for the registry-specific commands.
 
+### Platform compatibility
+
+Official release binaries (produced by `.github/workflows/release.yml`)
+are available for the following targets:
+
+| Target triple | OS | Arch | Notes |
+|---|---|---|---|
+| `x86_64-unknown-linux-gnu` | Linux | x86_64 | glibc |
+| `aarch64-unknown-linux-gnu` | Linux | ARM64 | glibc |
+| `x86_64-unknown-linux-musl` | Linux | x86_64 | static (musl) |
+| `aarch64-unknown-linux-musl` | Linux | ARM64 | static (musl) |
+| `x86_64-apple-darwin` | macOS | Intel (x86_64) | — |
+| `aarch64-apple-darwin` | macOS | Apple Silicon (ARM64) | — |
+| `x86_64-pc-windows-msvc` | Windows | x86_64 | MSVC runtime |
+
+For any other target, use `cargo install chordsketch`; the crate has no
+external build-time dependencies beyond a stable Rust toolchain.
+
 ## Quick Start
 
 ```bash

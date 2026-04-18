@@ -4,11 +4,15 @@
 # Place it at pkgs/by-name/ch/chordsketch/package.nix in a nixpkgs
 # checkout and submit a PR.
 #
-# Verified: builds and passes tests on x86_64-linux with nixpkgs unstable.
+# Last verified build: v0.2.0 on x86_64-linux with nixpkgs unstable.
+# v0.2.2 hashes are intentionally blank (see `hash` / `cargoHash`
+# below) — the release PR #1897 bumped `version` but leaves the
+# derivation in its "awaiting-build" state per the workflow below.
 #
 # When bumping to a new release, update `version` and recompute `hash`
 # and `cargoHash` by setting both to "" and building once — nix will
-# report the correct SRI hashes in the error messages.
+# report the correct SRI hashes in the error messages. After a
+# successful build, update the "Last verified build" line above.
 
 {
   lib,
