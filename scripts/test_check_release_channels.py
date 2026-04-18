@@ -471,5 +471,74 @@ end
         self.assertIn("not found on Maven Central", result.detail)
 
 
+class CliOutputOrderingTests(unittest.TestCase):
+    """Regression guard for #1853.
+
+    The release-verify rollup reads `head -n1 result.txt` and expects the
+    first word to be `OK` or `FAIL`. Before the fix the CLI wrote
+    `detail: …` to stderr and the machine-readable status line to stdout;
+    when the workflow redirected both streams into the same file with
+    `> out 2>&1`, Python's stderr buffering landed the detail line first
+    and the rollup parser saw `detail:` as the status column. Docker /
+    GHCR / Maven Central silently showed `❌ detail:` on v0.2.2.
+
+    This test invokes the script as a subprocess with the same shell
+    redirection the workflow uses and asserts that the first line of the
+    combined output is always the status line.
+    """
+
+    SCRIPT = SCRIPTS_DIR / "check-release-channels.py"
+
+    def _run_with_combined_redirect(self, argv: list[str]) -> tuple[int, str]:
+        import subprocess
+
+        # The workflow does `> out 2>&1`; emulate that by merging streams
+        # so we observe whichever Python actually writes first.
+        completed = subprocess.run(
+            [sys.executable, str(self.SCRIPT), *argv],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        return completed.returncode, completed.stdout
+
+    def test_first_line_is_status_on_skip_channel(self) -> None:
+        # `aur` is a `kind = "manual"` channel in the checked-in manifest,
+        # so no HTTP request is made; this exercises the happy path
+        # deterministically.
+        rc, out = self._run_with_combined_redirect(
+            ["--tag", "v0.0.0", "--channel", "aur"]
+        )
+        self.assertEqual(rc, 0)
+        first = out.splitlines()[0]
+        self.assertTrue(
+            first.startswith("OK aur "),
+            f"first line must start with the status word; got {first!r}",
+        )
+        self.assertIn("expected=", first)
+        self.assertIn("observed=", first)
+
+    def test_first_line_is_status_on_force_stale(self) -> None:
+        # `--force-stale` produces a synthetic red result and exits with
+        # status 1; the detail line must not outrun the status line.
+        rc, out = self._run_with_combined_redirect(
+            [
+                "--tag",
+                "v0.0.0",
+                "--channel",
+                "npm-wasm",
+                "--force-stale",
+                "npm-wasm",
+            ]
+        )
+        self.assertEqual(rc, 1)
+        first = out.splitlines()[0]
+        self.assertTrue(
+            first.startswith("FAIL npm-wasm "),
+            f"first line must start with the status word; got {first!r}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
