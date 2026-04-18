@@ -10,9 +10,10 @@ description: >
 inputs:
   tag:
     description: >
-      The tag string to validate. Caller should usually pass
-      `$${{ inputs.tag || github.event.release.tag_name || github.ref_name }}`
-      so all three entry points are covered.
+      The tag string to validate. Caller should usually pass the first
+      non-empty of inputs.tag, github.event.release.tag_name, or
+      github.ref_name so all three entry points are covered. See the
+      workflow callers of this action for the exact expression.
     required: true
 runs:
   using: "composite"

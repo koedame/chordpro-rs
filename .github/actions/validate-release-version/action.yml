@@ -12,8 +12,9 @@ description: >
 inputs:
   version:
     description: >
-      The bare version string to validate (e.g. `0.2.1` or
-      `0.2.1-rc.1`). Caller should pass `$${{ inputs.version }}`.
+      The bare version string to validate (e.g. 0.2.1 or 0.2.1-rc.1).
+      Caller should pass inputs.version via a workflow expression; see
+      workflow callers for the exact form.
     required: true
 runs:
   using: "composite"
