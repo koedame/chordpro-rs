@@ -893,14 +893,28 @@ mod wasm_tests {
             output.is_string(),
             "output must be a JS string (got {output:?})"
         );
+        // `is_string()` is already asserted, so the `as_string()` conversion
+        // is infallible — use `unwrap` instead of `unwrap_or_default` per
+        // `.claude/rules/code-style.md` (reserve fallbacks for genuinely
+        // unknown states).
         assert!(
-            output.as_string().unwrap_or_default().contains("Test"),
+            output.as_string().unwrap().contains("Test"),
             "output must contain the rendered title"
         );
         let warnings = js_sys::Reflect::get(&v, &"warnings".into()).unwrap();
         assert!(
             Array::is_array(&warnings),
             "warnings must be a JS array (got {warnings:?})"
+        );
+        // Clean minimal input produces no warnings — pin the contract so a
+        // future regression that emits spurious warnings for clean songs
+        // fails loudly.
+        let arr = Array::from(&warnings);
+        assert_eq!(
+            arr.length(),
+            0,
+            "clean input must produce no warnings; got {} entries",
+            arr.length(),
         );
     }
 
@@ -910,8 +924,16 @@ mod wasm_tests {
         let v = render_html_with_warnings(MINIMAL_INPUT).unwrap();
         let output = js_sys::Reflect::get(&v, &"output".into()).unwrap();
         assert!(output.is_string(), "output must be a JS string");
+        // Match the text variant: also confirm the render reached the
+        // title so an empty-string `output` field does not pass the test.
+        assert!(
+            output.as_string().unwrap().contains("Test"),
+            "output must contain the rendered title"
+        );
         let warnings = js_sys::Reflect::get(&v, &"warnings".into()).unwrap();
         assert!(Array::is_array(&warnings), "warnings must be a JS array");
+        let arr = Array::from(&warnings);
+        assert_eq!(arr.length(), 0, "clean input must produce no warnings");
     }
 
     /// `renderPdfWithWarnings` returns `output` as a `Uint8Array` (not a
