@@ -1,10 +1,10 @@
 PackageIdentifier: koedame.chordsketch
-PackageVersion: 0.1.0
+PackageVersion: 0.2.2
 InstallerType: zip
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/koedame/chordsketch/releases/download/v0.1.0/chordsketch-v0.1.0-x86_64-pc-windows-msvc.zip
-    InstallerSha256: 61D2577FD4EBBFFDF75101058E6689FC69F6BD177D6607AF31198FEB905F44A6
+    InstallerUrl: https://github.com/koedame/chordsketch/releases/download/v0.2.2/chordsketch-v0.2.2-x86_64-pc-windows-msvc.zip
+    InstallerSha256: 1689228ADA287B247405881E2E7F48FC57C8B744E9159814C4010A2ED4814A50
     NestedInstallerType: portable
     NestedInstallerFiles:
       - RelativeFilePath: chordsketch.exe
