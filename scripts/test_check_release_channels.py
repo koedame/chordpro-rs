@@ -21,6 +21,7 @@ tag. This file covers the behaviors most likely to break under refactoring:
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -490,8 +491,6 @@ class CliOutputOrderingTests(unittest.TestCase):
     SCRIPT = SCRIPTS_DIR / "check-release-channels.py"
 
     def _run_with_combined_redirect(self, argv: list[str]) -> tuple[int, str]:
-        import subprocess
-
         # The workflow does `> out 2>&1`; emulate that by merging streams
         # so we observe whichever Python actually writes first.
         completed = subprocess.run(
