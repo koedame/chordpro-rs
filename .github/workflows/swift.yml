@@ -34,9 +34,12 @@ permissions:
 # Ensure `run:` blocks use `bash -eo pipefail`, not the silent default that
 # swallows mid-pipe failures. swift.yml has no Windows matrix, so a
 # workflow-level default is safe (fix-propagation from PR #1821, issue #1845).
+# `-u` is added on top (issue #1836) so a typo'd env-var reference fails
+# loud; every block in this workflow already runs `set -euo pipefail`
+# explicitly, making the default strictly defense-in-depth.
 defaults:
   run:
-    shell: bash
+    shell: bash --noprofile --norc -euo pipefail {0}
 
 jobs:
   # Build each Apple target on its own runner in parallel.

@@ -38,9 +38,12 @@ permissions:
 # add`, `npm install -g`, `napi build` — are all cross-platform CLI
 # tools that behave identically under Git Bash on Windows, so switching
 # away from pwsh has no functional impact.
+# `-u` is added on top (issue #1836) so a typo'd env-var reference
+# fails loud; every var-using block in this workflow already runs
+# `set -euo pipefail` explicitly.
 defaults:
   run:
-    shell: bash
+    shell: bash --noprofile --norc -euo pipefail {0}
 
 env:
   CARGO_INCREMENTAL: "0"

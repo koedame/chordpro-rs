@@ -205,13 +205,15 @@ jobs:
     environment:
       name: maven-central
       url: https://repo1.maven.org/maven2/io/github/koedame/chordsketch/
-    # Enforce `bash -eo pipefail` in `run:` blocks. Scoped to this job
+    # Enforce `bash -euo pipefail` in `run:` blocks. Scoped to this job
     # rather than workflow-level because kotlin.yml has a Windows matrix
     # cell (build-jni-others) whose `run:` blocks must keep pwsh defaults.
-    # See issue #1845 (fix-propagation from PR #1821).
+    # See issue #1845 (fix-propagation from PR #1821). `-u` added per
+    # issue #1836 — every var-using block in this job already runs
+    # `set -euo pipefail` explicitly, so the default is defense-in-depth.
     defaults:
       run:
-        shell: bash
+        shell: bash --noprofile --norc -euo pipefail {0}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         # No `ref:` override — always check out the default branch (main) so
