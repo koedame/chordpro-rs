@@ -2,7 +2,8 @@
 
 # Reference Portfile for MacPorts submission. Before submitting to
 # macports/macports-ports, you must:
-#   1. Replace the placeholder checksums with actual values
+#   1. Update the checksums to match the new release tarball
+#      (currently set for v0.2.2 — refresh on each release)
 #   2. Populate the cargo.crates block via cargo2port.py
 # See docs/releasing.md for the full procedure.
 
