@@ -5083,6 +5083,40 @@ mod jpeg_tests {
     }
 
     #[test]
+    fn test_validate_margin_respects_max_warnings_cap() {
+        // #1899: `validate_margin` previously called `warnings.push` directly
+        // and bypassed the `MAX_WARNINGS` cap. Regression guard: fill the
+        // vector to exactly MAX_WARNINGS via the canonical `push_warning`
+        // path (which appends the truncation marker on the first overflow),
+        // then hit the margin validator with an invalid value. If the
+        // function ever reverts to bypassing the cap, the vector will grow
+        // past MAX_WARNINGS + 1 and this assertion will fire.
+        let mut warnings: Vec<String> = Vec::new();
+        for i in 0..MAX_WARNINGS {
+            push_warning(&mut warnings, format!("filler warning {i}"));
+        }
+        // The cap helper appends a single truncation marker on the first
+        // overflow and then short-circuits; future pushes must not grow
+        // the vector further.
+        push_warning(&mut warnings, "overflow warning".to_string());
+        assert_eq!(
+            warnings.len(),
+            MAX_WARNINGS + 1,
+            "precondition: vector is at MAX_WARNINGS + 1 after first overflow",
+        );
+
+        // Now ask the margin validator for a value that would emit a
+        // warning. Because the vector is already at the truncation point,
+        // nothing must be appended.
+        let _ = PdfDocument::validate_margin(-100.0, MARGIN_TOP, "top", &mut warnings);
+        assert_eq!(
+            warnings.len(),
+            MAX_WARNINGS + 1,
+            "validate_margin must route through push_warning and respect the cap",
+        );
+    }
+
+    #[test]
     fn test_embed_jpeg_produces_xobject() {
         let jpeg = minimal_jpeg(320, 240);
         let mut doc = PdfDocument::new();
