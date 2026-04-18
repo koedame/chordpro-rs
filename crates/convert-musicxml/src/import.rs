@@ -368,21 +368,36 @@ fn musicxml_kind_to_suffix(kind: &str) -> &str {
 
 /// Collect the lyric text from a `<note>` element.
 ///
-/// Concatenates all `<lyric><text>` values (there may be multiple lyrics
-/// in different verses). Uses only the first lyric if multiple are present.
+/// A single MusicXML `<note>` may carry multiple `<lyric>` children, one
+/// per verse (e.g. `<lyric number="1">…</lyric><lyric number="2">…</lyric>`).
+/// Every non-empty verse is folded into the returned string, separated
+/// by `" / "` so that multi-verse hymns round-trip through ChordPro
+/// without silently dropping verses 2..N (issue #1829).
+///
+/// The `syllabic` element of each verse is preserved independently —
+/// `begin` / `middle` produce a trailing hyphen; `end` / `single` (and
+/// anything else) produce a trailing space.
+///
+/// Returns the empty string if no verse has non-empty text.
 fn collect_lyric_text(note: &Element) -> String {
-    // Use the first <lyric> element (lyric number="1")
+    let mut verses: Vec<String> = Vec::new();
     for lyric in note.children_named("lyric") {
         let text = lyric.text_at(&["text"]).unwrap_or("").trim();
-        if !text.is_empty() {
-            let syllabic = lyric.text_at(&["syllabic"]).unwrap_or("single");
-            return match syllabic {
-                "begin" | "middle" => format!("{text}-"),
-                _ => format!("{text} "),
-            };
+        if text.is_empty() {
+            continue;
         }
+        let syllabic = lyric.text_at(&["syllabic"]).unwrap_or("single");
+        let chunk = match syllabic {
+            "begin" | "middle" => format!("{text}-"),
+            _ => format!("{text} "),
+        };
+        verses.push(chunk);
     }
-    String::new()
+    // `join` is intentional even for the single-verse case: the trailing
+    // space or hyphen from `chunk` above is preserved and the delimiter
+    // only appears between verses, which is the behaviour existing
+    // single-verse callers expect.
+    verses.join(" / ")
 }
 
 /// Map a key signature (circle-of-fifths value + mode) to a key name string.
@@ -588,5 +603,80 @@ mod tests {
                 Some("Bb")
             );
         }
+    }
+
+    #[test]
+    fn import_multi_verse_lyrics() {
+        // #1829: a note with <lyric number="1"> and <lyric number="2">
+        // used to silently drop verse 2. `collect_lyric_text` now folds
+        // every non-empty verse into the returned lyric, joined by
+        // " / ", so the ChordPro round-trip does not lose verses.
+        let xml = r#"<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name/></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <harmony>
+        <root><root-step>G</root-step></root>
+        <kind text="">major</kind>
+      </harmony>
+      <note>
+        <duration>1</duration>
+        <lyric number="1"><syllabic>single</syllabic><text>Amazing</text></lyric>
+        <lyric number="2"><syllabic>single</syllabic><text>'Twas</text></lyric>
+      </note>
+    </measure>
+  </part>
+</score-partwise>"#;
+        let song = from_musicxml(xml).unwrap();
+        let lyrics: Vec<&Line> = song
+            .lines
+            .iter()
+            .filter(|l| matches!(l, Line::Lyrics(_)))
+            .collect();
+        assert_eq!(lyrics.len(), 1);
+        if let Line::Lyrics(ll) = lyrics[0] {
+            assert_eq!(ll.segments.len(), 1);
+            let text = &ll.segments[0].text;
+            assert!(
+                text.contains("Amazing") && text.contains("'Twas"),
+                "expected both verses in joined lyric text; got {text:?}"
+            );
+            assert!(
+                text.contains(" / "),
+                "expected ' / ' delimiter between verses; got {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn collect_lyric_text_single_verse_preserves_trailing_space() {
+        // Regression guard: single-verse callers must keep the trailing
+        // space / hyphen that the syllabic branch emits, even now that
+        // the implementation folds through `join`.
+        let xml = r#"<note>
+  <lyric number="1"><syllabic>single</syllabic><text>hi</text></lyric>
+</note>"#;
+        let element = crate::xml::parse(xml).unwrap();
+        assert_eq!(collect_lyric_text(&element), "hi ");
+    }
+
+    #[test]
+    fn collect_lyric_text_begin_syllabic_produces_hyphen() {
+        let xml = r#"<note>
+  <lyric number="1"><syllabic>begin</syllabic><text>a</text></lyric>
+</note>"#;
+        let element = crate::xml::parse(xml).unwrap();
+        assert_eq!(collect_lyric_text(&element), "a-");
+    }
+
+    #[test]
+    fn collect_lyric_text_skips_empty_verses() {
+        // Verse 1 empty, verse 2 non-empty → verse 2 alone.
+        let xml = r#"<note>
+  <lyric number="1"><syllabic>single</syllabic><text></text></lyric>
+  <lyric number="2"><syllabic>single</syllabic><text>ok</text></lyric>
+</note>"#;
+        let element = crate::xml::parse(xml).unwrap();
+        assert_eq!(collect_lyric_text(&element), "ok ");
     }
 }

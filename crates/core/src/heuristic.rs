@@ -961,6 +961,50 @@ mod tests {
         assert!(!is_chord_token("Em7add9sus2extended"));
     }
 
+    /// Regression guard for stop-word collisions called out explicitly in
+    /// `.claude/rules/golden-tests.md` §Stop-Word Collision Tests (#1831).
+    ///
+    /// These are lyric words that begin with a valid chord-root letter
+    /// (A–G, with or without a chord-quality suffix prefix like `Am`,
+    /// `Em`, `Dm`). The heuristic importer must keep rejecting them so
+    /// that a future parser change cannot silently start detecting
+    /// `Amazing` → `Am` + trailing `azing`, or `Bad` → `B` + `ad`, etc.
+    #[test]
+    fn chord_token_rejects_chord_like_prefix_in_lyric_words() {
+        // Rule-text examples.
+        assert!(!is_chord_token("Amazing"));
+        assert!(!is_chord_token("Empty"));
+        assert!(!is_chord_token("Get"));
+
+        // Additional adversarial prefixes covering every A–G root letter.
+        assert!(!is_chord_token("Bad"));
+        assert!(!is_chord_token("Broken"));
+        assert!(!is_chord_token("Cold"));
+        assert!(!is_chord_token("Dance"));
+        assert!(!is_chord_token("Edge"));
+        assert!(!is_chord_token("Father"));
+        assert!(!is_chord_token("Gone"));
+
+        // Two-letter chord-quality prefixes inside lyric words.
+        assert!(!is_chord_token("Amber")); // Am...
+        assert!(!is_chord_token("Emerald")); // Em...
+        assert!(!is_chord_token("Dmitri")); // Dm...
+        assert!(!is_chord_token("Furniture")); // F...
+    }
+
+    #[test]
+    fn chord_token_accepts_bare_dm_but_collisions_are_line_level() {
+        // `is_chord_token` is context-free: `Dm` on its own *is* a valid
+        // chord, because the stop-word collision for "section label
+        // whose first letter is a chord root" is resolved at the
+        // line-classification layer (`classify_line` counts
+        // is_chord_token hits and only treats the line as a chord line
+        // when the density is high enough). This assertion documents
+        // the contract: the function-level test pins `Dm` → true and
+        // the line-level heuristic guards the collision.
+        assert!(is_chord_token("Dm"));
+    }
+
     #[test]
     fn chord_token_accepts_valid_chords() {
         assert!(is_chord_token("Am"));
