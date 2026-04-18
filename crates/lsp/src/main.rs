@@ -27,6 +27,7 @@
 
 mod completion;
 mod convert;
+mod encoding;
 mod hover;
 mod server;
 
