@@ -104,7 +104,7 @@ jobs:
         # vs. 1-2 minutes for apt-get. Docker is pre-installed on
         # ubuntu-latest runners.
         if: matrix.cross
-        uses: taiki-e/install-action@94cb46f8d6e437890146ffbd78a778b78e623fb2 # v2
+        uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2
         with:
           tool: cross
 
