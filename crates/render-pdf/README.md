@@ -36,6 +36,13 @@ std::fs::write("output.pdf", &pdf_bytes).unwrap();
 
 [API documentation on docs.rs](https://docs.rs/chordsketch-render-pdf)
 
+## Links
+
+- Project repository: <https://github.com/koedame/chordsketch>
+- Live playground: <https://chordsketch.koeda.me>
+- API docs: <https://docs.rs/chordsketch-render-pdf>
+- Issue tracker: <https://github.com/koedame/chordsketch/issues>
+
 ## License
 
 [MIT](../../LICENSE)

@@ -33,6 +33,13 @@ println!("{text}");
 
 [API documentation on docs.rs](https://docs.rs/chordsketch-render-text)
 
+## Links
+
+- Project repository: <https://github.com/koedame/chordsketch>
+- Live playground: <https://chordsketch.koeda.me>
+- API docs: <https://docs.rs/chordsketch-render-text>
+- Issue tracker: <https://github.com/koedame/chordsketch/issues>
+
 ## License
 
 [MIT](../../LICENSE)

@@ -9,9 +9,10 @@
 # tracking that retirement.
 #
 # EVERY ENTRY MUST HAVE A NON-EMPTY `tracking_issue` FIELD. The check script
-# fails validation if any entry is missing it. This rule exists because the
-# user explicitly asked: "allowlistの更新を忘れないように skip してるやつは 1
-# つずつ issue にしておいてね" (issue #1506). No skip without a paper trail.
+# fails validation if any entry is missing it. The user asked, when this
+# allowlist was introduced (#1506), that every skip be filed as its own
+# issue so the allowlist cannot silently rot — no skip without a paper
+# trail.
 #
 # Removal discipline: the PR that meets an entry's `expires_at` condition MUST
 # remove the entry AND close the tracking issue in the same diff. The check
