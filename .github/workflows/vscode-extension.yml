@@ -29,7 +29,11 @@ permissions:
 
 defaults:
   run:
-    shell: bash
+    # See release-verify.yml for the rationale: add `-u` so a typo'd
+    # environment-variable reference fails loud. Every `run:` block in
+    # this workflow already sets `set -euo pipefail` explicitly, so the
+    # default is strictly defense-in-depth (issue #1836).
+    shell: bash --noprofile --norc -euo pipefail {0}
 
 jobs:
   build:

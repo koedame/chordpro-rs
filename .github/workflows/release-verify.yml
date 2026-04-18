@@ -45,7 +45,13 @@ permissions:
 
 defaults:
   run:
-    shell: bash
+    # Upgrade over the stock `shell: bash` (which runs `bash --noprofile
+    # --norc -eo pipefail {0}`) to add `-u`, so a typo'd environment
+    # variable reference like `$UNDEFIEND_VAR` fails loud instead of
+    # silently producing an empty string. Every `run:` block in this
+    # workflow already begins with `set -euo pipefail` explicitly, so
+    # this is a strict defense-in-depth upgrade (issue #1836).
+    shell: bash --noprofile --norc -euo pipefail {0}
 
 jobs:
   collect-channels:
