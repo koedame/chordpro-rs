@@ -35,6 +35,13 @@ let html = render_song(&song);
 
 [API documentation on docs.rs](https://docs.rs/chordsketch-render-html)
 
+## Links
+
+- Project repository: <https://github.com/koedame/chordsketch>
+- Live playground: <https://chordsketch.koeda.me>
+- API docs: <https://docs.rs/chordsketch-render-html>
+- Issue tracker: <https://github.com/koedame/chordsketch/issues>
+
 ## License
 
 [MIT](../../LICENSE)

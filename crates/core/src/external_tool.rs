@@ -267,6 +267,18 @@ const DANGEROUS_SCHEME_FUNCTIONS: &[&str] = &[
     "eval-string",
     "load",
     "ly:gulp-file",
+    // ly:gulp-string is the cousin of ly:gulp-file that has also appeared
+    // in `-dsafe`-bypass research; it reads a file and returns its contents
+    // as a string. Block as defense-in-depth (#1844).
+    "ly:gulp-string",
+    "gulp-string",
+    // ly:format can emit attacker-controlled strings into the compiled
+    // output and, in combination with other primitives, enable format-string
+    // tricks against downstream processors. Defense-in-depth only (#1844).
+    "ly:format",
+    // ly:exit terminates the Lilypond process; useful to a sandbox
+    // attacker for masking tampering signals in batch pipelines (#1844).
+    "ly:exit",
     "ly:system",
     "ly:parser-include",
     "ly:set-option",
@@ -984,6 +996,31 @@ mod tests {
         let input = "#(ly:gulp-file \"/etc/passwd\")\n\\relative c' { c4 }\n";
         let result = super::sanitize_lilypond_content(input);
         assert!(!result.contains("ly:gulp-file"));
+    }
+
+    #[test]
+    fn sanitize_lilypond_strips_gulp_string() {
+        // #1844: ly:gulp-string is the string-returning cousin of gulp-file.
+        let input = "#(ly:gulp-string \"/etc/passwd\")\n\\relative c' { c4 }\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert!(!result.contains("ly:gulp-string"));
+        assert!(result.contains("\\relative"));
+    }
+
+    #[test]
+    fn sanitize_lilypond_strips_ly_format() {
+        // #1844: ly:format may emit attacker-controlled strings.
+        let input = "#(ly:format \"~a\" \"x\")\n\\relative c' { c4 }\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert!(!result.contains("ly:format"));
+    }
+
+    #[test]
+    fn sanitize_lilypond_strips_ly_exit() {
+        // #1844: ly:exit terminates the process and masks tampering.
+        let input = "#(ly:exit 0)\n\\relative c' { c4 }\n";
+        let result = super::sanitize_lilypond_content(input);
+        assert!(!result.contains("ly:exit"));
     }
 
     #[test]
