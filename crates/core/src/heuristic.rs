@@ -760,12 +760,20 @@ fn pair_chords_with_lyric(positions: &[(usize, String)], lyric: &str) -> LyricsL
 // ChordPro serializer for plain-text-imported songs
 // ---------------------------------------------------------------------------
 
-/// Strips `{` and `}` from a string so it is safe to embed as a ChordPro
-/// directive name or value.  ChordPro has no escape mechanism inside directive
-/// names or values, so brace characters would produce malformed output.
+/// Strips characters from a string so it is safe to embed as a ChordPro
+/// directive name or value.
+///
+/// Four characters are removed: `{`, `}`, `\n`, `\r`. Braces would produce
+/// malformed output (ChordPro has no escape syntax for braces inside directive
+/// names or values); newlines would split the directive across multiple output
+/// lines, leaving no closing `}` on the first line and producing invalid
+/// ChordPro. See issues #1824 and #1883.
 fn sanitize_directive_token(s: &str) -> std::borrow::Cow<'_, str> {
-    if s.contains('{') || s.contains('}') {
-        std::borrow::Cow::Owned(s.replace(['{', '}'], ""))
+    if s.as_bytes()
+        .iter()
+        .any(|&b| matches!(b, b'{' | b'}' | b'\n' | b'\r'))
+    {
+        std::borrow::Cow::Owned(s.replace(['{', '}', '\n', '\r'], ""))
     } else {
         std::borrow::Cow::Borrowed(s)
     }
@@ -1313,6 +1321,17 @@ mod tests {
         song.lines.push(Line::Directive(dir));
         let out = song_to_chordpro(&song);
         assert_eq!(out, "{start_of_section: custom}\n");
+    }
+
+    #[test]
+    fn song_to_chordpro_strips_embedded_newline_in_title() {
+        // #1883 sister-site: an embedded `\n` in a directive token (here the
+        // title) would leave the closing `}` on a separate line, producing
+        // invalid ChordPro. `sanitize_directive_token` must strip it.
+        let mut song = Song::default();
+        song.metadata.title = Some("Foo\nBar".to_string());
+        let out = song_to_chordpro(&song);
+        assert_eq!(out, "{title: FooBar}\n");
     }
 
     // -- Lyric / chord sanitization (#1824 directive-injection guard) ----
