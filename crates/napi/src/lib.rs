@@ -698,7 +698,10 @@ mod tests {
             &chordsketch_core::config::Config::defaults(),
         )
         .output;
-        assert_ne!(zero, shifted);
+        assert_ne!(
+            zero, shifted,
+            "transpose=2 must produce different output from transpose=0"
+        );
     }
 
     #[test]

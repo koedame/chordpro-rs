@@ -790,7 +790,13 @@ mod wasm_tests {
         let output = js_sys::Reflect::get(&v, &"output".into()).unwrap();
         assert!(output.as_string().unwrap_or_default().contains("Test"));
         let warnings = js_sys::Reflect::get(&v, &"warnings".into()).unwrap();
-        assert!(warnings.is_object(), "warnings must be present as an array");
+        // Array::is_array is the strict check; plain objects would also pass
+        // is_object() so we need the stronger predicate to catch a future
+        // refactor that accidentally returns a record instead of an array.
+        assert!(
+            Array::is_array(&warnings),
+            "warnings must be a JS array (got {warnings:?})"
+        );
     }
 
     /// A `transpose` option changes the rendered output, proving the
@@ -842,6 +848,11 @@ mod wasm_tests {
         let v = render_text_with_warnings_and_options(MINIMAL_INPUT, JsValue::UNDEFINED).unwrap();
         let output = js_sys::Reflect::get(&v, &"output".into()).unwrap();
         assert!(output.as_string().unwrap_or_default().contains("Test"));
+        let warnings = js_sys::Reflect::get(&v, &"warnings".into()).unwrap();
+        assert!(
+            Array::is_array(&warnings),
+            "warnings must be a JS array (got {warnings:?})"
+        );
     }
 
     /// PDF variant: confirm the magic header is preserved when routed
@@ -858,6 +869,11 @@ mod wasm_tests {
             buf
         };
         assert_eq!(&header, b"%PDF");
+        let warnings = js_sys::Reflect::get(&v, &"warnings".into()).unwrap();
+        assert!(
+            Array::is_array(&warnings),
+            "warnings must be a JS array (got {warnings:?})"
+        );
     }
 
     /// `version()` returns a non-empty string through the `JsValue`
