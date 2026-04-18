@@ -760,12 +760,20 @@ fn pair_chords_with_lyric(positions: &[(usize, String)], lyric: &str) -> LyricsL
 // ChordPro serializer for plain-text-imported songs
 // ---------------------------------------------------------------------------
 
-/// Strips `{` and `}` from a string so it is safe to embed as a ChordPro
-/// directive name or value.  ChordPro has no escape mechanism inside directive
-/// names or values, so brace characters would produce malformed output.
+/// Strips characters from a string so it is safe to embed as a ChordPro
+/// directive name or value.
+///
+/// Four characters are removed: `{`, `}`, `\n`, `\r`. Braces would produce
+/// malformed output (ChordPro has no escape syntax for braces inside directive
+/// names or values); newlines would split the directive across multiple output
+/// lines, leaving no closing `}` on the first line and producing invalid
+/// ChordPro. See issues #1824 and #1883.
 fn sanitize_directive_token(s: &str) -> std::borrow::Cow<'_, str> {
-    if s.contains('{') || s.contains('}') {
-        std::borrow::Cow::Owned(s.replace(['{', '}'], ""))
+    if s.as_bytes()
+        .iter()
+        .any(|&b| matches!(b, b'{' | b'}' | b'\n' | b'\r'))
+    {
+        std::borrow::Cow::Owned(s.replace(['{', '}', '\n', '\r'], ""))
     } else {
         std::borrow::Cow::Borrowed(s)
     }
@@ -774,31 +782,39 @@ fn sanitize_directive_token(s: &str) -> std::borrow::Cow<'_, str> {
 /// Strips characters that would be interpreted as ChordPro structure when a
 /// string is emitted into the **lyric** position of a line.
 ///
-/// Four characters are removed: `{`, `}`, `[`, `]`. Braces would start a
-/// directive (`{title: HACKED}`) and square brackets would start an inline
-/// chord annotation (`[Cmaj7]`). ChordPro has no escape syntax for any of
-/// these inside plain lyric text, so stripping is the only safe option —
+/// Six characters are removed: `{`, `}`, `[`, `]`, `\n`, `\r`. Braces
+/// start a directive (`{title: HACKED}`) and square brackets start an
+/// inline chord annotation (`[Cmaj7]`); newlines would split the lyric
+/// across multiple output lines, producing malformed ChordPro whose
+/// second line is a bare text token no standard parser would emit from
+/// structured input. ChordPro has no escape syntax for any of these
+/// inside plain lyric text, so stripping is the only safe option —
 /// matching the `sanitize_directive_token` approach used for directive
-/// names/values. See issue #1824 and `sanitizer-security.md` §Security
-/// Asymmetry ("if directive values are sanitized, directive names must be
-/// sanitized too — they appear in the same output context").
+/// names/values. See issues #1824 (directive-injection guard) and
+/// #1883 (well-formedness under embedded newlines).
 fn sanitize_lyric_text(s: &str) -> std::borrow::Cow<'_, str> {
-    if s.contains('{') || s.contains('}') || s.contains('[') || s.contains(']') {
-        std::borrow::Cow::Owned(s.replace(['{', '}', '[', ']'], ""))
+    if s.as_bytes()
+        .iter()
+        .any(|&b| matches!(b, b'{' | b'}' | b'[' | b']' | b'\n' | b'\r'))
+    {
+        std::borrow::Cow::Owned(s.replace(['{', '}', '[', ']', '\n', '\r'], ""))
     } else {
         std::borrow::Cow::Borrowed(s)
     }
 }
 
 /// Strips characters that would be interpreted as ChordPro structure when a
-/// string is emitted inside a **chord annotation** (`[…]`). Only `]` needs
-/// to be stripped (it would close the annotation early); braces are allowed
-/// but unusual so we strip them too for parity with `sanitize_lyric_text`.
-/// `[` inside a chord name has no effect because the parser has already
-/// consumed the opening bracket.
+/// string is emitted inside a **chord annotation** (`[…]`). Six characters
+/// are removed — the same set as `sanitize_lyric_text`. `]` would close
+/// the annotation early; braces are unusual in chord names but stripped
+/// for parity; newlines would split the `[…]` annotation across lines
+/// (unrecoverable for any standard parser) (issues #1824 and #1883).
 fn sanitize_chord_name(s: &str) -> std::borrow::Cow<'_, str> {
-    if s.contains('{') || s.contains('}') || s.contains('[') || s.contains(']') {
-        std::borrow::Cow::Owned(s.replace(['{', '}', '[', ']'], ""))
+    if s.as_bytes()
+        .iter()
+        .any(|&b| matches!(b, b'{' | b'}' | b'[' | b']' | b'\n' | b'\r'))
+    {
+        std::borrow::Cow::Owned(s.replace(['{', '}', '[', ']', '\n', '\r'], ""))
     } else {
         std::borrow::Cow::Borrowed(s)
     }
@@ -1307,6 +1323,17 @@ mod tests {
         assert_eq!(out, "{start_of_section: custom}\n");
     }
 
+    #[test]
+    fn song_to_chordpro_strips_embedded_newline_in_title() {
+        // #1883 sister-site: an embedded `\n` in a directive token (here the
+        // title) would leave the closing `}` on a separate line, producing
+        // invalid ChordPro. `sanitize_directive_token` must strip it.
+        let mut song = Song::default();
+        song.metadata.title = Some("Foo\nBar".to_string());
+        let out = song_to_chordpro(&song);
+        assert_eq!(out, "{title: FooBar}\n");
+    }
+
     // -- Lyric / chord sanitization (#1824 directive-injection guard) ----
 
     #[test]
@@ -1365,5 +1392,52 @@ mod tests {
         // comes from the serializer too; the chord name itself contains
         // no stray `[`/`]` after sanitization.
         assert_eq!(out, "[Ctitle: HACKED]hello\n");
+    }
+
+    #[test]
+    fn song_to_chordpro_strips_embedded_newline_in_lyric_text() {
+        // #1883: an embedded `\n` would split the lyric into two output
+        // lines, producing malformed ChordPro. The brace strip from
+        // #1824 already prevents directive injection, but the
+        // well-formedness fix requires stripping newlines too.
+        use crate::ast::{Line, LyricsLine, LyricsSegment};
+        let mut song = Song::default();
+        song.lines.push(Line::Lyrics(LyricsLine {
+            segments: vec![LyricsSegment::text_only("Hello\n{title: HACKED}")],
+        }));
+        let out = song_to_chordpro(&song);
+        // The lyric becomes a single line (leading "Hello" + stripped
+        // braces + no embedded newline).
+        assert_eq!(out, "Hellotitle: HACKED\n");
+    }
+
+    #[test]
+    fn song_to_chordpro_strips_embedded_carriage_return_in_lyric_text() {
+        use crate::ast::{Line, LyricsLine, LyricsSegment};
+        let mut song = Song::default();
+        song.lines.push(Line::Lyrics(LyricsLine {
+            segments: vec![LyricsSegment::text_only("a\rb")],
+        }));
+        let out = song_to_chordpro(&song);
+        assert_eq!(out, "ab\n");
+    }
+
+    #[test]
+    fn song_to_chordpro_strips_embedded_newline_in_chord_name() {
+        // A chord name containing a newline would break the `[…]`
+        // annotation into two lines. Parity with the lyric-text fix
+        // above.
+        use crate::ast::{Chord, Line, LyricsLine, LyricsSegment};
+        let mut song = Song::default();
+        let chord = Chord {
+            name: "C\nD".to_string(),
+            detail: None,
+            display: None,
+        };
+        song.lines.push(Line::Lyrics(LyricsLine {
+            segments: vec![LyricsSegment::new(Some(chord), "x")],
+        }));
+        let out = song_to_chordpro(&song);
+        assert_eq!(out, "[CD]x\n");
     }
 }
