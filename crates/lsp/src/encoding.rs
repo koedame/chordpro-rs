@@ -101,13 +101,19 @@ pub fn char_idx_to_lsp_char(line: &str, char_idx: usize, encoding: PositionEncod
         PositionEncoding::Utf8 => line
             .char_indices()
             .nth(char_idx)
-            .map(|(b, _)| b as u32)
-            .unwrap_or_else(|| line.len() as u32),
-        PositionEncoding::Utf16 => line
-            .chars()
-            .take(char_idx)
-            .map(|c| c.len_utf16() as u32)
-            .sum(),
+            .and_then(|(b, _)| u32::try_from(b).ok())
+            .unwrap_or_else(|| u32::try_from(line.len()).unwrap_or(u32::MAX)),
+        PositionEncoding::Utf16 => {
+            // `len_utf16` is always 1 or 2, so the per-char cast is infallible;
+            // use `saturating_add` on the accumulator to avoid silent wraparound
+            // on pathologically long lines (bounded by the parser's input cap
+            // in practice).
+            let mut total: u32 = 0;
+            for c in line.chars().take(char_idx) {
+                total = total.saturating_add(c.len_utf16() as u32);
+            }
+            total
+        }
     }
 }
 
@@ -115,8 +121,58 @@ pub fn char_idx_to_lsp_char(line: &str, char_idx: usize, encoding: PositionEncod
 #[must_use]
 pub fn line_length(line: &str, encoding: PositionEncoding) -> u32 {
     match encoding {
-        PositionEncoding::Utf8 => line.len() as u32,
-        PositionEncoding::Utf16 => line.chars().map(|c| c.len_utf16() as u32).sum(),
+        PositionEncoding::Utf8 => u32::try_from(line.len()).unwrap_or(u32::MAX),
+        PositionEncoding::Utf16 => {
+            // `len_utf16` is always 1 or 2; saturate the accumulator to match
+            // the pattern used by `char_idx_to_lsp_char`.
+            let mut total: u32 = 0;
+            for c in line.chars() {
+                total = total.saturating_add(c.len_utf16() as u32);
+            }
+            total
+        }
+    }
+}
+
+/// Return the `n`-th (0-based) line of `text`, without its line terminator.
+///
+/// Recognises LF (`\n`), CRLF (`\r\n`), and CR-only (`\r`) terminators —
+/// matching `document_end_position` in `server.rs` so that diagnostic
+/// line/character mapping stays consistent regardless of line-ending
+/// flavour. Returns an empty string when `n` is beyond the last line.
+///
+/// This is a local replacement for [`str::lines`], which does not
+/// recognise bare CR and therefore would mismap character offsets for
+/// CR-only documents (vanishingly rare in 2026, but still a spec
+/// correctness concern).
+#[must_use]
+pub fn nth_line(text: &str, n: usize) -> &str {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut line_no: usize = 0;
+    let mut line_start: usize = 0;
+    let mut i: usize = 0;
+    while i < len {
+        let advance = match bytes[i] {
+            b'\n' => 1,
+            b'\r' if i + 1 < len && bytes[i + 1] == b'\n' => 2,
+            b'\r' => 1,
+            _ => {
+                i += 1;
+                continue;
+            }
+        };
+        if line_no == n {
+            return &text[line_start..i];
+        }
+        line_no += 1;
+        i += advance;
+        line_start = i;
+    }
+    if line_no == n {
+        &text[line_start..]
+    } else {
+        ""
     }
 }
 
@@ -216,7 +272,7 @@ mod tests {
         // char_idx beyond the last char clamps to line.len() (bytes).
         assert_eq!(
             char_idx_to_lsp_char(line, 999, PositionEncoding::Utf8),
-            line.len() as u32
+            u32::try_from(line.len()).unwrap()
         );
     }
 
@@ -252,5 +308,58 @@ mod tests {
         assert_eq!(lsp_char_to_char_idx(line, 0, PositionEncoding::Utf16), 0);
         assert_eq!(lsp_char_to_char_idx(line, 1, PositionEncoding::Utf16), 1);
         assert_eq!(lsp_char_to_char_idx(line, 3, PositionEncoding::Utf16), 2);
+    }
+
+    // --- nth_line ---
+
+    #[test]
+    fn nth_line_lf() {
+        let text = "alpha\nbeta\ngamma";
+        assert_eq!(nth_line(text, 0), "alpha");
+        assert_eq!(nth_line(text, 1), "beta");
+        assert_eq!(nth_line(text, 2), "gamma");
+        assert_eq!(nth_line(text, 3), "");
+    }
+
+    #[test]
+    fn nth_line_crlf() {
+        let text = "alpha\r\nbeta\r\ngamma";
+        assert_eq!(nth_line(text, 0), "alpha");
+        assert_eq!(nth_line(text, 1), "beta");
+        assert_eq!(nth_line(text, 2), "gamma");
+    }
+
+    #[test]
+    fn nth_line_cr_only() {
+        // Classic Mac OS 9 line endings — `str::lines()` does NOT recognise
+        // bare `\r` as a separator, which would split this text into one line.
+        let text = "alpha\rbeta\rgamma";
+        assert_eq!(nth_line(text, 0), "alpha");
+        assert_eq!(nth_line(text, 1), "beta");
+        assert_eq!(nth_line(text, 2), "gamma");
+    }
+
+    #[test]
+    fn nth_line_mixed_line_endings() {
+        let text = "alpha\nbeta\r\ngamma\rdelta";
+        assert_eq!(nth_line(text, 0), "alpha");
+        assert_eq!(nth_line(text, 1), "beta");
+        assert_eq!(nth_line(text, 2), "gamma");
+        assert_eq!(nth_line(text, 3), "delta");
+    }
+
+    #[test]
+    fn nth_line_trailing_newline() {
+        let text = "alpha\nbeta\n";
+        assert_eq!(nth_line(text, 0), "alpha");
+        assert_eq!(nth_line(text, 1), "beta");
+        // Empty final line after the trailing newline.
+        assert_eq!(nth_line(text, 2), "");
+    }
+
+    #[test]
+    fn nth_line_empty_input() {
+        assert_eq!(nth_line("", 0), "");
+        assert_eq!(nth_line("", 5), "");
     }
 }

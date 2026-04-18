@@ -75,8 +75,13 @@ impl Backend {
 
     /// Returns the negotiated position encoding. Before `initialize` has
     /// been processed the value is UTF-16 (the LSP 3.17 default).
+    ///
+    /// Uses `Acquire` ordering to pair with the `Release` store in
+    /// `initialize`, making the write-once publish semantics explicit and
+    /// safe if the runtime is ever switched from `current_thread` to a
+    /// multi-threaded one.
     fn encoding(&self) -> PositionEncoding {
-        match self.encoding.load(Ordering::Relaxed) {
+        match self.encoding.load(Ordering::Acquire) {
             ENCODING_UTF8 => PositionEncoding::Utf8,
             _ => PositionEncoding::Utf16,
         }
@@ -125,12 +130,15 @@ impl LanguageServer for Backend {
         // advertised list (or fall back to UTF-16 when absent). Storing the
         // choice lets every request handler produce offsets in matching units.
         let chosen = negotiate_encoding(&params);
+        // `Release` pairs with `Acquire` in `Backend::encoding()` to publish
+        // the chosen encoding to every subsequent request handler. `initialize`
+        // is called exactly once, so this is a write-once publish.
         self.encoding.store(
             match chosen {
                 PositionEncoding::Utf8 => ENCODING_UTF8,
                 PositionEncoding::Utf16 => ENCODING_UTF16,
             },
-            Ordering::Relaxed,
+            Ordering::Release,
         );
 
         Ok(InitializeResult {

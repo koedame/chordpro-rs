@@ -8,7 +8,7 @@
 use chordsketch_core::{ParseError, Span};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 
-use crate::encoding::{PositionEncoding, char_idx_to_lsp_char};
+use crate::encoding::{PositionEncoding, char_idx_to_lsp_char, nth_line};
 
 /// Converts a [`ParseError`] to an LSP [`Diagnostic`].
 ///
@@ -55,13 +55,17 @@ fn span_to_range(span: &Span, text: &str, encoding: PositionEncoding) -> Range {
 
 /// Character value for the LSP `Position` at (0-based) `line_idx` and
 /// 0-based character index `char_idx` into that line, in `encoding` units.
+///
+/// Uses [`nth_line`] rather than [`str::lines`] so that bare-CR line
+/// terminators are recognised consistently with
+/// `document_end_position` in `server.rs`.
 fn lsp_character_at(
     text: &str,
     line_idx: usize,
     char_idx: usize,
     encoding: PositionEncoding,
 ) -> u32 {
-    let line = text.lines().nth(line_idx).unwrap_or("");
+    let line = nth_line(text, line_idx);
     char_idx_to_lsp_char(line, char_idx, encoding)
 }
 
@@ -124,5 +128,19 @@ mod tests {
         let range = span_to_range(&span, text, PositionEncoding::Utf16);
         assert_eq!(range.start.character, 0);
         assert_eq!(range.end.character, 3);
+    }
+
+    #[test]
+    fn span_to_range_cr_only_line_endings() {
+        // Bare `\r` line terminators: `str::lines` would fail to split these,
+        // producing `character: 0` for lines after the first. `nth_line`
+        // recognises bare CR, matching `document_end_position` in server.rs.
+        let text = "line0\rhello\rworld";
+        let span = CsSpan::new(CsPosition::new(2, 1), CsPosition::new(2, 6));
+        let range = span_to_range(&span, text, PositionEncoding::Utf8);
+        assert_eq!(range.start.line, 1);
+        assert_eq!(range.start.character, 0);
+        assert_eq!(range.end.line, 1);
+        assert_eq!(range.end.character, 5);
     }
 }
