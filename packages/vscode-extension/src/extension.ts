@@ -18,7 +18,7 @@
 import * as vscode from 'vscode';
 import { startLspClient, stopLspClient } from './lsp.js';
 import { startLspClientSafely } from './lsp-activation.js';
-import { notifyDocumentChanged, disposeAll } from './preview.js';
+import { notifyDocumentChanged, disposeAll, registerPreviewSerializer } from './preview.js';
 import { registerOpenPreview, registerOpenPreviewToSide, registerTransposeUp, registerTransposeDown, registerConvertTo, resetCommandSingletons } from './commands.js';
 
 /**
@@ -67,6 +67,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerTransposeUp(),
     registerTransposeDown(),
     registerConvertTo(context),
+    // Register the preview-panel serializer so that preview tabs survive
+    // VS Code restarts. Registration is synchronous and purely structural; it
+    // does not touch the LSP.
+    registerPreviewSerializer(context),
   );
 
   // Propagate document changes to open preview panels (debounced inside PreviewPanel).

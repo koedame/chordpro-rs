@@ -31,6 +31,14 @@ interface PanelState {
   mode?: ViewMode;
   /** Semitone transposition offset; clamped to [-11, +11] by adjustTranspose. */
   transpose?: number;
+  /**
+   * URI string of the source document this panel is previewing.
+   *
+   * Written on first run so that VS Code's `WebviewPanelSerializer` can look
+   * up the document when restoring the panel after a restart. See
+   * `registerPreviewSerializer` in `../src/preview.ts`.
+   */
+  documentUri?: string;
 }
 
 /** Message types received from the extension host. */
@@ -188,6 +196,9 @@ function safeGetState(): PanelState {
   if (typeof raw?.['transpose'] === 'number' && Number.isFinite(raw['transpose'])) {
     result.transpose = Math.max(-11, Math.min(11, raw['transpose'] as number));
   }
+  if (typeof raw?.['documentUri'] === 'string' && raw['documentUri'].length > 0) {
+    result.documentUri = raw['documentUri'];
+  }
   return result;
 }
 
@@ -316,6 +327,17 @@ async function main(): Promise<void> {
     transposeLabel.textContent = formatTranspose(transpose);
     btnTransposeDown.disabled = transpose === -11;
     btnTransposeUp.disabled = transpose === 11;
+  }
+
+  // Persist the source-document URI so VS Code's WebviewPanelSerializer can
+  // look it up on the next extension-host activation (after a restart) and
+  // restore this panel bound to the same TextDocument. The URI is injected
+  // by the extension host at HTML build time via a <meta> element.
+  const metaDocumentUri = document.querySelector<HTMLMetaElement>(
+    'meta[name="chordsketch-document-uri"]',
+  )?.content;
+  if (metaDocumentUri && metaDocumentUri !== saved.documentUri) {
+    vscode.setState({ ...safeGetState(), documentUri: metaDocumentUri } satisfies PanelState);
   }
 
   // Register the message listener early — before WASM init — so that

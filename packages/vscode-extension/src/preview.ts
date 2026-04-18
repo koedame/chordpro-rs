@@ -4,12 +4,17 @@
  * Manages a `vscode.WebviewPanel` that renders the active ChordPro document as
  * HTML using `@chordsketch/wasm` loaded in the WebView context. Updates are
  * debounced at 300 ms to avoid flooding the WASM renderer on every keystroke.
+ *
+ * Panel state (view mode, transpose offset, source document URI) is persisted
+ * via the WebView's `vscode.setState` API so that preview tabs are restored
+ * across VS Code restarts by [`ChordSketchPreviewSerializer`].
  */
 
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import * as path from 'path';
 import { resolveDefaultMode } from './config.js';
+import { escapeHtmlAttr, parseSerializedState } from './preview-helpers.js';
 
 /** Message types sent from the extension host to the WebView. */
 type ExtToWebview = { type: 'update'; text: string } | { type: 'transpose'; delta: 1 | -1 };
@@ -40,6 +45,10 @@ function isWebviewToExt(raw: unknown): raw is WebviewToExt {
 /** Debounce delay in milliseconds. */
 const DEBOUNCE_MS = 300;
 
+/** WebView-panel `viewType` identifier — also the key under which VS Code
+ *  looks up the registered serializer. */
+export const PREVIEW_VIEW_TYPE = 'chordsketchPreview';
+
 /** Tracks all open preview panels keyed by document URI string. */
 const panels = new Map<string, PreviewPanel>();
 
@@ -60,8 +69,7 @@ export function createOrShow(
     existing.reveal(column);
     return;
   }
-  const panel = new PreviewPanel(context, document);
-  panel.show(column);
+  const panel = PreviewPanel.createNew(context, document, column);
   panels.set(key, panel);
 }
 
@@ -99,6 +107,92 @@ export function disposeAll(): void {
   panels.clear();
 }
 
+/**
+ * Registers a WebView panel serializer so that preview tabs survive VS Code
+ * restarts. Must be called once from `activate()`.
+ *
+ * On deserialization the source `vscode.TextDocument` is looked up via the
+ * persisted `documentUri`. If the document is no longer available (file moved
+ * or deleted) the panel renders a friendly message and is left open so the
+ * user can close it without error.
+ */
+export function registerPreviewSerializer(context: vscode.ExtensionContext): vscode.Disposable {
+  return vscode.window.registerWebviewPanelSerializer(PREVIEW_VIEW_TYPE, {
+    async deserializeWebviewPanel(panel: vscode.WebviewPanel, state: unknown): Promise<void> {
+      const parsed = parseSerializedState(state);
+      if (!parsed) {
+        renderUnavailableMessage(
+          panel,
+          'The previewed document could not be determined from the restored state.',
+        );
+        return;
+      }
+
+      let documentUri: vscode.Uri;
+      try {
+        documentUri = vscode.Uri.parse(parsed.documentUri, /* strict */ true);
+      } catch {
+        renderUnavailableMessage(
+          panel,
+          `Could not parse the restored preview source URI: ${parsed.documentUri}`,
+        );
+        return;
+      }
+
+      let document: vscode.TextDocument;
+      try {
+        document = await vscode.workspace.openTextDocument(documentUri);
+      } catch {
+        renderUnavailableMessage(
+          panel,
+          `The file previously previewed could no longer be opened:\n${documentUri.fsPath}`,
+        );
+        return;
+      }
+
+      // Make sure localResourceRoots still matches the extension install path —
+      // VS Code restores the panel options but we re-apply to stay safe.
+      panel.webview.options = {
+        enableScripts: true,
+        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview')],
+      };
+
+      PreviewPanel.restore(context, document, panel);
+    },
+  });
+}
+
+function renderUnavailableMessage(panel: vscode.WebviewPanel, message: string): void {
+  panel.webview.options = { enableScripts: false };
+  // Reuse the same escape routine as `<meta>` attribute injection. Running
+  // the attribute-level escape on body content is safe (and strictly
+  // stronger than strictly necessary): it escapes `&`, `<`, `>`, `"`, `'`,
+  // none of which can re-introduce markup when written into a `<p>` text
+  // node. Line breaks in the input become `<br>` so multi-line messages
+  // stay readable.
+  const escaped = escapeHtmlAttr(message).replace(/\n/g, '<br>');
+  panel.webview.html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
+  <title>ChordSketch Preview</title>
+  <style>
+    body {
+      font-family: var(--vscode-font-family, sans-serif);
+      padding: 1.5rem;
+      color: var(--vscode-descriptionForeground, #888);
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <p>${escaped}</p>
+  <p>You can close this tab safely.</p>
+</body>
+</html>`;
+}
+
 /** Manages a single WebView preview panel for one ChordPro document. */
 class PreviewPanel {
   private readonly panel: vscode.WebviewPanel;
@@ -111,15 +205,35 @@ class PreviewPanel {
   /** Set to true once the panel is disposed so stale timer callbacks are no-ops. */
   private disposed = false;
 
-  constructor(context: vscode.ExtensionContext, document: vscode.TextDocument) {
+  private constructor(
+    context: vscode.ExtensionContext,
+    document: vscode.TextDocument,
+    panel: vscode.WebviewPanel,
+  ) {
     this.context = context;
     this.document = document;
+    this.panel = panel;
 
+    // `buildHtml` is called on every (re)attach so the injected
+    // `<meta name="chordsketch-document-uri">` matches this instance's
+    // document; the WebView persists the URI via `vscode.setState` on
+    // startup so the serializer can find it after a restart.
+    this.panel.webview.html = this.buildHtml();
+    this.wireMessageHandling();
+    this.wireDisposal();
+  }
+
+  /** Creates a fresh panel for `document` and displays it in `column`. */
+  static createNew(
+    context: vscode.ExtensionContext,
+    document: vscode.TextDocument,
+    column: vscode.ViewColumn,
+  ): PreviewPanel {
     const fileName = path.basename(document.uri.fsPath);
-    this.panel = vscode.window.createWebviewPanel(
-      'chordsketchPreview',
+    const panel = vscode.window.createWebviewPanel(
+      PREVIEW_VIEW_TYPE,
       `Preview: ${fileName}`,
-      vscode.ViewColumn.Active,
+      column,
       {
         enableScripts: true,
         // Restrict the WebView to loading resources only from dist/webview/.
@@ -128,10 +242,25 @@ class PreviewPanel {
         retainContextWhenHidden: true,
       },
     );
+    return new PreviewPanel(context, document, panel);
+  }
 
-    this.panel.webview.html = this.buildHtml();
+  /**
+   * Reattaches to a `vscode.WebviewPanel` handed back by VS Code's
+   * `WebviewPanelSerializer`. The panel already exists — we rebuild its HTML
+   * and re-register message and dispose handlers.
+   */
+  static restore(
+    context: vscode.ExtensionContext,
+    document: vscode.TextDocument,
+    panel: vscode.WebviewPanel,
+  ): PreviewPanel {
+    const restored = new PreviewPanel(context, document, panel);
+    panels.set(document.uri.toString(), restored);
+    return restored;
+  }
 
-    // Handle messages from the WebView.
+  private wireMessageHandling(): void {
     this.panel.webview.onDidReceiveMessage((raw: unknown) => {
       if (this.disposed) {
         return;
@@ -154,7 +283,9 @@ class PreviewPanel {
         this.outputChannel.appendLine(`Preview render error: ${raw.message}`);
       }
     });
+  }
 
+  private wireDisposal(): void {
     // Remove this panel from the map when the user closes it, and clean up
     // associated resources immediately so they do not outlive the panel tab.
     // Setting disposed=true before clearTimeout guards against a stale timer
@@ -169,11 +300,6 @@ class PreviewPanel {
       this.outputChannel?.dispose();
       this.outputChannel = undefined;
     });
-  }
-
-  /** Shows the panel in the given column. */
-  show(column: vscode.ViewColumn): void {
-    this.panel.reveal(column);
   }
 
   /** Reveals the panel in the given column (no-op if already visible). */
@@ -242,6 +368,10 @@ class PreviewPanel {
    *     setting value, used as the initial view mode when no persisted state
    *     exists (only `"html"` and `"text"` are accepted; anything else falls
    *     back to `"html"` in the WebView script).
+   *   - `chordsketch-document-uri`: the source-document URI. The WebView
+   *     persists this via `vscode.setState` on startup so that
+   *     [`registerPreviewSerializer`] can reopen the correct document after
+   *     a VS Code restart.
    *
    * A `data-` attribute on `<script type="module">` cannot be used because
    * `document.currentScript` is always `null` for ES module scripts (HTML spec).
@@ -271,6 +401,13 @@ class PreviewPanel {
       .get<string>('preview.defaultMode', 'html');
     const defaultMode = resolveDefaultMode(rawMode);
 
+    // Escape the document URI for safe interpolation into a `content`
+    // attribute. The URI is derived from VS Code's own `TextDocument.uri`
+    // so it is already well-formed, but escaping `&`/`<`/`>`/`"` defends
+    // against pathological file names that could otherwise break out of
+    // the attribute.
+    const documentUriAttr = escapeHtmlAttr(this.document.uri.toString());
+
     // cspSource includes the extension's own dist/webview/ origin.
     const csp = webview.cspSource;
 
@@ -289,6 +426,7 @@ class PreviewPanel {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="chordsketch-wasm-uri" content="${wasmUri}">
   <meta name="chordsketch-default-mode" content="${defaultMode}">
+  <meta name="chordsketch-document-uri" content="${documentUriAttr}">
   <title>ChordSketch Preview</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -414,3 +552,4 @@ class PreviewPanel {
 </html>`;
   }
 }
+
