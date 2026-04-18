@@ -453,19 +453,38 @@ fn key_to_fifths(key: &str) -> (i32, &'static str) {
 // XML escaping
 // ---------------------------------------------------------------------------
 
-/// Return `true` if `c` is a C0 control character that XML 1.0 does not
-/// allow in document content.
+/// Return `true` if `c` is forbidden by the XML 1.0 Char production and
+/// therefore must be stripped before emission.
 ///
 /// The XML 1.0 Char production (https://www.w3.org/TR/xml/#charsets) permits
 /// `U+0009` (tab), `U+000A` (LF), and `U+000D` (CR), plus every character
-/// `U+0020` and above (up to `U+D7FF` and the higher ranges). Every other
-/// C0 character must be stripped before emission, otherwise a conformant
-/// parser — including this crate's own importer — will reject the document
-/// and the ChordPro → MusicXML → ChordPro round-trip breaks on input that
-/// `chordsketch-core` accepted (issue #1830).
+/// in `U+0020..=U+D7FF`, `U+E000..=U+FFFD`, `U+10000..=U+10FFFF`. Every
+/// other code point must be stripped before emission, otherwise a
+/// conformant parser — including this crate's own importer — will reject
+/// the document and the ChordPro → MusicXML → ChordPro round-trip breaks
+/// on input that `chordsketch-core` accepted.
+///
+/// Covers:
+/// - **C0 controls** except tab/LF/CR (issue #1830).
+/// - **U+FFFE** and **U+FFFF** — permanently-assigned noncharacters
+///   excluded from the Char production (issue #1868).
+///
+/// Surrogates (`U+D800..=U+DFFF`) cannot occur in a Rust `char` so no
+/// explicit guard is needed; the remaining noncharacter blocks
+/// (`U+FDD0..=U+FDEF`, plane-end pairs) are valid XML 1.1 noncharacters
+/// but permitted by the XML 1.0 Char production used by MusicXML, so
+/// they pass through.
 #[inline]
 fn is_xml_forbidden_control(c: char) -> bool {
-    matches!(c, '\u{0000}'..='\u{0008}' | '\u{000B}' | '\u{000C}' | '\u{000E}'..='\u{001F}')
+    matches!(
+        c,
+        '\u{0000}'..='\u{0008}'
+            | '\u{000B}'
+            | '\u{000C}'
+            | '\u{000E}'..='\u{001F}'
+            | '\u{FFFE}'
+            | '\u{FFFF}'
+    )
 }
 
 /// Escape a string for use as XML text content, appending to `out`.
@@ -596,6 +615,47 @@ mod tests {
     fn xml_escape_strips_xml_forbidden_controls() {
         let escaped = xml_escape("A\u{0001}B\u{001F}C");
         assert_eq!(escaped, "ABC");
+    }
+
+    #[test]
+    fn xml_text_strips_ffe_and_fff_noncharacters() {
+        // #1868: U+FFFE and U+FFFF are excluded from the XML 1.0 Char
+        // production, so they must be stripped for the same reason C0
+        // controls are.
+        let mut out = String::new();
+        xml_text("a\u{FFFE}b\u{FFFF}c", &mut out);
+        assert_eq!(out, "abc");
+    }
+
+    #[test]
+    fn xml_escape_strips_ffe_and_fff_noncharacters() {
+        let escaped = xml_escape("A\u{FFFE}B\u{FFFF}C");
+        assert_eq!(escaped, "ABC");
+    }
+
+    #[test]
+    fn xml_text_preserves_fffd_replacement_character() {
+        // U+FFFD is a valid XML 1.0 character — the Unicode replacement
+        // marker. It lives at the top of the `E000..=FFFD` permitted
+        // range and must NOT be stripped by the `FFFE/FFFF` guard.
+        let mut out = String::new();
+        xml_text("a\u{FFFD}b", &mut out);
+        assert_eq!(out, "a\u{FFFD}b");
+    }
+
+    #[test]
+    fn export_survives_ffe_in_title() {
+        let mut song = Song::new();
+        song.metadata.title = Some("Hello\u{FFFE}World".to_string());
+        let xml = to_musicxml(&song);
+        assert!(
+            !xml.contains('\u{FFFE}'),
+            "U+FFFE must be stripped from XML output"
+        );
+        assert!(
+            xml.contains("HelloWorld"),
+            "surrounding title text must be preserved"
+        );
     }
 
     #[test]
