@@ -88,10 +88,18 @@ jobs:
 
       # Extension-host integration tests via @vscode/test-cli. Runs after
       # the build step so the compiled `dist/extension.js` is available for
-      # the extension development host to load. xvfb-run provides a virtual
-      # X display for Electron on the Linux runner. See issue #1918 for
-      # the phased test plan — only the activation test lands in this
-      # first round; LSP, preview, and serializer tests follow.
+      # the extension development host to load; the `Build` step above is
+      # the only production build — `npm run test:integration` deliberately
+      # does NOT have a `pretest` hook that re-invokes `npm run build`, so
+      # CI does not pay for two esbuild runs per PR.
+      # xvfb-run provides a virtual X display for Electron on the Linux
+      # runner. See issue #1918 for the phased test plan — only the
+      # activation test lands in this first round; LSP, preview, and
+      # serializer tests follow.
+      - name: Compile integration tests
+        run: npm run compile:integration
+        working-directory: packages/vscode-extension
+
       - name: Integration tests (VS Code extension host)
         run: xvfb-run -a npm run test:integration
         working-directory: packages/vscode-extension

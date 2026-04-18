@@ -8,10 +8,12 @@
 // See the test-electron + test-cli guide:
 //   https://code.visualstudio.com/api/working-with-extensions/testing-extension
 //
-// The pinned version matches `engines.vscode` in package.json (the floor
-// of support). A second matrix entry can be added later to also exercise
-// the `stable` channel — kept as a single entry here to keep the first
-// CI rollout fast (see issue #1918 for the phased plan).
+// Tests run against the `stable` channel — the most recent release that
+// real users have installed. A second matrix entry pinned to the
+// `engines.vscode` floor (1.85.0) is a planned follow-up so both ceiling
+// and floor of supported versions are exercised (see issue #1918 for the
+// phased plan; the floor is deliberately deferred to keep the first CI
+// rollout fast).
 
 import { defineConfig } from "@vscode/test-cli";
 

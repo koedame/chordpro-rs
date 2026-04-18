@@ -143,7 +143,6 @@
     "lint": "tsc --noEmit",
     "test": "node --experimental-transform-types --test 'src/**/*.test.ts'",
     "compile:integration": "tsc -p tsconfig.integration.json",
-    "pretest:integration": "npm run build && npm run compile:integration",
     "test:integration": "vscode-test",
     "package": "vsce package --no-dependencies",
     "prepackage": "npm run build"
