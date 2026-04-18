@@ -659,15 +659,11 @@ mod tests {
         assert_eq!(lyrics.len(), 1);
         if let Line::Lyrics(ll) = lyrics[0] {
             assert_eq!(ll.segments.len(), 1);
-            let text = &ll.segments[0].text;
-            assert!(
-                text.contains("Amazing") && text.contains("'Twas"),
-                "expected both verses in joined lyric text; got {text:?}"
-            );
-            assert!(
-                text.contains(" / "),
-                "expected ' / ' delimiter between verses; got {text:?}"
-            );
+            // Exact equality — a `.contains()` check would have accepted
+            // the pre-#1870/#1879 double-space output `"Amazing  / 'Twas "`
+            // and silently missed the regression. See the unit-level
+            // sibling test `collect_lyric_text_multi_verse_single_single_no_double_space`.
+            assert_eq!(ll.segments[0].text, "Amazing / 'Twas ");
         }
     }
 
@@ -740,5 +736,37 @@ mod tests {
 </note>"#;
         let element = crate::xml::parse(xml).unwrap();
         assert_eq!(collect_lyric_text(&element), "a / word-");
+    }
+
+    #[test]
+    fn collect_lyric_text_multi_verse_middle_single() {
+        // `begin` and `middle` both emit `<text>-` (a hyphen, not a
+        // space) so they share the non-last trailing-space stripping
+        // branch — the existing `begin`+`single` test implicitly covers
+        // `middle` too. This explicit test makes the coverage visible so
+        // a future refactor that treats `middle` differently from `begin`
+        // cannot silently change the output.
+        let xml = r#"<note>
+  <lyric number="1"><syllabic>middle</syllabic><text>a</text></lyric>
+  <lyric number="2"><syllabic>single</syllabic><text>word</text></lyric>
+</note>"#;
+        let element = crate::xml::parse(xml).unwrap();
+        assert_eq!(collect_lyric_text(&element), "a- / word ");
+    }
+
+    #[test]
+    fn collect_lyric_text_three_verses_single_single_single() {
+        // 3+ verse coverage: document the expected output for more than
+        // two verses so a future refactor of the joining loop (e.g., a
+        // switch from iterative folding to `join`) cannot silently change
+        // interior-separator semantics. Each non-last `single` verse's
+        // trailing space is stripped; only the last one keeps its space.
+        let xml = r#"<note>
+  <lyric number="1"><syllabic>single</syllabic><text>one</text></lyric>
+  <lyric number="2"><syllabic>single</syllabic><text>two</text></lyric>
+  <lyric number="3"><syllabic>single</syllabic><text>three</text></lyric>
+</note>"#;
+        let element = crate::xml::parse(xml).unwrap();
+        assert_eq!(collect_lyric_text(&element), "one / two / three ");
     }
 }
