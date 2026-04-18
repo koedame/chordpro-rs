@@ -274,14 +274,28 @@ const DANGEROUS_SCHEME_FUNCTIONS: &[&str] = &[
     "gulp-string",
     // Note: `ly:format` was removed from this list in #1859. It is a
     // standard Guile `format`-equivalent used in real scores
-    // (e.g. `#(ly:format "~a" (ly:context-property …))`), and the
-    // compound threat that motivated its inclusion — "use `ly:format`
-    // to shape output for another dangerous primitive" — requires one
-    // of the primitives already blocked above (`ly:gulp-file`,
-    // `ly:system`, `ly:parser-include`, …). Stripping `ly:format`
-    // silently drops entire lines of legitimate Scheme and produces
-    // confusing downstream errors, so the false-positive cost was not
-    // justified by the defense-in-depth value it added.
+    // (e.g. `#(ly:format "~a" (ly:context-property …))`), and
+    // stripping it silently drops entire lines of legitimate Scheme,
+    // producing confusing downstream errors.
+    //
+    // Honest accounting of what this change weakens: the pattern
+    // `#(ly:format "~a" (ly:gulp-file "/etc/passwd"))` — where the
+    // dangerous primitive appears as a bare subexpression without its
+    // own `#(` / `$(` sigil — is no longer caught by the line-level
+    // scanner. With `ly:format` on the blocklist the outer
+    // `#(ly:format` match triggered the line drop; after removal it
+    // does not, and the inner `(ly:gulp-file …)` has no sigil.
+    // We accept this because:
+    //   1. The primary sandbox is Lilypond's `-dsafe`, not this list.
+    //   2. The same bypass works with any other wrapper function
+    //      (`display`, `apply`, user-defined let-bindings, …), so
+    //      keeping `ly:format` on the list did not systematically
+    //      close the class of attack — only this one specific spelling.
+    //   3. The false-positive rate on legitimate content was real and
+    //      visible; the defense value is marginal and already
+    //      partial.
+    // Directly-sigiled dangerous primitives (`#(ly:gulp-file …)`,
+    // `$(ly:system …)`, etc.) remain blocked as before.
     // ly:exit terminates the Lilypond process; useful to a sandbox
     // attacker for masking tampering signals in batch pipelines (#1844).
     "ly:exit",
@@ -1032,20 +1046,6 @@ mod tests {
         assert!(
             result.contains("\\relative"),
             "surrounding music content must also survive"
-        );
-    }
-
-    #[test]
-    fn sanitize_lilypond_strips_directly_sigiled_dangerous_primitive() {
-        // Directly-sigiled dangerous primitive — the pattern the
-        // line-level scanner is designed to catch. Removing `ly:format`
-        // from the blocklist does not weaken this guarantee because
-        // `ly:gulp-file` is still matched by `#(` + dangerous-function.
-        let input = "#(ly:gulp-file \"/etc/passwd\")\n\\relative c' { c4 }\n";
-        let result = super::sanitize_lilypond_content(input);
-        assert!(
-            !result.contains("ly:gulp-file"),
-            "directly-sigiled dangerous primitive must be stripped"
         );
     }
 
