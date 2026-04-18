@@ -378,6 +378,14 @@ fn musicxml_kind_to_suffix(kind: &str) -> &str {
 /// `begin` / `middle` produce a trailing hyphen; `end` / `single` (and
 /// anything else) produce a trailing space.
 ///
+/// For the multi-verse case we strip any trailing ASCII space from each
+/// verse *except the last* before inserting the `" / "` separator, so a
+/// `syllabic=single` + `syllabic=single` pair emits `"a / b "` rather
+/// than the `"a  / b "` (double space) that a naive `join(" / ")` would
+/// produce (issues #1870 and #1879 — the duplicate reports agree on
+/// this fix). Trailing hyphens are preserved because the separator is
+/// purely a verse boundary, not a word boundary.
+///
 /// Returns the empty string if no verse has non-empty text.
 fn collect_lyric_text(note: &Element) -> String {
     let mut verses: Vec<String> = Vec::new();
@@ -393,11 +401,26 @@ fn collect_lyric_text(note: &Element) -> String {
         };
         verses.push(chunk);
     }
-    // `join` is intentional even for the single-verse case: the trailing
-    // space or hyphen from `chunk` above is preserved and the delimiter
-    // only appears between verses, which is the behaviour existing
-    // single-verse callers expect.
-    verses.join(" / ")
+    if verses.is_empty() {
+        return String::new();
+    }
+    let last = verses.len() - 1;
+    let mut out = String::new();
+    for (i, chunk) in verses.iter().enumerate() {
+        if i > 0 {
+            out.push_str(" / ");
+        }
+        if i < last {
+            // Strip trailing ASCII space so the immediately-following
+            // " / " delimiter doesn't double up. Trailing hyphens stay.
+            out.push_str(chunk.strip_suffix(' ').unwrap_or(chunk));
+        } else {
+            // Last verse keeps its per-verse suffix (space or hyphen),
+            // matching the pre-multi-verse single-verse contract.
+            out.push_str(chunk);
+        }
+    }
+    out
 }
 
 /// Map a key signature (circle-of-fifths value + mode) to a key name string.
@@ -678,5 +701,44 @@ mod tests {
 </note>"#;
         let element = crate::xml::parse(xml).unwrap();
         assert_eq!(collect_lyric_text(&element), "ok ");
+    }
+
+    #[test]
+    fn collect_lyric_text_multi_verse_single_single_no_double_space() {
+        // #1870 / #1879: two syllabic=single verses used to produce
+        // "Amazing  / 'Twas " (two spaces before the slash). Assert the
+        // exact output — single space before `/`, trailing space only
+        // after the last verse.
+        let xml = r#"<note>
+  <lyric number="1"><syllabic>single</syllabic><text>Amazing</text></lyric>
+  <lyric number="2"><syllabic>single</syllabic><text>'Twas</text></lyric>
+</note>"#;
+        let element = crate::xml::parse(xml).unwrap();
+        assert_eq!(collect_lyric_text(&element), "Amazing / 'Twas ");
+    }
+
+    #[test]
+    fn collect_lyric_text_multi_verse_begin_single_preserves_hyphen() {
+        // `begin` + `single`: verse 1 keeps its trailing hyphen (it is
+        // NOT a space, so no stripping), separator stays `" / "`.
+        let xml = r#"<note>
+  <lyric number="1"><syllabic>begin</syllabic><text>a</text></lyric>
+  <lyric number="2"><syllabic>single</syllabic><text>word</text></lyric>
+</note>"#;
+        let element = crate::xml::parse(xml).unwrap();
+        assert_eq!(collect_lyric_text(&element), "a- / word ");
+    }
+
+    #[test]
+    fn collect_lyric_text_multi_verse_single_begin() {
+        // `single` + `begin`: verse 1's trailing space is stripped so
+        // the delimiter doesn't double up; verse 2 (last) keeps its
+        // trailing hyphen.
+        let xml = r#"<note>
+  <lyric number="1"><syllabic>single</syllabic><text>a</text></lyric>
+  <lyric number="2"><syllabic>begin</syllabic><text>word</text></lyric>
+</note>"#;
+        let element = crate::xml::parse(xml).unwrap();
+        assert_eq!(collect_lyric_text(&element), "a / word-");
     }
 }
