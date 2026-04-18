@@ -661,6 +661,24 @@ mod tests {
     }
 
     #[test]
+    fn export_survives_ffff_in_title() {
+        // Sibling of `export_survives_ffe_in_title` for U+FFFF.  Both
+        // noncharacters were added together in PR #1902 and carry the same
+        // risk; an explicit end-to-end test closes the coverage asymmetry.
+        let mut song = Song::new();
+        song.metadata.title = Some("Hello\u{FFFF}World".to_string());
+        let xml = to_musicxml(&song);
+        assert!(
+            !xml.contains('\u{FFFF}'),
+            "U+FFFF must be stripped from XML output"
+        );
+        assert!(
+            xml.contains("HelloWorld"),
+            "surrounding title text must be preserved"
+        );
+    }
+
+    #[test]
     fn export_survives_control_char_in_title() {
         // Round-trip guard: a title containing U+0007 must produce XML
         // that does not carry the forbidden byte through. Any conformant
