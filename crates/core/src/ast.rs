@@ -315,11 +315,11 @@ impl Metadata {
     /// Returns:
     ///
     /// - [`CapoValidation::Unset`] — `{capo}` was not specified.
-    /// - [`CapoValidation::Valid(n)`] — a numeric value in `1..=24`.
-    /// - [`CapoValidation::OutOfRange(n)`] — a numeric value outside
+    /// - [`CapoValidation::Valid`] — a numeric value in `1..=24`.
+    /// - [`CapoValidation::OutOfRange`] — a numeric value outside
     ///   `1..=24`. Guitars top out around 24 frets and `0` means "no
     ///   capo" (use [`CapoValidation::Unset`] instead).
-    /// - [`CapoValidation::NotInteger(s)`] — the value could not be
+    /// - [`CapoValidation::NotInteger`] — the value could not be
     ///   parsed as a non-negative integer.
     ///
     /// The `1..=24` range matches the MusicXML importer's existing
