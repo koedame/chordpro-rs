@@ -52,6 +52,9 @@ def _build_repo(
     tree_sitter_version: str = "0.2.0",
     smoke_npm_pin: str = "0.2.0",
     smoke_caret: str = "0.2",
+    macports_version: str = "0.2.0",
+    nix_version: str = "0.2.0",
+    winget_version: str = "0.2.0",
 ) -> None:
     """Build a minimal repo layout under `root` that satisfies every extractor.
 
@@ -144,6 +147,58 @@ def _build_repo(
         + "\n",
         encoding="utf-8",
     )
+
+    # packaging/macports/Portfile
+    macports_dir = root / "packaging" / "macports"
+    macports_dir.mkdir(parents=True, exist_ok=True)
+    (macports_dir / "Portfile").write_text(
+        textwrap.dedent(
+            f"""
+            # Reference Portfile for MacPorts submission.
+            PortSystem          1.0
+            PortGroup           github 1.0
+            github.setup        koedame chordsketch {macports_version} v
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # packaging/nix/package.nix
+    nix_dir = root / "packaging" / "nix"
+    nix_dir.mkdir(parents=True, exist_ok=True)
+    (nix_dir / "package.nix").write_text(
+        textwrap.dedent(
+            f"""
+            {{ lib, rustPlatform, fetchFromGitHub }}:
+            rustPlatform.buildRustPackage rec {{
+              pname = "chordsketch";
+              version = "{nix_version}";
+            }}
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # packaging/winget/*.yaml
+    winget_dir = root / "packaging" / "winget"
+    winget_dir.mkdir(parents=True, exist_ok=True)
+    for manifest in (
+        "koedame.chordsketch.yaml",
+        "koedame.chordsketch.installer.yaml",
+        "koedame.chordsketch.locale.en-US.yaml",
+    ):
+        (winget_dir / manifest).write_text(
+            textwrap.dedent(
+                f"""
+                PackageIdentifier: koedame.chordsketch
+                PackageVersion: {winget_version}
+                """
+            ).strip()
+            + "\n",
+            encoding="utf-8",
+        )
 
 
 def _write_allowlist(path: Path, entries: list[dict]) -> None:
@@ -351,6 +406,43 @@ class CheckRunTests(unittest.TestCase):
             _build_repo(root, smoke_npm_pin="0.1.1", smoke_caret="0.1")
             rc = check_version_consistency.run(root, root / "nonexistent.toml")
             self.assertEqual(rc, 1)
+
+    # -- packaging/<channel>/ drift detection (#1864) --------------------
+
+    def test_macports_portfile_drift_detected(self) -> None:
+        # Regression guard: #1864 observed that packaging/macports/Portfile
+        # silently stayed at 0.2.0 across two releases. The extractor must
+        # detect the drift instead of the human-audit-at-release path.
+        with TemporaryDirectory() as td:
+            root = Path(td)
+            _build_repo(root, macports_version="0.1.0")
+            rc = check_version_consistency.run(root, root / "nonexistent.toml")
+            self.assertEqual(rc, 1)
+
+    def test_nix_package_drift_detected(self) -> None:
+        with TemporaryDirectory() as td:
+            root = Path(td)
+            _build_repo(root, nix_version="0.1.0")
+            rc = check_version_consistency.run(root, root / "nonexistent.toml")
+            self.assertEqual(rc, 1)
+
+    def test_winget_manifest_drift_detected(self) -> None:
+        with TemporaryDirectory() as td:
+            root = Path(td)
+            _build_repo(root, winget_version="0.1.0")
+            rc = check_version_consistency.run(root, root / "nonexistent.toml")
+            self.assertEqual(rc, 1)
+
+    def test_packaging_channels_consistent_passes(self) -> None:
+        # Positive check: when every packaging channel matches the canonical
+        # crate version, the check must pass. This guards against a
+        # regression that would make the new loaders always report drift
+        # regardless of actual state.
+        with TemporaryDirectory() as td:
+            root = Path(td)
+            _build_repo(root)
+            rc = check_version_consistency.run(root, root / "nonexistent.toml")
+            self.assertEqual(rc, 0)
 
 
 if __name__ == "__main__":

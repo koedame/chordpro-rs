@@ -172,6 +172,96 @@ def load_readme_smoke_pins(repo_root: Path) -> list[Source]:
     return sources
 
 
+# ---------------------------------------------------------------- packaging/*
+#
+# Pinned (non-`.template`) files under packaging/<channel>/ that quote a
+# specific version. These were the class of source that silently went
+# stale between v0.2.0 and v0.2.2 (see #1864 evidence); the three
+# loaders below add them to the consistency check so the drift is
+# caught in CI before the next release instead of during a post-hoc
+# manual audit.
+#
+# Templates (`*.template` files) are rendered at release time with the
+# correct version and therefore do NOT need to be listed here.
+
+
+# packaging/macports/Portfile: `github.setup koedame chordsketch X.Y.Z v`
+_MACPORTS_VERSION_RE = re.compile(
+    r"""^\s*github\.setup\s+\S+\s+\S+\s+([0-9]+\.[0-9]+\.[0-9]+)\b""",
+    re.MULTILINE,
+)
+
+# packaging/nix/package.nix: `version = "X.Y.Z";`
+_NIX_VERSION_RE = re.compile(
+    r"""^\s*version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"\s*;""",
+    re.MULTILINE,
+)
+
+# packaging/winget/*.yaml: `PackageVersion: X.Y.Z`
+_WINGET_VERSION_RE = re.compile(
+    r"""^\s*PackageVersion:\s*([0-9]+\.[0-9]+\.[0-9]+)\s*$""",
+    re.MULTILINE,
+)
+
+
+def load_macports_version(repo_root: Path) -> list[Source]:
+    relative = "packaging/macports/Portfile"
+    path = repo_root / relative
+    if not path.is_file():
+        return []
+    text = path.read_text(encoding="utf-8")
+    match = _MACPORTS_VERSION_RE.search(text)
+    if match is None:
+        raise SystemExit(
+            f"{relative}: could not find `github.setup ... <version> v`. "
+            f"If the Portfile was restructured, update _MACPORTS_VERSION_RE."
+        )
+    return [Source(file=relative, field="github.setup version", value=match.group(1))]
+
+
+def load_nix_version(repo_root: Path) -> list[Source]:
+    relative = "packaging/nix/package.nix"
+    path = repo_root / relative
+    if not path.is_file():
+        return []
+    text = path.read_text(encoding="utf-8")
+    match = _NIX_VERSION_RE.search(text)
+    if match is None:
+        raise SystemExit(
+            f"{relative}: could not find `version = \"X.Y.Z\";`. "
+            f"If the derivation was restructured, update _NIX_VERSION_RE."
+        )
+    return [Source(file=relative, field="version", value=match.group(1))]
+
+
+def load_winget_versions(repo_root: Path) -> list[Source]:
+    """Collect `PackageVersion:` from every `packaging/winget/*.yaml`.
+
+    Globbed so adding a new winget manifest file doesn't require editing
+    the checker — any file that exposes a `PackageVersion:` line is
+    picked up automatically.
+    """
+    sources: list[Source] = []
+    base = repo_root / "packaging" / "winget"
+    if not base.is_dir():
+        return sources
+    for yaml_path in sorted(base.glob("*.yaml")):
+        text = yaml_path.read_text(encoding="utf-8")
+        match = _WINGET_VERSION_RE.search(text)
+        if match is None:
+            # Some manifests (locale files, installer files) should all
+            # carry PackageVersion. If one doesn't, that's a structural
+            # issue worth surfacing — but there's no reason to fail the
+            # overall check if a helper file lands in this directory
+            # without a PackageVersion, so skip quietly instead.
+            continue
+        rel = yaml_path.relative_to(repo_root).as_posix()
+        sources.append(
+            Source(file=rel, field="PackageVersion", value=match.group(1))
+        )
+    return sources
+
+
 def load_napi_platform_package_versions(repo_root: Path) -> list[Source]:
     """Collect versions from every `crates/napi/npm/*/package.json`.
 
@@ -207,6 +297,12 @@ def load_all_sources(repo_root: Path) -> list[Source]:
     )
     sources.extend(load_napi_platform_package_versions(repo_root))
     sources.extend(load_readme_smoke_pins(repo_root))
+    # Pinned version strings inside packaging/<channel>/ files. See #1864:
+    # these silently went stale across v0.2.0 → v0.2.2 and were only
+    # caught by manual audit. Adding them here catches the drift in CI.
+    sources.extend(load_macports_version(repo_root))
+    sources.extend(load_nix_version(repo_root))
+    sources.extend(load_winget_versions(repo_root))
     return sources
 
 
