@@ -13,6 +13,10 @@ on:
 env:
   WASM_PACK_VERSION: "0.14.0"
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   publish:
     name: Publish @chordsketch/wasm

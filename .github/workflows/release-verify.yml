@@ -43,6 +43,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   collect-channels:
     name: Load channel manifest

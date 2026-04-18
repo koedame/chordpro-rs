@@ -17,6 +17,10 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: koedame/chordsketch
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   ghcr:
     name: Build and push to GHCR

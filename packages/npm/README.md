@@ -8,15 +8,14 @@
 WebAssembly — parse and render [ChordPro](https://www.chordpro.org/) files
 in the browser **or** in Node.js with the same package.
 
-> Requires `>=0.1.1`. Version `0.1.0` is published but does not work in
-> Node.js (it tries to `fetch()` the wasm file via `file://`, which Node's
-> undici does not support). `0.1.1` introduced a dual-package layout that
-> resolves to a Node-compatible build automatically.
-
 ## Installation
 
+[![npm](https://img.shields.io/npm/v/@chordsketch/wasm)](https://www.npmjs.com/package/@chordsketch/wasm)
+
+Replace `VERSION` with the current version from the badge above.
+
 ```bash
-npm install '@chordsketch/wasm@>=0.1.1'
+npm install '@chordsketch/wasm@VERSION'
 ```
 
 ## Usage

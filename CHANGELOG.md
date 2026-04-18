@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-04-18
+
+### Added
+
+- Bundle `chordsketch-lsp` binary in platform-specific VS Code extension VSIXes (#1789)
+
+### Changed
+
+- Refactor render-html `{define}` arm to remove redundant block wrapper (#1804)
+- VS Code extension: add L2-compliant README (#1808)
+- VS Code extension: package.json keyword + README command table follow-ups (#1812)
+- Document VS Code README PNG requirement (SVG rejected by `vsce package`) (#1813)
+- Document Open VSX first-time setup procedure in releasing.md (#1801)
+- Document 8-VSIX procedure and release-verify workflow in releasing.md (#1803)
+- Document manual workflow dispatch in release checklist (#1785)
+- Swift `Package.swift` bumped to v0.2.1 (#1783)
+- CI: document fail-closed intent in matrix-publish workflows (#1818)
+
+### Fixed
+
+- CI: fix YAML parse error in post-release Flathub heredoc (#1782)
+- CI: remove incorrect environment blocks from npm/napi publish workflows (#1791)
+- CI(vscode): add `continue-on-error` to build-platform job (#1805)
+
+### Security
+
+- CI: audit release workflows for `inputs.tag` script-injection vectors (#1814)
+- CI(npm-publish): validate `inputs.version` format before `npm version` (#1819)
+- CI: route release workflow step outputs via env to prevent injection (#1820)
+- CI(readme-smoke): adopt `set -euo pipefail` for fail-closed script behavior (#1807)
+
 ## [0.2.1] - 2026-04-16
 
 ### Added
