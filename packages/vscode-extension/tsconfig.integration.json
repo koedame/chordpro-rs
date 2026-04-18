@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./out-test",
+    "rootDir": ".",
+    "lib": ["ES2020", "DOM"],
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "sourceMap": true
+  },
+  "include": ["test"],
+  "exclude": ["node_modules", "dist", "out-test"]
+}
