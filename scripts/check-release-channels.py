@@ -419,9 +419,26 @@ def main() -> int:
     result = verify_channel(channel, args.tag, force_stale)
 
     status = "OK" if result.ok else "FAIL"
-    print(f"{status} {result.channel_id} expected={result.expected} observed={result.observed}")
-    if not result.ok:
-        print(f"detail: {result.detail}", file=sys.stderr)
+    # Ordering matters: the release-verify rollup (.github/workflows/release-verify.yml)
+    # reads `head -n1 result.txt` and parses `<status> <channel_id>
+    # expected=… observed=…`. Previously `detail:` was written to stderr;
+    # the workflow redirects stderr into the same file via `> out 2>&1`,
+    # and Python's unbuffered stderr landed above the block-buffered
+    # stdout, so the first line was `detail: …` and the rollup misparsed
+    # the status column (#1853).
+    #
+    # Fix both parts of the contract:
+    #   1. Always print the machine-readable status line to stdout first,
+    #      with explicit flush so the file offset reflects the write
+    #      order even when stdout is block-buffered.
+    #   2. Put the human detail on stdout on the second line (instead of
+    #      stderr) so it can't outrun the status line through a different
+    #      stream's buffering policy.
+    print(
+        f"{status} {result.channel_id} expected={result.expected} observed={result.observed}",
+        flush=True,
+    )
+    print(f"detail: {result.detail}", flush=True)
     return 0 if result.ok else 1
 
 
