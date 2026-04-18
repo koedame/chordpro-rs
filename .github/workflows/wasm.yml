@@ -10,6 +10,11 @@ concurrency:
   group: wasm-${{ github.ref }}
   cancel-in-progress: true
 
+# Fail-closed default: jobs that need write scopes must opt in via
+# job-level `permissions:`. See issue #1839.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   WASM_PACK_VERSION: "0.14.0"
