@@ -30,6 +30,18 @@ on:
 permissions:
   contents: read
 
+# Force `bash -eo pipefail` for every `run:` block, including on the
+# Windows matrix cell, so a broken command in a pipe or an empty
+# `rustup target add` fails loud instead of being swallowed by pwsh's
+# permissive defaults. Closes the fix-propagation gap from PR #1821
+# (issue #1835). The unshelled blocks in this workflow — `rustup target
+# add`, `npm install -g`, `napi build` — are all cross-platform CLI
+# tools that behave identically under Git Bash on Windows, so switching
+# away from pwsh has no functional impact.
+defaults:
+  run:
+    shell: bash
+
 env:
   CARGO_INCREMENTAL: "0"
 
