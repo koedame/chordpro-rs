@@ -38,14 +38,19 @@ function ensureLspDiagnosticChannel(context: vscode.ExtensionContext): vscode.Ou
 }
 
 async function startLspGuarded(context: vscode.ExtensionContext): Promise<void> {
-  const channel = ensureLspDiagnosticChannel(context);
+  // Do NOT call ensureLspDiagnosticChannel eagerly here — VS Code registers
+  // output channels in the dropdown as soon as they are created, even when
+  // empty. If the LSP starts successfully, vscode-languageclient creates its
+  // own 'ChordSketch LSP' channel; creating a second one unconditionally would
+  // produce a duplicate entry. Defer channel creation into the callbacks so it
+  // only materialises on failure.
   await startLspClientSafely({
     start: () => startLspClient(context),
-    log: (message) => channel.appendLine(message),
+    log: (message) => ensureLspDiagnosticChannel(context).appendLine(message),
     notify: (message) => {
       void vscode.window.showInformationMessage(message, 'Open Output').then((choice) => {
         if (choice === 'Open Output') {
-          channel.show();
+          ensureLspDiagnosticChannel(context).show();
         }
       });
     },
