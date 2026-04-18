@@ -4,8 +4,29 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Block Dependabot from opening semver-major action bumps
+    # automatically. Action major versions regularly change default
+    # values (e.g. actions/checkout@v4 → @v5 changed `fetch-depth`
+    # defaults), and the auto-approval path in
+    # `.github/workflows/claude-dependabot.yml` cannot reliably catch
+    # subtle behaviour deltas that do not show up in a unit-test diff.
+    # Major-version upgrades still happen — they just need a human-
+    # driven PR that reads the action's release notes first. See #1838.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
       interval: "weekly"
+    # Same rationale as github-actions above (issue #1838). Major
+    # Cargo bumps are especially risky because even under Rust's 1.0
+    # promise, a `0.x → 1.0` or `N → N+1` crate version almost always
+    # introduces breaking changes that require manual audit beyond
+    # "CI is green".
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
