@@ -432,6 +432,48 @@ const MAX_IMAGES: usize = 1_000;
 /// Prevents output amplification from malicious inputs with many `{chorus}` lines.
 const MAX_CHORUS_RECALLS: usize = 1000;
 
+/// Maximum number of warnings the renderer accumulates per render pass
+/// (issue #1833). Mirrors `MAX_WARNINGS` in the text and HTML renderers
+/// so the three backends apply the same resource bound on a malicious
+/// `.cho` that would otherwise produce millions of warnings.
+pub const MAX_WARNINGS: usize = 1000;
+
+/// Push a warning into the renderer's accumulator, enforcing
+/// [`MAX_WARNINGS`]. Once the cap is reached the function pushes a single
+/// truncation marker in place of the overflowing warning and silently
+/// ignores every subsequent warning in the same pass.
+fn push_warning(warnings: &mut Vec<String>, message: impl Into<String>) {
+    if warnings.len() < MAX_WARNINGS {
+        warnings.push(message.into());
+    } else if warnings.len() == MAX_WARNINGS {
+        warnings.push(format!(
+            "additional warnings suppressed; MAX_WARNINGS ({MAX_WARNINGS}) reached"
+        ));
+    }
+}
+
+/// Validate `{capo}` at the render boundary and push a warning for any
+/// value that is not in `1..=24` (issue #1834, renderer-parity.md
+/// §Validation Parity).
+fn validate_capo(metadata: &chordsketch_core::ast::Metadata, warnings: &mut Vec<String>) {
+    use chordsketch_core::ast::CapoValidation;
+    match metadata.capo_validated() {
+        CapoValidation::Unset | CapoValidation::Valid(_) => {}
+        CapoValidation::OutOfRange(n) => {
+            push_warning(
+                warnings,
+                format!("{{capo}} value {n} out of range (expected 1..=24); ignored"),
+            );
+        }
+        CapoValidation::NotInteger(raw) => {
+            push_warning(
+                warnings,
+                format!("{{capo}} value {raw:?} is not a valid integer; ignored"),
+            );
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -669,6 +711,8 @@ fn render_song_into_doc(
             (n as usize).max(1)
         });
 
+    validate_capo(&song.metadata, warnings);
+
     // Title
     if let Some(title) = &song.metadata.title {
         doc.text(title, Font::HelveticaBold, TITLE_SIZE);
@@ -730,10 +774,13 @@ fn render_song_into_doc(
                         Some(raw) => match raw.parse() {
                             Ok(v) => v,
                             Err(_) => {
-                                warnings.push(format!(
-                                    "{{transpose}} value {raw:?} cannot be \
-                                     parsed as i8, ignored (using 0)"
-                                ));
+                                push_warning(
+                                    warnings,
+                                    format!(
+                                        "{{transpose}} value {raw:?} cannot be \
+                                         parsed as i8, ignored (using 0)"
+                                    ),
+                                );
                                 0
                             }
                         },
@@ -741,10 +788,13 @@ fn render_song_into_doc(
                     let (combined, saturated) =
                         chordsketch_core::transpose::combine_transpose(file_offset, cli_transpose);
                     if saturated {
-                        warnings.push(format!(
-                            "transpose offset {file_offset} + {cli_transpose} \
-                             exceeds i8 range, clamped to {combined}"
-                        ));
+                        push_warning(
+                            warnings,
+                            format!(
+                                "transpose offset {file_offset} + {cli_transpose} \
+                                 exceeds i8 range, clamped to {combined}"
+                            ),
+                        );
                     }
                     transpose_offset = combined;
                     continue;
@@ -780,10 +830,13 @@ fn render_song_into_doc(
                             );
                             chorus_recall_count += 1;
                         } else if chorus_recall_count == MAX_CHORUS_RECALLS {
-                            warnings.push(format!(
-                                "chorus recall limit ({MAX_CHORUS_RECALLS}) reached, \
-                                 further recalls suppressed"
-                            ));
+                            push_warning(
+                                warnings,
+                                format!(
+                                    "chorus recall limit ({MAX_CHORUS_RECALLS}) reached, \
+                                     further recalls suppressed"
+                                ),
+                            );
                             chorus_recall_count += 1;
                         }
                     }
@@ -1256,7 +1309,20 @@ fn render_image(attrs: &ImageAttributes, doc: &mut PdfDocument) {
         return;
     }
 
-    // Reject paths that could escape the working directory.
+    // Apply the same allowlist the HTML and text renderers use, so a
+    // single `.cho` cannot produce three different image-handling
+    // behaviours (issue #1832, renderer-parity.md §Validation Parity).
+    // `is_safe_image_src` blocks dangerous URI schemes (`javascript:`,
+    // `file:`, `data:`, `blob:`, `vbscript:`, `mhtml:`) up front.
+    if !chordsketch_core::image_path::is_safe_image_src(&attrs.src) {
+        return;
+    }
+
+    // Then the PDF-specific filesystem check — rejects absolute paths
+    // and `..` traversal because the PDF renderer actually reads the
+    // file from disk. The HTTP(S) URLs allowed by `is_safe_image_src`
+    // fall through here harmlessly (they fail the subsequent extension
+    // check or the filesystem read).
     if !is_safe_image_path(&attrs.src) {
         return;
     }
@@ -4962,6 +5028,85 @@ mod jpeg_tests {
         let bytes = render_song(&song);
         assert!(bytes.starts_with(b"%PDF-1.4"));
         assert!(bytes.ends_with(b"%%EOF\n"));
+    }
+
+    #[test]
+    fn test_image_directive_dangerous_scheme_rejected() {
+        // #1832: PDF must reject the same URI schemes the HTML / text
+        // renderers reject via `is_safe_image_src`.
+        let input = "{image: src=\"javascript:alert(1)\"}";
+        let song = chordsketch_core::parse(input).unwrap();
+        let bytes = render_song(&song);
+        // No crash, no embedded image, no JS literal in the PDF stream.
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        let as_str = String::from_utf8_lossy(&bytes);
+        assert!(
+            !as_str.contains("javascript:"),
+            "javascript: URI must not appear in PDF output"
+        );
+    }
+
+    // -- {capo} validation parity (#1834) ---------------------------------
+
+    #[test]
+    fn test_capo_out_of_range_emits_warning() {
+        let song = chordsketch_core::parse("{title: T}\n{capo: 999}").unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("capo") && w.contains("999")),
+            "expected out-of-range {{capo}} warning; got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_capo_non_numeric_emits_warning() {
+        let song = chordsketch_core::parse("{title: T}\n{capo: foo}").unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("capo") && w.contains("foo")),
+            "expected non-integer {{capo}} warning; got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_capo_in_range_is_silent() {
+        let song = chordsketch_core::parse("{title: T}\n{capo: 5}").unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert!(
+            !result.warnings.iter().any(|w| w.contains("capo")),
+            "valid {{capo: 5}} should not warn; got {:?}",
+            result.warnings
+        );
+    }
+
+    // -- MAX_WARNINGS cap (#1833) -----------------------------------------
+
+    #[test]
+    fn test_max_warnings_truncates() {
+        let mut input = String::from("{title: T}\n");
+        for _ in 0..(MAX_WARNINGS + 50) {
+            input.push_str("{transpose: not-a-number}\n");
+        }
+        let song = chordsketch_core::parse(&input).unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert_eq!(
+            result.warnings.len(),
+            MAX_WARNINGS + 1,
+            "expected exactly MAX_WARNINGS warnings plus one truncation marker"
+        );
+        assert!(
+            result.warnings.last().unwrap().contains("MAX_WARNINGS"),
+            "last entry must be the truncation marker; got {:?}",
+            result.warnings.last()
+        );
     }
 
     #[test]

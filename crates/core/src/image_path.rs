@@ -56,6 +56,75 @@ pub fn has_traversal(path: &str) -> bool {
     path.split(['/', '\\']).any(|seg| seg == "..")
 }
 
+/// Check whether an image `src` value is safe to expose in rendered output
+/// across every renderer (text, HTML, PDF).
+///
+/// Uses an allowlist approach: only `http:`, `https:`, or scheme-less
+/// *relative* paths are permitted. Absolute filesystem paths (Unix
+/// `/…`, Windows `C:\…` / UNC `\\…`) and every other URI scheme
+/// (`javascript:`, `data:`, `file:`, `blob:`, `vbscript:`, `mhtml:`, …)
+/// are rejected. Paths containing NUL bytes or `..` components are also
+/// rejected.
+///
+/// Centralising this check in `chordsketch-core` keeps the three
+/// renderers aligned per `.claude/rules/renderer-parity.md` §Validation
+/// Parity — a single `.cho` file must not produce different text / HTML /
+/// PDF depending on how permissive each renderer happens to be.
+///
+/// # Examples
+///
+/// ```
+/// use chordsketch_core::image_path::is_safe_image_src;
+///
+/// assert!(is_safe_image_src("photo.jpg"));
+/// assert!(is_safe_image_src("https://example.com/photo.jpg"));
+/// assert!(!is_safe_image_src("javascript:alert(1)"));
+/// assert!(!is_safe_image_src("file:///etc/passwd"));
+/// assert!(!is_safe_image_src("/absolute/path.jpg"));
+/// ```
+#[must_use]
+pub fn is_safe_image_src(src: &str) -> bool {
+    if src.is_empty() {
+        return false;
+    }
+
+    // Reject null bytes (defense-in-depth — can truncate C string APIs
+    // downstream even in pure-Rust code paths via FFI).
+    if src.contains('\0') {
+        return false;
+    }
+
+    let trimmed = src.trim_start();
+    let normalised = trimmed.to_ascii_lowercase();
+
+    // Reject Unix absolute paths.
+    if normalised.starts_with('/') {
+        return false;
+    }
+
+    // Reject Windows absolute paths (drive letter or UNC) on all platforms.
+    if is_windows_absolute(trimmed) {
+        return false;
+    }
+
+    // Reject directory traversal.
+    if has_traversal(src) {
+        return false;
+    }
+
+    // If the src contains a colon before any slash it has a URI scheme;
+    // allow only http: and https:. A colon that appears after a slash is
+    // part of a path segment (e.g. `path/to:file`) and is permitted.
+    if let Some(colon_pos) = normalised.find(':') {
+        let before_colon = &normalised[..colon_pos];
+        if !before_colon.contains('/') {
+            return before_colon == "http" || before_colon == "https";
+        }
+    }
+
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,5 +183,60 @@ mod tests {
     fn double_dot_in_filename_not_traversal() {
         // "file..name" contains ".." but not as a path component.
         assert!(!has_traversal("file..name.jpg"));
+    }
+
+    // -- is_safe_image_src -------------------------------------------------
+
+    #[test]
+    fn safe_src_relative_paths() {
+        assert!(is_safe_image_src("photo.jpg"));
+        assert!(is_safe_image_src("images/photo.jpg"));
+        assert!(is_safe_image_src("path/to:file.jpg")); // colon after slash is not a scheme
+    }
+
+    #[test]
+    fn safe_src_http_and_https() {
+        assert!(is_safe_image_src("http://example.com/photo.jpg"));
+        assert!(is_safe_image_src("https://example.com/photo.jpg"));
+    }
+
+    #[test]
+    fn safe_src_rejects_dangerous_schemes() {
+        assert!(!is_safe_image_src("javascript:alert(1)"));
+        assert!(!is_safe_image_src("data:image/png;base64,AAAA"));
+        assert!(!is_safe_image_src("file:///etc/passwd"));
+        assert!(!is_safe_image_src("blob:https://example.com/uuid"));
+        assert!(!is_safe_image_src("vbscript:msgbox"));
+    }
+
+    #[test]
+    fn safe_src_rejects_absolute_paths() {
+        assert!(!is_safe_image_src("/etc/passwd"));
+        assert!(!is_safe_image_src(r"C:\Users\secret"));
+        assert!(!is_safe_image_src(r"\\server\share\file"));
+    }
+
+    #[test]
+    fn safe_src_rejects_empty_and_null() {
+        assert!(!is_safe_image_src(""));
+        assert!(!is_safe_image_src("photo\0.jpg"));
+    }
+
+    #[test]
+    fn safe_src_rejects_traversal() {
+        assert!(!is_safe_image_src("../photo.jpg"));
+        assert!(!is_safe_image_src("images/../../etc/passwd"));
+    }
+
+    #[test]
+    fn safe_src_case_insensitive_scheme() {
+        assert!(!is_safe_image_src("JavaScript:alert(1)"));
+        assert!(is_safe_image_src("HTTPS://example.com/photo.jpg"));
+    }
+
+    #[test]
+    fn safe_src_rejects_scheme_with_whitespace_prefix() {
+        assert!(!is_safe_image_src(" javascript:alert(1)"));
+        assert!(!is_safe_image_src("\tfile:///etc/passwd"));
     }
 }

@@ -309,6 +309,58 @@ impl Metadata {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Parse [`Self::capo`] into a validated fret position.
+    ///
+    /// Returns:
+    ///
+    /// - [`CapoValidation::Unset`] — `{capo}` was not specified.
+    /// - [`CapoValidation::Valid`] — a numeric value in `1..=24`.
+    /// - [`CapoValidation::OutOfRange`] — a numeric value outside
+    ///   `1..=24`. Guitars top out around 24 frets and `0` means "no
+    ///   capo" (use [`CapoValidation::Unset`] instead).
+    /// - [`CapoValidation::NotInteger`] — the value could not be
+    ///   parsed as a non-negative integer.
+    ///
+    /// The `1..=24` range matches the MusicXML importer's existing
+    /// validation (`crates/convert-musicxml/src/import.rs`) and
+    /// `.claude/rules/renderer-parity.md` §Validation Parity, which
+    /// explicitly lists `{capo}` as a field that must be validated
+    /// consistently across every renderer.
+    #[must_use]
+    pub fn capo_validated(&self) -> CapoValidation {
+        let Some(raw) = self.capo.as_deref() else {
+            return CapoValidation::Unset;
+        };
+        let trimmed = raw.trim();
+        match trimmed.parse::<u32>() {
+            Ok(n) if (1..=24).contains(&n) => {
+                // Parse as u32 first so a value like 300 does not silently
+                // wrap; cast is safe because we just range-checked.
+                #[allow(clippy::cast_possible_truncation)]
+                CapoValidation::Valid(n as u8)
+            }
+            Ok(n) => CapoValidation::OutOfRange(n),
+            Err(_) => CapoValidation::NotInteger(trimmed.to_string()),
+        }
+    }
+}
+
+/// Result of validating a `{capo}` metadata value via
+/// [`Metadata::capo_validated`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CapoValidation {
+    /// `{capo}` was not specified.
+    Unset,
+    /// A numeric value in the acceptable range `1..=24`.
+    Valid(u8),
+    /// A numeric value outside `1..=24` (e.g. `0`, `25`, `999`). The
+    /// original parsed integer is carried through so renderers can emit
+    /// a precise warning message.
+    OutOfRange(u32),
+    /// The value could not be parsed as a non-negative integer (e.g.
+    /// `"foo"`, `"-3"`).
+    NotInteger(String),
 }
 
 // ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@
 
 use std::fmt::Write;
 
-use chordsketch_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
+use chordsketch_core::ast::{CapoValidation, CommentStyle, DirectiveKind, Line, LyricsLine, Song};
 use chordsketch_core::canonical_chord_name;
 use chordsketch_core::config::Config;
 use chordsketch_core::escape::escape_xml as escape;
@@ -29,6 +29,46 @@ use chordsketch_core::transpose::transpose_chord;
 /// Maximum number of chorus recall directives allowed per song.
 /// Prevents output amplification from malicious inputs with many `{chorus}` lines.
 const MAX_CHORUS_RECALLS: usize = 1000;
+
+/// Maximum number of warnings the renderer accumulates per render pass
+/// (issue #1833). Mirrors `MAX_WARNINGS` in the text and PDF renderers to
+/// give identical resource-limit behaviour across the three backends.
+pub const MAX_WARNINGS: usize = 1000;
+
+/// Push a warning into the renderer's accumulator, enforcing
+/// [`MAX_WARNINGS`]. Once the cap is reached the function pushes a single
+/// truncation marker in place of the overflowing warning and silently
+/// ignores every subsequent warning in the same pass.
+fn push_warning(warnings: &mut Vec<String>, message: impl Into<String>) {
+    if warnings.len() < MAX_WARNINGS {
+        warnings.push(message.into());
+    } else if warnings.len() == MAX_WARNINGS {
+        warnings.push(format!(
+            "additional warnings suppressed; MAX_WARNINGS ({MAX_WARNINGS}) reached"
+        ));
+    }
+}
+
+/// Validate `{capo}` at the render boundary and push a warning for any
+/// value that is not in `1..=24` (issue #1834, renderer-parity.md
+/// §Validation Parity).
+fn validate_capo(metadata: &chordsketch_core::ast::Metadata, warnings: &mut Vec<String>) {
+    match metadata.capo_validated() {
+        CapoValidation::Unset | CapoValidation::Valid(_) => {}
+        CapoValidation::OutOfRange(n) => {
+            push_warning(
+                warnings,
+                format!("{{capo}} value {n} out of range (expected 1..=24); ignored"),
+            );
+        }
+        CapoValidation::NotInteger(raw) => {
+            push_warning(
+                warnings,
+                format!("{{capo}} value {raw:?} is not a valid integer; ignored"),
+            );
+        }
+    }
+}
 
 /// Maximum number of CSS columns allowed.
 /// Matches `MAX_COLUMNS` in the PDF renderer.
@@ -224,6 +264,7 @@ fn render_song_body(
     let mut fmt_state = FormattingState::default();
     html.push_str("<div class=\"song\">\n");
 
+    validate_capo(&song.metadata, warnings);
     render_metadata(&song.metadata, html);
 
     // Tracks whether a multi-column div is currently open.
@@ -337,10 +378,13 @@ fn render_song_body(
                         Some(raw) => match raw.parse() {
                             Ok(v) => v,
                             Err(_) => {
-                                warnings.push(format!(
-                                    "{{transpose}} value {raw:?} cannot be \
-                                     parsed as i8, ignored (using 0)"
-                                ));
+                                push_warning(
+                                    warnings,
+                                    format!(
+                                        "{{transpose}} value {raw:?} cannot be \
+                                         parsed as i8, ignored (using 0)"
+                                    ),
+                                );
                                 0
                             }
                         },
@@ -348,10 +392,13 @@ fn render_song_body(
                     let (combined, saturated) =
                         chordsketch_core::transpose::combine_transpose(file_offset, cli_transpose);
                     if saturated {
-                        warnings.push(format!(
-                            "transpose offset {file_offset} + {cli_transpose} \
-                             exceeds i8 range, clamped to {combined}"
-                        ));
+                        push_warning(
+                            warnings,
+                            format!(
+                                "transpose offset {file_offset} + {cli_transpose} \
+                                 exceeds i8 range, clamped to {combined}"
+                            ),
+                        );
                     }
                     transpose_offset = combined;
                     continue;
@@ -394,10 +441,13 @@ fn render_song_body(
                             );
                             chorus_recall_count += 1;
                         } else if chorus_recall_count == MAX_CHORUS_RECALLS {
-                            warnings.push(format!(
-                                "chorus recall limit ({MAX_CHORUS_RECALLS}) reached, \
-                                 further recalls suppressed"
-                            ));
+                            push_warning(
+                                warnings,
+                                format!(
+                                    "chorus recall limit ({MAX_CHORUS_RECALLS}) reached, \
+                                     further recalls suppressed"
+                                ),
+                            );
                             chorus_recall_count += 1;
                         }
                     }
@@ -1518,7 +1568,7 @@ fn render_abc_with_fallback(
             html.push_str("</section>\n");
         }
         Err(e) => {
-            warnings.push(format!("abc2svg invocation failed: {e}"));
+            push_warning(warnings, format!("abc2svg invocation failed: {e}"));
             render_section_open("abc", "ABC", label, html);
             html.push_str("<pre>");
             html.push_str(&escape(abc_content));
@@ -1547,56 +1597,12 @@ fn render_abc_with_fallback(
 
 /// Check whether an image `src` value is safe to emit in HTML.
 ///
-/// Uses an allowlist approach: only `http:`, `https:`, or scheme-less
-/// *relative* paths are permitted.  Absolute filesystem paths (starting
-/// with `/`) and all other URI schemes (`javascript:`, `data:`, `file:`,
-/// `blob:`, `vbscript:`, etc.) are rejected, preventing code execution
-/// and local file loading when the generated HTML is viewed in a browser.
-fn is_safe_image_src(src: &str) -> bool {
-    if src.is_empty() {
-        return false;
-    }
-
-    // Reject null bytes (defense-in-depth).
-    if src.contains('\0') {
-        return false;
-    }
-
-    // Normalise for case-insensitive scheme comparison.  Strip leading
-    // whitespace so that " javascript:…" is still caught.
-    let normalised = src.trim_start().to_ascii_lowercase();
-
-    // Reject absolute filesystem paths (defense-in-depth, similar to
-    // is_safe_image_path in the PDF renderer).
-    if normalised.starts_with('/') {
-        return false;
-    }
-
-    // Reject Windows-style absolute paths on all platforms.
-    if is_windows_absolute(src.trim_start()) {
-        return false;
-    }
-
-    // Reject directory traversal (`..` path components).
-    if has_traversal(src) {
-        return false;
-    }
-
-    // If the src contains a colon before any slash, it has a URI scheme.
-    // Only allow http: and https:.
-    if let Some(colon_pos) = normalised.find(':') {
-        let before_colon = &normalised[..colon_pos];
-        // A scheme must appear before any slash (e.g. "http:" not "path/to:file").
-        if !before_colon.contains('/') {
-            return before_colon == "http" || before_colon == "https";
-        }
-    }
-
-    true
-}
-
-/// Re-export shared path-validation helpers from `chordsketch-core`.
-use chordsketch_core::image_path::{has_traversal, is_windows_absolute};
+/// Re-export shared image-src validation from `chordsketch-core`.
+///
+/// The actual allowlist logic lives in `chordsketch_core::image_path::is_safe_image_src`
+/// so every renderer (text, HTML, PDF) applies the same check — see
+/// `.claude/rules/renderer-parity.md` §Validation Parity.
+use chordsketch_core::image_path::is_safe_image_src;
 
 /// Render Lilypond notation content using lilypond, falling back to preformatted text.
 ///
@@ -1618,7 +1624,7 @@ fn render_ly_with_fallback(
             html.push_str("</section>\n");
         }
         Err(e) => {
-            warnings.push(format!("lilypond invocation failed: {e}"));
+            push_warning(warnings, format!("lilypond invocation failed: {e}"));
             render_section_open("ly", "Lilypond", label, html);
             html.push_str("<pre>");
             html.push_str(&escape(ly_content));
@@ -1665,7 +1671,7 @@ fn render_musicxml_with_fallback(
             html.push_str("</section>\n");
         }
         Err(e) => {
-            warnings.push(format!("musescore invocation failed: {e}"));
+            push_warning(warnings, format!("musescore invocation failed: {e}"));
             render_section_open("musicxml", "MusicXML", label, html);
             html.push_str("<pre>");
             html.push_str(&escape(musicxml_content));
@@ -2637,6 +2643,69 @@ Verse text\n\
     fn test_image_safe_relative_path_allowed() {
         let html = render("{image: src=images/photo.jpg}");
         assert!(html.contains("<img src=\"images/photo.jpg\""));
+    }
+
+    // -- {capo} validation parity (#1834) ---------------------------------
+
+    #[test]
+    fn test_capo_out_of_range_emits_warning() {
+        let song = chordsketch_core::parse("{title: T}\n{capo: 999}").unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("capo") && w.contains("999")),
+            "expected out-of-range {{capo}} warning; got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_capo_non_numeric_emits_warning() {
+        let song = chordsketch_core::parse("{title: T}\n{capo: foo}").unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("capo") && w.contains("foo")),
+            "expected non-integer {{capo}} warning; got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_capo_in_range_is_silent() {
+        let song = chordsketch_core::parse("{title: T}\n{capo: 5}").unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert!(
+            !result.warnings.iter().any(|w| w.contains("capo")),
+            "valid {{capo: 5}} should not warn; got {:?}",
+            result.warnings
+        );
+    }
+
+    // -- MAX_WARNINGS cap (#1833) -----------------------------------------
+
+    #[test]
+    fn test_max_warnings_truncates() {
+        let mut input = String::from("{title: T}\n");
+        for _ in 0..(MAX_WARNINGS + 50) {
+            input.push_str("{transpose: not-a-number}\n");
+        }
+        let song = chordsketch_core::parse(&input).unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert_eq!(
+            result.warnings.len(),
+            MAX_WARNINGS + 1,
+            "expected exactly MAX_WARNINGS warnings plus one truncation marker"
+        );
+        assert!(
+            result.warnings.last().unwrap().contains("MAX_WARNINGS"),
+            "last entry must be the truncation marker; got {:?}",
+            result.warnings.last()
+        );
     }
 
     #[test]

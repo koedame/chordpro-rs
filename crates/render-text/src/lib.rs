@@ -3,7 +3,7 @@
 //! This crate converts a parsed ChordPro AST (from `chordsketch-core`) into
 //! formatted plain text with chords aligned above their corresponding lyrics.
 
-use chordsketch_core::ast::{CommentStyle, DirectiveKind, Line, LyricsLine, Song};
+use chordsketch_core::ast::{CapoValidation, CommentStyle, DirectiveKind, Line, LyricsLine, Song};
 use chordsketch_core::config::Config;
 use chordsketch_core::render_result::RenderResult;
 use chordsketch_core::resolve_diagrams_instrument;
@@ -13,6 +13,49 @@ use unicode_width::UnicodeWidthStr;
 /// Maximum number of chorus recall directives allowed per song.
 /// Prevents output amplification from malicious inputs with many `{chorus}` lines.
 const MAX_CHORUS_RECALLS: usize = 1000;
+
+/// Maximum number of warnings the renderer will accumulate for a single
+/// render pass (issue #1833). Without a cap, a pathological input such as
+/// one million malformed `{transpose}` lines can push the warnings vector
+/// to tens of megabytes. `push_warning` refuses to exceed this limit and
+/// appends a single truncation marker the first time the cap is hit.
+pub const MAX_WARNINGS: usize = 1000;
+
+/// Push a warning into the renderer's accumulator, enforcing
+/// [`MAX_WARNINGS`]. Once the cap is reached the function pushes a
+/// single truncation marker in place of the overflowing warning and
+/// silently ignores every subsequent warning in the same pass.
+fn push_warning(warnings: &mut Vec<String>, message: impl Into<String>) {
+    if warnings.len() < MAX_WARNINGS {
+        warnings.push(message.into());
+    } else if warnings.len() == MAX_WARNINGS {
+        warnings.push(format!(
+            "additional warnings suppressed; MAX_WARNINGS ({MAX_WARNINGS}) reached"
+        ));
+    }
+}
+
+/// Validate `{capo}` at the render boundary and push a warning for any
+/// value that is not in `1..=24`. Matches the check applied in the HTML
+/// and PDF renderers per `.claude/rules/renderer-parity.md` §Validation
+/// Parity (issue #1834).
+fn validate_capo(metadata: &chordsketch_core::ast::Metadata, warnings: &mut Vec<String>) {
+    match metadata.capo_validated() {
+        CapoValidation::Unset | CapoValidation::Valid(_) => {}
+        CapoValidation::OutOfRange(n) => {
+            push_warning(
+                warnings,
+                format!("{{capo}} value {n} out of range (expected 1..=24); ignored"),
+            );
+        }
+        CapoValidation::NotInteger(raw) => {
+            push_warning(
+                warnings,
+                format!("{{capo}} value {raw:?} is not a valid integer; ignored"),
+            );
+        }
+    }
+}
 
 /// Render a [`Song`] AST to plain text.
 ///
@@ -109,6 +152,7 @@ fn render_song_impl(
         .unwrap_or_else(|| "guitar".to_string());
     let mut auto_diagrams_instrument: Option<String> = None;
 
+    validate_capo(&song.metadata, warnings);
     render_metadata(&song.metadata, &mut output);
 
     for line in &song.lines {
@@ -145,10 +189,13 @@ fn render_song_impl(
                         Some(raw) => match raw.parse() {
                             Ok(v) => v,
                             Err(_) => {
-                                warnings.push(format!(
-                                    "{{transpose}} value {raw:?} cannot be \
-                                     parsed as i8, ignored (using 0)"
-                                ));
+                                push_warning(
+                                    warnings,
+                                    format!(
+                                        "{{transpose}} value {raw:?} cannot be \
+                                         parsed as i8, ignored (using 0)"
+                                    ),
+                                );
                                 0
                             }
                         },
@@ -156,10 +203,13 @@ fn render_song_impl(
                     let (combined, saturated) =
                         chordsketch_core::transpose::combine_transpose(file_offset, cli_transpose);
                     if saturated {
-                        warnings.push(format!(
-                            "transpose offset {file_offset} + {cli_transpose} \
-                             exceeds i8 range, clamped to {combined}"
-                        ));
+                        push_warning(
+                            warnings,
+                            format!(
+                                "transpose offset {file_offset} + {cli_transpose} \
+                                 exceeds i8 range, clamped to {combined}"
+                            ),
+                        );
                     }
                     transpose_offset = combined;
                     continue;
@@ -182,13 +232,17 @@ fn render_song_impl(
                                 &chorus_body,
                                 transpose_offset,
                                 &mut output,
+                                warnings,
                             );
                             chorus_recall_count += 1;
                         } else if chorus_recall_count == MAX_CHORUS_RECALLS {
-                            warnings.push(format!(
-                                "chorus recall limit ({MAX_CHORUS_RECALLS}) reached, \
-                                 further recalls suppressed"
-                            ));
+                            push_warning(
+                                warnings,
+                                format!(
+                                    "chorus recall limit ({MAX_CHORUS_RECALLS}) reached, \
+                                     further recalls suppressed"
+                                ),
+                            );
                             chorus_recall_count += 1;
                         }
                     }
@@ -205,7 +259,7 @@ fn render_song_impl(
                             buf.push(line.clone());
                         }
                         let mut target = Vec::new();
-                        render_directive(directive, &mut target);
+                        render_directive(directive, &mut target, warnings);
                         output.extend(target);
                     }
                 }
@@ -472,7 +526,11 @@ fn render_lyrics(lyrics_line: &LyricsLine, transpose_offset: i8, output: &mut Ve
 /// - Page-layout directives (`{new_page}`, `{new_physical_page}`, `{column_break}`,
 ///   `{columns}`) produce no output — plain text has no concept of pages or columns.
 /// - Unknown directives are silently ignored.
-fn render_directive(directive: &chordsketch_core::ast::Directive, output: &mut Vec<String>) {
+fn render_directive(
+    directive: &chordsketch_core::ast::Directive,
+    output: &mut Vec<String>,
+    warnings: &mut Vec<String>,
+) {
     match &directive.kind {
         DirectiveKind::StartOfChorus => {
             render_section_header("Chorus", &directive.value, output);
@@ -510,7 +568,23 @@ fn render_directive(directive: &chordsketch_core::ast::Directive, output: &mut V
             render_section_header(&label, &directive.value, output);
         }
         DirectiveKind::Image(attrs) if attrs.has_src() => {
-            output.push(format!("[Image: {}]", attrs.src));
+            // Validate the src for parity with the HTML renderer (#1832,
+            // renderer-parity.md §Validation Parity). Dangerous URI
+            // schemes such as `javascript:` and `file:///etc/passwd`
+            // never belong in rendered output — text output is not
+            // executed, but embedding such strings would mislead any
+            // tool or human that copies them downstream.
+            if !chordsketch_core::image_path::is_safe_image_src(&attrs.src) {
+                push_warning(
+                    warnings,
+                    format!(
+                        "Image src {:?} rejected by sanitizer; omitted from text output",
+                        attrs.src
+                    ),
+                );
+            } else {
+                output.push(format!("[Image: {}]", attrs.src));
+            }
         }
         DirectiveKind::Image(_) => {}
         // Page-layout directives are intentionally no-ops in plain-text output:
@@ -536,6 +610,7 @@ fn render_chorus_recall(
     chorus_body: &[Line],
     transpose_offset: i8,
     output: &mut Vec<String>,
+    warnings: &mut Vec<String>,
 ) {
     render_section_header("Chorus", value, output);
     for line in chorus_body {
@@ -543,7 +618,9 @@ fn render_chorus_recall(
             Line::Lyrics(lyrics) => render_lyrics(lyrics, transpose_offset, output),
             Line::Comment(style, text) => render_comment(*style, text, output),
             Line::Empty => output.push(String::new()),
-            Line::Directive(d) if !d.kind.is_metadata() => render_directive(d, output),
+            Line::Directive(d) if !d.kind.is_metadata() => {
+                render_directive(d, output, warnings);
+            }
             _ => {}
         }
     }
@@ -1326,6 +1403,97 @@ mod delegate_tests {
         let input = "{image: width=200 height=100}";
         let output = render(input);
         assert!(!output.contains("[Image"));
+    }
+
+    #[test]
+    fn test_render_image_dangerous_scheme_rejected() {
+        // #1832: text renderer must reject the same URI schemes HTML does.
+        let song = chordsketch_core::parse("{image: src=\"javascript:alert(1)\"}").unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert!(
+            !result.output.contains("[Image"),
+            "javascript: src must not reach text output: {}",
+            result.output
+        );
+        assert!(
+            result.warnings.iter().any(|w| w.contains("javascript")),
+            "expected a warning mentioning the rejected src; got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_render_image_file_uri_rejected() {
+        let song = chordsketch_core::parse("{image: src=\"file:///etc/passwd\"}").unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert!(
+            !result.output.contains("[Image"),
+            "file: src must not reach text output"
+        );
+    }
+
+    // -- {capo} validation parity (#1834) ---------------------------------
+
+    #[test]
+    fn test_capo_out_of_range_emits_warning() {
+        let song = chordsketch_core::parse("{title: T}\n{capo: 999}").unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("capo") && w.contains("999")),
+            "expected out-of-range {{capo}} warning; got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_capo_non_numeric_emits_warning() {
+        let song = chordsketch_core::parse("{title: T}\n{capo: foo}").unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("capo") && w.contains("foo")),
+            "expected non-integer {{capo}} warning; got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_capo_in_range_is_silent() {
+        let song = chordsketch_core::parse("{title: T}\n{capo: 5}").unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert!(
+            !result.warnings.iter().any(|w| w.contains("capo")),
+            "valid {{capo: 5}} should not warn; got {:?}",
+            result.warnings
+        );
+    }
+
+    // -- MAX_WARNINGS cap (#1833) -----------------------------------------
+
+    #[test]
+    fn test_max_warnings_truncates() {
+        // Generate many bad {transpose} lines so every one emits a warning.
+        let mut input = String::from("{title: T}\n");
+        for _ in 0..(MAX_WARNINGS + 50) {
+            input.push_str("{transpose: not-a-number}\n");
+        }
+        let song = chordsketch_core::parse(&input).unwrap();
+        let result = render_song_with_warnings(&song, 0, &Config::defaults());
+        assert_eq!(
+            result.warnings.len(),
+            MAX_WARNINGS + 1,
+            "expected exactly MAX_WARNINGS warnings plus one truncation marker"
+        );
+        assert!(
+            result.warnings.last().unwrap().contains("MAX_WARNINGS"),
+            "last entry must be the truncation marker; got {:?}",
+            result.warnings.last()
+        );
     }
 
     // -- Selector filtering integration (#320) --
