@@ -16,10 +16,6 @@ import * as path from 'path';
 import { resolveDefaultMode } from './config.js';
 import { escapeHtmlAttr, parseSerializedState } from './preview-helpers.js';
 
-// Re-export the VS Code-free helpers from their dedicated module so older
-// imports keep working if anything references them through this file.
-export { escapeHtmlAttr, parseSerializedState };
-
 /** Message types sent from the extension host to the WebView. */
 type ExtToWebview = { type: 'update'; text: string } | { type: 'transpose'; delta: 1 | -1 };
 
@@ -168,11 +164,13 @@ export function registerPreviewSerializer(context: vscode.ExtensionContext): vsc
 
 function renderUnavailableMessage(panel: vscode.WebviewPanel, message: string): void {
   panel.webview.options = { enableScripts: false };
-  const escaped = message
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br>');
+  // Reuse the same escape routine as `<meta>` attribute injection. Running
+  // the attribute-level escape on body content is safe (and strictly
+  // stronger than strictly necessary): it escapes `&`, `<`, `>`, `"`, `'`,
+  // none of which can re-introduce markup when written into a `<p>` text
+  // node. Line breaks in the input become `<br>` so multi-line messages
+  // stay readable.
+  const escaped = escapeHtmlAttr(message).replace(/\n/g, '<br>');
   panel.webview.html = `<!DOCTYPE html>
 <html lang="en">
 <head>
