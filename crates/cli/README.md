@@ -86,6 +86,7 @@ chordsketch convert --to musicxml song.cho -o song.xml
 | `-D`, `--define` | `key=value` | Override a single config value at runtime. Highest precedence — wins over every `--config`. |
 | `--no-default-configs` | | Skip system, user, and project config files. Only built-in defaults plus any explicit `--config` / `--define`. |
 | `--instrument` | `guitar` \| `ukulele` \| … | Select the active instrument for selector filtering (directives like `{textfont-piano: Courier}` are kept only when the selector matches). Equivalent to `--define instrument.type=<NAME>`. |
+| `--warnings-json` | | Emit render / config warnings as JSONL on stderr instead of the default `warning: …` lines. Each warning becomes a single-line JSON object `{"source": "render\|config\|transpose", "message": "…"}` so programmatic consumers can aggregate or suppress warnings without scraping. |
 | `--completions` | *shell* | Print shell completions (`bash`, `elvish`, `fish`, `powershell`, `zsh`) to stdout and exit. |
 | `-h`, `--help` | | Print help. Use on a subcommand (e.g. `chordsketch fmt --help`) for subcommand-specific detail. |
 | `-V`, `--version` | | Print the version and exit. |

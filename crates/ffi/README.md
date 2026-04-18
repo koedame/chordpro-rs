@@ -54,6 +54,16 @@ All render functions accept the same three arguments:
 | `parse_and_render_text(input, config_json, transpose)` | `str` | Plain text output |
 | `parse_and_render_html(input, config_json, transpose)` | `str` | Full HTML document |
 | `parse_and_render_pdf(input, config_json, transpose)` | `bytes` | Raw PDF bytes |
+| `parse_and_render_text_with_warnings(input, config_json, transpose)` | `TextRenderWithWarnings { output: str, warnings: list[str] }` | Plain text + captured warnings |
+| `parse_and_render_html_with_warnings(input, config_json, transpose)` | `TextRenderWithWarnings { output: str, warnings: list[str] }` | HTML + captured warnings |
+| `parse_and_render_pdf_with_warnings(input, config_json, transpose)` | `PdfRenderWithWarnings { output: bytes, warnings: list[str] }` | PDF + captured warnings |
+
+The `*_with_warnings` variants return the render warnings (transpose
+saturation, chorus recall limits, `{columns}` clamp, etc.) as a list
+alongside the output instead of forwarding them to `sys.stderr` /
+`NSLog` / `System.err` / `$stderr`. Use them when embedding ChordSketch
+in an app that needs to surface warnings in the UI or aggregate them.
+See #1827.
 
 ### Validation
 

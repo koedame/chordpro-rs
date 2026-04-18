@@ -791,3 +791,115 @@ fn test_convert_invalid_xml_with_from_musicxml() {
         .failure()
         .stderr(predicate::str::contains("error:"));
 }
+
+// -- --warnings-json (#1827) -------------------------------------------
+
+/// Build a `.cho` file whose combined (file `{transpose}` + CLI
+/// `--transpose`) value saturates the `i8` range and therefore forces
+/// the render layer to emit a `transpose offset ... clamped to ...`
+/// warning. The exact saturation path is in
+/// `chordsketch_core::transpose::combine_transpose`.
+fn saturating_transpose_fixture() -> NamedTempFile {
+    let mut file = NamedTempFile::new_in(std::env::temp_dir()).unwrap();
+    file.write_all(b"{title: T}\n{transpose: 100}\n[C]Hello\n")
+        .unwrap();
+    file
+}
+
+#[test]
+fn test_warnings_json_emits_jsonl_for_saturating_transpose() {
+    // With --warnings-json, the saturation warning must come out as a
+    // single-line JSON object on stderr, parseable as JSONL.
+    let fixture = saturating_transpose_fixture();
+    let output = Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args([
+            fixture.path().to_str().unwrap(),
+            "--transpose",
+            "100",
+            "--warnings-json",
+        ])
+        .assert()
+        .get_output()
+        .stderr
+        .clone();
+    let stderr = String::from_utf8(output).unwrap();
+    let mut saw_any = false;
+    for line in stderr.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        saw_any = true;
+        assert!(
+            line.starts_with('{') && line.ends_with('}'),
+            "expected JSONL on stderr with --warnings-json; got: {line}"
+        );
+        assert!(
+            line.contains("\"source\":"),
+            "each line must carry a `source` field; got: {line}"
+        );
+        assert!(
+            line.contains("\"message\":"),
+            "each line must carry a `message` field; got: {line}"
+        );
+    }
+    assert!(
+        saw_any,
+        "--warnings-json should have produced at least one line on stderr for a saturating transpose"
+    );
+}
+
+#[test]
+fn test_warnings_json_off_emits_plain_warning_prefix() {
+    // Default behaviour: human-readable `warning: ...` lines, not JSON.
+    // Regression guard — a refactor that accidentally always produces
+    // JSON would break every existing stderr scraper.
+    let fixture = saturating_transpose_fixture();
+    let output = Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args([fixture.path().to_str().unwrap(), "--transpose", "100"])
+        .assert()
+        .get_output()
+        .stderr
+        .clone();
+    let stderr = String::from_utf8(output).unwrap();
+    assert!(
+        stderr.lines().any(|l| l.starts_with("warning: ")),
+        "expected at least one `warning: ` line on stderr; got:\n{stderr}"
+    );
+    assert!(
+        !stderr.lines().any(|l| l.starts_with('{')),
+        "default mode must not emit JSON lines; got:\n{stderr}"
+    );
+}
+
+#[test]
+fn test_warnings_json_quote_count_is_balanced() {
+    // A well-formed JSONL line has an even number of `"` characters —
+    // they all participate in balanced `"key":"value"` pairs. An
+    // unescaped double-quote inside a message would break this
+    // invariant. This catches regressions in `json_escape` without
+    // pulling in a full JSON parser.
+    let fixture = saturating_transpose_fixture();
+    let output = Command::cargo_bin("chordsketch")
+        .unwrap()
+        .args([
+            fixture.path().to_str().unwrap(),
+            "--transpose",
+            "100",
+            "--warnings-json",
+        ])
+        .assert()
+        .get_output()
+        .stderr
+        .clone();
+    let stderr = String::from_utf8(output).unwrap();
+    for line in stderr.lines().filter(|l| !l.is_empty()) {
+        let quote_count = line.chars().filter(|c| *c == '"').count();
+        assert_eq!(
+            quote_count % 2,
+            0,
+            "unbalanced quotes suggest an unescaped double-quote; line: {line}"
+        );
+    }
+}

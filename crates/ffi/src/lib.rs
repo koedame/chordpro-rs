@@ -158,6 +158,99 @@ pub fn parse_and_render_pdf(
     ))
 }
 
+/// Structured render result for text / HTML output.
+///
+/// Returned by [`parse_and_render_text_with_warnings`] and
+/// [`parse_and_render_html_with_warnings`]. See #1827 for the
+/// cross-binding rationale; the plain `parse_and_render_*` variants
+/// forward warnings to stderr via `eprintln!`, which UniFFI-based
+/// consumers (Python, Swift, Kotlin, Ruby) cannot capture structurally.
+#[derive(Debug)]
+pub struct TextRenderWithWarnings {
+    /// Rendered text / HTML output.
+    pub output: String,
+    /// Warnings captured during the render pass.
+    pub warnings: Vec<String>,
+}
+
+/// Structured render result for PDF output.
+///
+/// See [`TextRenderWithWarnings`] for the warnings contract.
+#[derive(Debug)]
+pub struct PdfRenderWithWarnings {
+    /// Rendered PDF byte stream.
+    pub output: Vec<u8>,
+    /// Warnings captured during the render pass.
+    pub warnings: Vec<String>,
+}
+
+/// Parse ChordPro input, render as plain text, and return warnings
+/// alongside the output instead of forwarding them to stderr.
+///
+/// See [`parse_and_render_text`] for the parameter contract and
+/// [`TextRenderWithWarnings`] for the warnings contract.
+#[must_use = "callers must handle parse and render errors"]
+pub fn parse_and_render_text_with_warnings(
+    input: String,
+    config_json: Option<String>,
+    transpose: Option<i8>,
+) -> Result<TextRenderWithWarnings, ChordSketchError> {
+    let config = resolve_config(config_json)?;
+    let songs = parse_songs(&input)?;
+    let result = chordsketch_render_text::render_songs_with_warnings(
+        &songs,
+        transpose.unwrap_or(0),
+        &config,
+    );
+    Ok(TextRenderWithWarnings {
+        output: result.output,
+        warnings: result.warnings,
+    })
+}
+
+/// Parse ChordPro input, render as an HTML document, and return warnings
+/// alongside the output.
+///
+/// See [`parse_and_render_text_with_warnings`] for the warnings contract.
+#[must_use = "callers must handle parse and render errors"]
+pub fn parse_and_render_html_with_warnings(
+    input: String,
+    config_json: Option<String>,
+    transpose: Option<i8>,
+) -> Result<TextRenderWithWarnings, ChordSketchError> {
+    let config = resolve_config(config_json)?;
+    let songs = parse_songs(&input)?;
+    let result = chordsketch_render_html::render_songs_with_warnings(
+        &songs,
+        transpose.unwrap_or(0),
+        &config,
+    );
+    Ok(TextRenderWithWarnings {
+        output: result.output,
+        warnings: result.warnings,
+    })
+}
+
+/// Parse ChordPro input, render as a PDF document, and return warnings
+/// alongside the byte stream.
+///
+/// See [`parse_and_render_text_with_warnings`] for the warnings contract.
+#[must_use = "callers must handle parse and render errors"]
+pub fn parse_and_render_pdf_with_warnings(
+    input: String,
+    config_json: Option<String>,
+    transpose: Option<i8>,
+) -> Result<PdfRenderWithWarnings, ChordSketchError> {
+    let config = resolve_config(config_json)?;
+    let songs = parse_songs(&input)?;
+    let result =
+        chordsketch_render_pdf::render_songs_with_warnings(&songs, transpose.unwrap_or(0), &config);
+    Ok(PdfRenderWithWarnings {
+        output: result.output,
+        warnings: result.warnings,
+    })
+}
+
 /// Validate ChordPro input and return any parse errors as strings.
 #[must_use]
 pub fn validate(input: String) -> Vec<String> {
@@ -320,5 +413,102 @@ mod tests {
         let bytes = result.unwrap();
         assert!(!bytes.is_empty());
         assert!(bytes.starts_with(b"%PDF"));
+    }
+
+    // -- *_with_warnings variants (#1827) ---------------------------------
+
+    #[test]
+    fn test_render_text_with_warnings_returns_output() {
+        let result =
+            parse_and_render_text_with_warnings(MINIMAL_INPUT.to_string(), None, None).unwrap();
+        assert!(result.output.contains("Test"));
+        assert!(
+            result.warnings.is_empty(),
+            "minimal input produces no warnings; got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_render_html_with_warnings_returns_html() {
+        let result =
+            parse_and_render_html_with_warnings(MINIMAL_INPUT.to_string(), None, None).unwrap();
+        assert!(result.output.contains("<html") || result.output.contains("<!DOCTYPE"));
+        assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_render_pdf_with_warnings_returns_pdf_bytes() {
+        let result =
+            parse_and_render_pdf_with_warnings(MINIMAL_INPUT.to_string(), None, None).unwrap();
+        assert!(result.output.starts_with(b"%PDF"));
+        assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_render_text_with_warnings_captures_transpose_saturation() {
+        // A `{transpose: 100}` directive combined with an API `transpose: 100`
+        // exceeds the `i8` range (200 > 127); the renderer saturates and
+        // emits a warning. Confirm the warning is captured as structured
+        // data rather than silently vanishing to stderr.
+        let input = "{title: T}\n{transpose: 100}\n[C]Hello";
+        let result =
+            parse_and_render_text_with_warnings(input.to_string(), None, Some(100)).unwrap();
+        assert!(
+            !result.warnings.is_empty(),
+            "expected at least one transpose-saturation warning; got {:?}",
+            result.warnings
+        );
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.to_lowercase().contains("transpose")),
+            "at least one warning should mention 'transpose'; got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_render_text_with_warnings_honours_transpose() {
+        // Plumbing regression guard: the wrapper must forward `transpose`
+        // to the renderer. A refactor that dropped the parameter would
+        // pass test_render_text_with_warnings_returns_output but fail here.
+        let zero =
+            parse_and_render_text_with_warnings(MINIMAL_INPUT.to_string(), None, Some(0)).unwrap();
+        let shifted =
+            parse_and_render_text_with_warnings(MINIMAL_INPUT.to_string(), None, Some(2)).unwrap();
+        assert_ne!(
+            zero.output, shifted.output,
+            "transpose=2 must produce different output from transpose=0"
+        );
+    }
+
+    #[test]
+    fn test_render_text_with_warnings_honours_config_preset() {
+        // Plumbing regression guard for `config_json` — asserts preset
+        // resolution reaches the renderer, matching the `_with_options`
+        // entry point's contract.
+        let result = parse_and_render_text_with_warnings(
+            MINIMAL_INPUT.to_string(),
+            Some("guitar".to_string()),
+            None,
+        );
+        assert!(result.is_ok(), "guitar preset must resolve: {result:?}");
+    }
+
+    #[test]
+    fn test_render_text_with_warnings_invalid_config_errors() {
+        // Invalid config surfaces through the same `InvalidConfig` error
+        // variant as the plain `parse_and_render_text`.
+        let result = parse_and_render_text_with_warnings(
+            MINIMAL_INPUT.to_string(),
+            Some("{ not valid rrjson".to_string()),
+            None,
+        );
+        assert!(
+            matches!(result, Err(ChordSketchError::InvalidConfig { .. })),
+            "expected InvalidConfig; got {result:?}"
+        );
     }
 }

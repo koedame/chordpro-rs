@@ -22,6 +22,48 @@ const MAX_INPUT_BYTES: u64 = 52_428_800;
 /// [`fs::metadata`] is used for an early, cheap size check that avoids
 /// loading oversized files into memory at all.
 #[must_use = "I/O errors from reading the file must be handled"]
+/// Minimal JSON string escape for the `--warnings-json` output stream.
+///
+/// Escapes the six characters mandated by RFC 8259 §7: `"`, `\`, and the
+/// control range U+0000–U+001F (tab/LF/CR via their shorthand, the rest
+/// via `\uXXXX`). Avoids a `serde_json` dependency — the CLI currently
+/// has no serde in its dependency tree and we only need to serialize
+/// two string fields.
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Emit a single warning to stderr, honouring the `--warnings-json` flag.
+///
+/// When the flag is set, the warning is emitted as a single JSONL object
+/// `{"source":"...","message":"..."}`. Otherwise the human-readable
+/// `warning: ...` form is used (matching the pre-#1827 behaviour).
+fn emit_warning(as_json: bool, source: &str, message: &str) {
+    if as_json {
+        eprintln!(
+            "{{\"source\":\"{source}\",\"message\":\"{message}\"}}",
+            source = json_escape(source),
+            message = json_escape(message),
+        );
+    } else {
+        eprintln!("warning: {message}");
+    }
+}
+
 fn read_file_clamped(path: &str) -> Result<String, String> {
     match fs::metadata(path) {
         Ok(meta) if meta.len() > MAX_INPUT_BYTES => {
@@ -113,6 +155,14 @@ struct Cli {
     /// Equivalent to `--define instrument.type=<INSTRUMENT>`.
     #[arg(long)]
     instrument: Option<String>,
+
+    /// Emit render / config warnings as JSONL on stderr instead of the
+    /// default `warning: …` lines. Each warning becomes a single-line
+    /// JSON object `{"source": "...", "message": "..."}` so programmatic
+    /// consumers can aggregate or suppress warnings without scraping.
+    /// (#1827)
+    #[arg(long = "warnings-json")]
+    warnings_json: bool,
 }
 
 /// Available subcommands.
@@ -245,7 +295,7 @@ fn main() -> ExitCode {
     } else {
         let result = chordsketch_core::config::Config::load(project_dir.as_deref(), None);
         for warning in &result.warnings {
-            eprintln!("warning: {warning}");
+            emit_warning(cli.warnings_json, "config", warning);
         }
         result.config
     };
@@ -255,7 +305,11 @@ fn main() -> ExitCode {
         match chordsketch_core::config::Config::resolve(config_name) {
             Ok(result) => {
                 for warning in &result.warnings {
-                    eprintln!("warning: {config_name}: {warning}");
+                    emit_warning(
+                        cli.warnings_json,
+                        "config",
+                        &format!("{config_name}: {warning}"),
+                    );
                 }
                 config = config.merge(result.config);
             }
@@ -297,9 +351,13 @@ fn main() -> ExitCode {
     let config_transpose =
         if config_transpose_f64 < f64::from(i8::MIN) || config_transpose_f64 > f64::from(i8::MAX) {
             let clamped = config_transpose_f64.clamp(f64::from(i8::MIN), f64::from(i8::MAX)) as i8;
-            eprintln!(
-                "warning: settings.transpose value {} is out of i8 range, clamped to {}",
-                config_transpose_f64, clamped
+            emit_warning(
+                cli.warnings_json,
+                "transpose",
+                &format!(
+                    "settings.transpose value {} is out of i8 range, clamped to {}",
+                    config_transpose_f64, clamped
+                ),
             );
             clamped
         } else {
@@ -308,9 +366,13 @@ fn main() -> ExitCode {
     let (effective_transpose, saturated) =
         chordsketch_core::transpose::combine_transpose(config_transpose, cli.transpose);
     if saturated {
-        eprintln!(
-            "warning: transpose offset {} + {} exceeds i8 range, clamped to {}",
-            config_transpose, cli.transpose, effective_transpose
+        emit_warning(
+            cli.warnings_json,
+            "transpose",
+            &format!(
+                "transpose offset {} + {} exceeds i8 range, clamped to {}",
+                config_transpose, cli.transpose, effective_transpose
+            ),
         );
     }
 
@@ -365,7 +427,7 @@ fn main() -> ExitCode {
                 &config,
             );
             for w in &result.warnings {
-                eprintln!("warning: {w}");
+                emit_warning(cli.warnings_json, "render", w);
             }
             Output::Binary(result.output)
         }
@@ -376,7 +438,7 @@ fn main() -> ExitCode {
                 &config,
             );
             for w in &result.warnings {
-                eprintln!("warning: {w}");
+                emit_warning(cli.warnings_json, "render", w);
             }
             Output::Text(result.output)
         }
@@ -387,7 +449,7 @@ fn main() -> ExitCode {
                 &config,
             );
             for w in &result.warnings {
-                eprintln!("warning: {w}");
+                emit_warning(cli.warnings_json, "render", w);
             }
             Output::Text(result.output)
         }

@@ -25,6 +25,30 @@ namespace chordsketch {
     [Throws=ChordSketchError]
     bytes parse_and_render_pdf(string input, string? config_json, i8? transpose);
 
+    /// Parse ChordPro input, render as plain text, and return render
+    /// warnings alongside the output instead of forwarding them to
+    /// stderr.
+    ///
+    /// See `parse_and_render_text` for the parameter contract. Use this
+    /// variant when the host binding needs to surface warnings in a UI
+    /// (see #1827).
+    [Throws=ChordSketchError]
+    TextRenderWithWarnings parse_and_render_text_with_warnings(string input, string? config_json, i8? transpose);
+
+    /// Parse ChordPro input, render as an HTML document, and return
+    /// render warnings alongside the output.
+    ///
+    /// See `parse_and_render_text_with_warnings` for the warnings contract.
+    [Throws=ChordSketchError]
+    TextRenderWithWarnings parse_and_render_html_with_warnings(string input, string? config_json, i8? transpose);
+
+    /// Parse ChordPro input, render as a PDF byte stream, and return
+    /// render warnings alongside the output.
+    ///
+    /// See `parse_and_render_text_with_warnings` for the warnings contract.
+    [Throws=ChordSketchError]
+    PdfRenderWithWarnings parse_and_render_pdf_with_warnings(string input, string? config_json, i8? transpose);
+
     /// Validate ChordPro input and return any parse errors as strings.
     /// Returns an empty list if the input is valid.
     ///
@@ -34,6 +58,29 @@ namespace chordsketch {
 
     /// Return the ChordSketch library version.
     string version();
+};
+
+/// Structured render result for text / HTML output.
+///
+/// Returned by `parse_and_render_text_with_warnings` and
+/// `parse_and_render_html_with_warnings`. Each warning is a
+/// human-readable diagnostic string captured from the renderer
+/// (e.g. "transpose offset ... clamped to ...").
+dictionary TextRenderWithWarnings {
+    /// Rendered text / HTML output.
+    string output;
+    /// Warnings captured during the render pass.
+    sequence<string> warnings;
+};
+
+/// Structured render result for PDF output.
+///
+/// See `TextRenderWithWarnings` for the warnings contract.
+dictionary PdfRenderWithWarnings {
+    /// Rendered PDF byte stream.
+    bytes output;
+    /// Warnings captured during the render pass.
+    sequence<string> warnings;
 };
 
 [Error]
