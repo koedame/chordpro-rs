@@ -959,21 +959,39 @@ mod wasm_tests {
         assert!(Array::is_array(&warnings), "warnings must be a JS array");
     }
 
-    /// Saturation-triggering input: a `{transpose: 100}` directive in
-    /// the source combined with the renderer's own i8-range check emits
-    /// a warning. `render_text_with_warnings` must capture it into the
-    /// `warnings` array rather than forwarding to `console.warn` (the
-    /// contract that distinguishes this variant from `render_text`).
+    /// Warning-triggering input: `{capo: 999}` is out of range
+    /// (`validate_capo` accepts 1..=24) and unconditionally emits a
+    /// warning through the core `push_warning` helper.
+    /// `render_text_with_warnings` must capture it into the `warnings`
+    /// array rather than forwarding to `console.warn` (the contract
+    /// that distinguishes this variant from `render_text`).
+    ///
+    /// `{transpose: N}` was tried first but is the wrong trigger for
+    /// this test: the saturation path in the text renderer only fires
+    /// when an external transpose is ALSO supplied
+    /// (`combine_transpose(file_offset, cli_transpose)` in
+    /// `crates/render-text/src/lib.rs` L167-177). The no-options
+    /// `render_text_with_warnings` passes `transpose: 0` to the
+    /// renderer, so a file-only `{transpose: 100}` combines to 100
+    /// and does not saturate — no warning emitted, assertion fails.
     #[wasm_bindgen_test]
-    fn render_text_with_warnings_captures_saturation_warning() {
-        let v = render_text_with_warnings("{title: T}\n{transpose: 100}\n[C]Hello").unwrap();
+    fn render_text_with_warnings_captures_out_of_range_capo_warning() {
+        let v = render_text_with_warnings("{title: T}\n{capo: 999}\n[C]Hello").unwrap();
         let warnings = js_sys::Reflect::get(&v, &"warnings".into()).unwrap();
         assert!(Array::is_array(&warnings), "warnings must be a JS array");
         let arr = Array::from(&warnings);
         assert!(
             arr.length() >= 1,
-            "expected at least one warning from a {{transpose: 100}} source (got {} entries)",
+            "expected at least one warning from a {{capo: 999}} source (got {} entries)",
             arr.length(),
+        );
+        // Pin the message shape so a future rename of the validate_capo
+        // warning template surfaces here instead of silently decoupling
+        // this regression gate from the real warning path.
+        let first = arr.get(0).as_string().unwrap_or_default();
+        assert!(
+            first.contains("capo"),
+            "warning should mention `capo`; got: {first}",
         );
     }
 
